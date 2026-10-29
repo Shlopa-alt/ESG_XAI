@@ -1,0 +1,35 @@
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+Role = Literal["reader", "researcher", "reviewer", "owner"]
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    database_url: str = "postgresql+psycopg://esg:esg@localhost:5432/esg"
+
+    # Сессия: подписанный токен в httpOnly cookie
+    secret_key: str = "change-me"
+    session_cookie_name: str = "esg_session"
+    session_ttl_s: int = 8 * 3600
+    cookie_secure: bool = False
+
+    # local — заглушка для разработки, ldap — вход через LDAP университета
+    auth_backend: Literal["local", "ldap"] = "ldap"
+    local_dev_password: str = "dev"
+    local_dev_role: Role = "researcher"
+
+    ldap_server: str = "ldap://ldap.example.local"
+    ldap_user_dn_template: str = "uid={login},ou=people,dc=example,dc=local"
+    ldap_use_ssl: bool = False
+    # Логины, которые становятся owner при первом входе (через запятую)
+    initial_owner_logins: list[str] = Field(default_factory=list)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
