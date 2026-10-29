@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>База знаний ESG</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F6F3}
+a{color:#1F6F4A}a:hover{color:#14492F}
+.nav-link{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border-radius:8px;color:#C9D6CE;text-decoration:none;font-size:15px}
+.nav-link:hover{background:#1E3329;color:#FFFFFF}
+.nav-active{background:#2A4A3A;color:#FFFFFF}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px;border:0;border-radius:8px;background:#1F6F4A;color:#FFFFFF;font:600 15px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn-primary:hover{background:#17583A;color:#FFFFFF}
+.btn-ghost{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid #CBD5CE;border-radius:8px;background:#FFFFFF;color:#17201B;font:500 14px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn-ghost:hover{border-color:#1F6F4A;color:#1F6F4A}
+.chip{display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border:1px solid #CBD5CE;border-radius:999px;background:#FFFFFF;color:#17201B;font:500 14px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.chip-on{background:#14231C;border-color:#14231C;color:#FFFFFF}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: #17201B; background: #F4F6F3">
+
+<nav aria-label="Разделы платформы" style="flex: 1 1 240px; background: #14231C; color: #E8EFEA; padding: 24px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px">
+<div style="display: flex; align-items: center; gap: 12px; padding: 0 8px">
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#7FC8A0" stroke-width="2" aria-hidden="true"><circle cx="8" cy="22" r="4"></circle><circle cx="24" cy="10" r="4"></circle><circle cx="24" cy="24" r="3"></circle><path d="M11 19l9-7M12 22h9"></path></svg>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 700; font-size: 16px; color: #FFFFFF">ESG Open Research</span>
+<span style="font-size: 12px; color: #A9BBB0">НИЦ ИИ · Университет «Дубна»</span>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<a class="nav-link" href="Main.dc.html">Обзор</a>
+<a class="nav-link nav-active" href="Knowledge.dc.html" aria-current="page">База знаний</a>
+<a class="nav-link" href="Experiments.dc.html">Эксперименты</a>
+<a class="nav-link" href="Run.dc.html">Запуск экспериментов</a>
+<a class="nav-link" href="Methodology.dc.html">Методология</a>
+</div>
+<div style="margin-top: auto; border-top: 1px solid #2A3C33; padding: 16px 8px 0; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #E8EFEA"><span style="width: 8px; height: 8px; border-radius: 50%; background: #5FBF8A"></span>Внутренняя сеть</div>
+<span style="font-size: 12px; color: #A9BBB0; line-height: 1.5">Доступ только из сети центра, вход по учётной записи</span>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 40px; background: #FFFFFF; border-bottom: 1px solid #DDE3DF">
+<div style="flex: 1 1 320px; display: flex">
+<label for="q-kb" class="sr-only">Поиск по базе знаний</label>
+<input id="q-kb" type="search" placeholder="Поиск по базе знаний: название, автор, тег, DOI…" style="flex: 1; min-height: 44px; padding: 0 14px; border: 1px solid #CBD5CE; border-radius: 8px; font: 15px 'IBM Plex Sans', sans-serif; color: #17201B; background: #F9FAF8">
+</div>
+<button type="button" class="btn-primary">+ Добавить карточку</button>
+<button type="button" aria-label="Профиль: Г. Стаценко" style="width: 44px; height: 44px; border-radius: 50%; border: 0; background: #DCEFE3; color: #145A37; font: 600 14px 'IBM Plex Sans', sans-serif; cursor: pointer">ГС</button>
+</header>
+
+<div style="max-width: 1180px; width: 100%; box-sizing: border-box; padding: 36px 40px 64px; display: flex; flex-direction: column; gap: 24px">
+
+<section style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h1 style="margin: 0; font-size: 32px; font-weight: 700">База знаний</h1>
+<p style="margin: 0; max-width: 700px; font-size: 16px; line-height: 1.55; color: #47564D">Каждая карточка имеет паспорт, первоисточник и связи с экспериментами. Карточка без источника не может быть основанием для изменения методологии.</p>
+</div>
+<div style="display: inline-flex; gap: 4px; padding: 4px; background: #E3E8E4; border-radius: 10px">
+<a href="Knowledge.dc.html" aria-current="page" style="display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 8px; background: #FFFFFF; color: #17201B; font-size: 14px; font-weight: 500; text-decoration: none; box-shadow: 0 1px 2px rgba(20,35,28,.12)">Список</a>
+<a href="Graph.dc.html" style="display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 8px; color: #47564D; font-size: 14px; font-weight: 500; text-decoration: none">Граф связей</a>
+</div>
+</section>
+
+<section aria-label="Фильтры" style="display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span style="font-size: 13px; color: #5A6B62; width: 96px">Тип</span>
+<sc-for list="{{types}}" as="t" hint-placeholder-count="5">
+<button type="button" class="{{t.cls}}" aria-pressed="{{t.on}}" onClick="{{t.pick}}">{{t.label}}</button>
+</sc-for>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span style="font-size: 13px; color: #5A6B62; width: 96px">Направление</span>
+<button type="button" class="chip chip-on">Все</button>
+<button type="button" class="chip">1 · СППР для менеджмента</button>
+<button type="button" class="chip">2 · Аудит методик для регуляторов</button>
+</div>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<section aria-label="Карточки" style="flex: 3 1 440px; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+<span style="font: 13px 'IBM Plex Mono', monospace; color: #5A6B62">{{shown}}</span>
+<sc-for list="{{cards}}" as="c" hint-placeholder-count="6">
+<button type="button" onClick="{{c.pick}}" style="text-align: left; display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; background: #FFFFFF; border-radius: 12px; cursor: pointer; font-family: inherit; color: #17201B; {{c.ring}}">
+<span style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span style="font: 500 12px 'IBM Plex Mono', monospace; color: #1F6F4A">{{c.typeLabel}}</span>
+<span style="font: 12px 'IBM Plex Mono', monospace; color: #5A6B62">{{c.dir}}</span>
+<span style="margin-left: auto; font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 999px; {{c.srcCss}}">{{c.src}}</span>
+</span>
+<span style="font-size: 16px; font-weight: 600; line-height: 1.35">{{c.title}}</span>
+<span style="font-size: 14px; line-height: 1.5; color: #5A6B62">{{c.text}}</span>
+<span style="font: 12px 'IBM Plex Mono', monospace; color: #47564D">{{c.links}}</span>
+</button>
+</sc-for>
+</section>
+
+<aside aria-label="Паспорт карточки" style="flex: 2 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px; padding: 22px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font: 500 12px 'IBM Plex Mono', monospace; color: #1F6F4A">{{sel.typeLabel}} · {{sel.id}}</span>
+<h2 style="margin: 0; font-size: 20px; line-height: 1.3">{{sel.title}}</h2>
+</div>
+<dl style="margin: 0; display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 10px 14px; font-size: 14px">
+<sc-for list="{{sel.passport}}" as="p" hint-placeholder-count="6">
+<dt style="color: #5A6B62">{{p.k}}</dt>
+<dd style="margin: 0; line-height: 1.45">{{p.v}}</dd>
+</sc-for>
+</dl>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h3 style="margin: 0; font-size: 14px; color: #47564D">Используется в</h3>
+<sc-for list="{{sel.used}}" as="u" hint-placeholder-count="2">
+<a href="Experiment.dc.html" style="font: 13px 'IBM Plex Mono', monospace">{{u}}</a>
+</sc-for>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px">
+<a class="btn-primary" href="Experiment.dc.html">Создать эксперимент на основе</a>
+<button type="button" class="btn-ghost">История правок</button>
+</div>
+</aside>
+</div>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { type: 'all', selected: 'DS-01' };
+  }
+  renderVals() {
+    var self = this;
+    var verified = 'background:#DCEFE3;color:#145A37';
+    var pending = 'background:#FBE8D0;color:#8A4A0F';
+    var all = [
+      { id: 'DS-01', type: 'ds', title: 'Dow30 — ESG-рейтинги трёх провайдеров', dir: 'Напр. 2', text: 'Оценки S&P, Sustainalytics и MSCI для компаний индекса Dow Jones 30.', links: '→ EXP-001', ok: true,
+        passport: [['Источник', '[ссылка на выгрузку]'], ['Объём', '30 компаний × 3 провайдера'], ['Поля', 'тикер, провайдер, ESG-оценка, дата оценки'], ['Лицензия', '[условия использования]'], ['Версия', '[хеш / дата среза]'], ['Ответственный', 'Г. Стаценко']], used: ['EXP-001 · Расхождение ESG-рейтингов'] },
+      { id: 'DS-02', type: 'ds', title: 'World Bank WGI', dir: 'Напр. 1', text: 'Индикаторы качества государственного управления; загрузка через API и ручной CSV-экспорт.', links: '→ EXP-003', ok: true,
+        passport: [['Источник', 'API Всемирного банка'], ['Объём', '[страны × годы]'], ['Поля', '6 индикаторов WGI'], ['Лицензия', 'CC BY 4.0'], ['Версия', '[дата загрузки]'], ['Скрипт', 'fetch_wgi_data.py']], used: ['EXP-003 · CatBoost + SHAP'] },
+      { id: 'DS-03', type: 'ds', title: 'Данные резидентов ОЭЗ', dir: 'Напр. 1', text: 'Корпоративные данные для каузального графа. Пока не получены.', links: '→ EXP-004 (заблокирован)', ok: false,
+        passport: [['Источник', '[договорённость с ОЭЗ]'], ['Статус', 'Ожидается'], ['Поля', '[согласовать]'], ['Доступ', 'Ограниченный, NDA'], ['Версия', '—'], ['Ответственный', '[ФИО]']], used: ['EXP-004 · Каузальный граф'] },
+      { id: 'M-01', type: 'm', title: 'AHP + KNN', dir: 'Методы', text: 'Иерархический анализ + ближайшие соседи; бенчмарк из публикации, воспроизводится скриптом.', links: '→ EXP-002', ok: true,
+        passport: [['Источник', '[DOI статьи]'], ['Задача', 'ESG-скоринг'], ['Входные данные', '[описать]'], ['Метрики', '[из статьи]'], ['Код', '[путь в репозитории]'], ['Ответственный', 'Г. Стаценко']], used: ['EXP-002 · Воспроизведение AHP + KNN'] },
+      { id: 'M-02', type: 'm', title: 'CatBoost + SHAP', dir: 'Методы', text: 'Градиентный бустинг для табличных ESG-признаков с объяснением вкладов через SHAP.', links: '→ EXP-003, EXP-006', ok: true,
+        passport: [['Источник', 'CatBoost, SHAP (документация)'], ['Задача', 'Регрессия ESG-оценки'], ['Интерпретация', 'SHAP-значения'], ['Ограничения', 'Не нейросеть: требование лаборатории'], ['Код', '[путь]'], ['Ответственный', 'Г. Стаценко']], used: ['EXP-003', 'EXP-006'] },
+      { id: 'A-01', type: 'a', title: '[Статья по направлению 1]', dir: 'Напр. 1', text: 'Карточка статьи из обзора: вопрос, метод, данные, результат, ограничения.', links: '→ обзор v3', ok: false,
+        passport: [['Источник', '[DOI]'], ['Тип', 'Эмпирическое исследование'], ['Метод', '[...]'], ['Данные', '[...]'], ['Включена в обзор', 'Да'], ['Ответственный', '[ФИО]']], used: [] },
+      { id: 'S-01', type: 's', title: 'PRISMA-ScR', dir: 'Стандарты', text: 'Протокол отчётности для scoping review: кандидат на оформление обзора.', links: '→ CR-02', ok: true,
+        passport: [['Источник', 'Tricco et al., 2018'], ['Тип', 'Стандарт отчётности'], ['Применение', 'Систематический обзор лаборатории'], ['Статус', 'Обсуждается'], ['Связь', 'CR-02'], ['Ответственный', '[ФИО]']], used: [] }
+    ];
+    var typeNames = { all: 'Все', m: 'Методы', a: 'Статьи', ds: 'Датасеты', s: 'Стандарты' };
+    var typeLabels = { m: 'МЕТОД', a: 'СТАТЬЯ', ds: 'ДАТАСЕТ', s: 'СТАНДАРТ' };
+    var t = this.state.type;
+    var list = all.filter(function (c) { return t === 'all' || c.type === t; });
+    var selRaw = all.filter(function (c) { return c.id === self.state.selected; })[0] || all[0];
+    return {
+      types: ['all', 'm', 'a', 'ds', 's'].map(function (k) {
+        return { label: typeNames[k], on: k === t ? 'true' : 'false', cls: k === t ? 'chip chip-on' : 'chip', pick: function () { self.setState({ type: k }); } };
+      }),
+      shown: 'Показано: ' + list.length + ' из ' + all.length,
+      cards: list.map(function (c) {
+        return { title: c.title, text: c.text, dir: c.dir, links: c.links, typeLabel: typeLabels[c.type],
+          src: c.ok ? 'Источник проверен' : 'Требует источника', srcCss: c.ok ? verified : pending,
+          ring: c.id === self.state.selected ? 'border: 2px solid #1F6F4A' : 'border: 1px solid #DDE3DF',
+          pick: function () { self.setState({ selected: c.id }); } };
+      }),
+      sel: { id: selRaw.id, title: selRaw.title, typeLabel: typeLabels[selRaw.type],
+        passport: selRaw.passport.map(function (p) { return { k: p[0], v: p[1] }; }),
+        used: selRaw.used.length ? selRaw.used : ['Пока не используется'] }
+    };
+  }
+}
+</script>
+</body>
+</html>

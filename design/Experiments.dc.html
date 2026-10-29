@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Реестр экспериментов</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F6F3}
+a{color:#1F6F4A}a:hover{color:#14492F}
+.nav-link{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border-radius:8px;color:#C9D6CE;text-decoration:none;font-size:15px}
+.nav-link:hover{background:#1E3329;color:#FFFFFF}
+.nav-active{background:#2A4A3A;color:#FFFFFF}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px;border:0;border-radius:8px;background:#1F6F4A;color:#FFFFFF;font:600 15px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn-primary:hover{background:#17583A;color:#FFFFFF}
+.btn-ghost{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid #CBD5CE;border-radius:8px;background:#FFFFFF;color:#17201B;font:500 14px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn-ghost:hover{border-color:#1F6F4A;color:#1F6F4A}
+.chip{display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border:1px solid #CBD5CE;border-radius:999px;background:#FFFFFF;color:#17201B;font:500 14px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.chip-on{background:#14231C;border-color:#14231C;color:#FFFFFF}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+th{font-weight:500;font-size:13px;color:#5A6B62;text-align:left;padding:12px 14px;border-bottom:1px solid #DDE3DF;white-space:nowrap;background:#F9FAF8}
+td{padding:14px;border-bottom:1px solid #EEF2EF;font-size:14px;vertical-align:top}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: #17201B; background: #F4F6F3">
+
+<nav aria-label="Разделы платформы" style="flex: 1 1 240px; background: #14231C; color: #E8EFEA; padding: 24px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px">
+<div style="display: flex; align-items: center; gap: 12px; padding: 0 8px">
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#7FC8A0" stroke-width="2" aria-hidden="true"><circle cx="8" cy="22" r="4"></circle><circle cx="24" cy="10" r="4"></circle><circle cx="24" cy="24" r="3"></circle><path d="M11 19l9-7M12 22h9"></path></svg>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 700; font-size: 16px; color: #FFFFFF">ESG Open Research</span>
+<span style="font-size: 12px; color: #A9BBB0">НИЦ ИИ · Университет «Дубна»</span>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<a class="nav-link" href="Main.dc.html">Обзор</a>
+<a class="nav-link" href="Knowledge.dc.html">База знаний</a>
+<a class="nav-link nav-active" href="Experiments.dc.html" aria-current="page">Эксперименты</a>
+<a class="nav-link" href="Run.dc.html">Запуск экспериментов</a>
+<a class="nav-link" href="Methodology.dc.html">Методология</a>
+</div>
+<div style="margin-top: auto; border-top: 1px solid #2A3C33; padding: 16px 8px 0; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #E8EFEA"><span style="width: 8px; height: 8px; border-radius: 50%; background: #5FBF8A"></span>Внутренняя сеть</div>
+<span style="font-size: 12px; color: #A9BBB0; line-height: 1.5">Доступ только из сети центра, вход по учётной записи</span>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 40px; background: #FFFFFF; border-bottom: 1px solid #DDE3DF">
+<div style="flex: 1 1 320px; display: flex">
+<label for="q-ex" class="sr-only">Поиск экспериментов</label>
+<input id="q-ex" type="search" placeholder="Поиск по ID, названию, датасету, автору…" style="flex: 1; min-height: 44px; padding: 0 14px; border: 1px solid #CBD5CE; border-radius: 8px; font: 15px 'IBM Plex Sans', sans-serif; color: #17201B; background: #F9FAF8">
+</div>
+<a class="btn-primary" href="Run.dc.html">+ Новый эксперимент</a>
+<button type="button" aria-label="Профиль: Г. Стаценко" style="width: 44px; height: 44px; border-radius: 50%; border: 0; background: #DCEFE3; color: #145A37; font: 600 14px 'IBM Plex Sans', sans-serif; cursor: pointer">ГС</button>
+</header>
+
+<div style="max-width: 1180px; width: 100%; box-sizing: border-box; padding: 36px 40px 64px; display: flex; flex-direction: column; gap: 24px">
+
+<section style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<h1 style="margin: 0; font-size: 32px; font-weight: 700">Реестр экспериментов</h1>
+<p style="margin: 0; max-width: 680px; font-size: 16px; line-height: 1.55; color: #47564D">Каждый эксперимент привязан к гипотезе, версии данных и версии методологии, на которую он влияет.</p>
+</div>
+<button type="button" class="btn-ghost" aria-disabled="{{cmpDisabled}}">{{cmpLabel}}</button>
+</section>
+
+<section aria-label="Фильтры" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span style="font-size: 13px; color: #5A6B62; margin-right: 4px">Статус</span>
+<sc-for list="{{filters}}" as="f" hint-placeholder-count="5">
+<button type="button" class="{{f.cls}}" aria-pressed="{{f.on}}" onClick="{{f.pick}}">{{f.label}}</button>
+</sc-for>
+</section>
+
+<div style="overflow-x: auto; background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px">
+<table style="width: 100%; min-width: 960px; border-collapse: collapse">
+<thead>
+<tr>
+<th scope="col"><span class="sr-only">Выбрать для сравнения</span></th>
+<th scope="col">ID</th>
+<th scope="col">Эксперимент</th>
+<th scope="col">Направление</th>
+<th scope="col">Статус</th>
+<th scope="col">Данные</th>
+<th scope="col">Ключевой результат</th>
+<th scope="col">Методология</th>
+</tr>
+</thead>
+<tbody>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+<tr>
+<td style="width: 44px"><input type="checkbox" aria-label="{{r.cbLabel}}" checked="{{r.checked}}" onChange="{{r.toggle}}" style="width: 20px; height: 20px; accent-color: #1F6F4A"></td>
+<td style="font: 500 13px 'IBM Plex Mono', monospace; white-space: nowrap"><a href="Experiment.dc.html">{{r.id}}</a></td>
+<td style="min-width: 240px"><a href="Experiment.dc.html" style="color: #17201B; font-weight: 600; text-decoration: none">{{r.title}}</a><div style="font-size: 13px; color: #5A6B62; margin-top: 4px">{{r.author}}</div></td>
+<td style="white-space: nowrap; color: #47564D">{{r.dir}}</td>
+<td><span style="display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 500; white-space: nowrap; {{r.pill}}">{{r.status}}</span></td>
+<td style="color: #47564D; min-width: 160px">{{r.data}}</td>
+<td style="font: 13px 'IBM Plex Mono', monospace; color: #17201B; min-width: 220px; line-height: 1.5; white-space: pre-line">{{r.result}}</td>
+<td style="font: 13px 'IBM Plex Mono', monospace; color: #47564D; white-space: nowrap">{{r.cr}}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+
+<p style="margin: 0; font-size: 13px; color: #5A6B62">Статусы и даты в макете иллюстративные — заменить фактическими перед наполнением.</p>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { f: 'all', picked: { 'EXP-001': true } };
+  }
+  renderVals() {
+    var self = this;
+    var ST = {
+      done: { label: 'Завершён', css: 'background:#DCEFE3;color:#145A37' },
+      review: { label: 'На проверке', css: 'background:#FBE8D0;color:#8A4A0F' },
+      run: { label: 'В работе', css: 'background:#DCE8F7;color:#1D4E89' },
+      plan: { label: 'Запланирован', css: 'background:#ECEEEC;color:#4A554F' }
+    };
+    var all = [
+      { id: 'EXP-001', title: 'Расхождение ESG-рейтингов провайдеров на Dow30', dir: 'Напр. 2', s: 'done', data: 'DS-01 · Dow30 (S&P, Sustainalytics, MSCI)', result: 'ρ(S&P, MSCI) = 0.27\nρ(Sust., MSCI) = −0.32\nρ(S&P, Sust.) ≈ 0.00', cr: 'CR-03', author: 'Г. Стаценко · [дата]' },
+      { id: 'EXP-002', title: 'Воспроизведение бенчмарка AHP + KNN', dir: 'Методы', s: 'review', data: 'Данные из публикации', result: 'Сверка с опубликованными метриками', cr: '—', author: 'Г. Стаценко · [дата]' },
+      { id: 'EXP-003', title: 'Прототип CatBoost + SHAP для ESG-оценки', dir: 'Напр. 1', s: 'run', data: '[уточнить датасет]', result: '—', cr: 'CR-04', author: 'Г. Стаценко · [дата]' },
+      { id: 'EXP-004', title: 'Каузальный граф: ESG-факторы → финансовые результаты', dir: 'Напр. 1', s: 'plan', data: 'DS-03 · резиденты ОЭЗ (ожидаются)', result: 'Заблокирован данными', cr: '—', author: '[ответственный]' },
+      { id: 'EXP-005', title: 'Рекомендательная модель для аудита методик рейтинговых агентств', dir: 'Напр. 2', s: 'plan', data: 'DS-01 + [методики агентств]', result: '—', cr: '—', author: '[ответственный]' },
+      { id: 'EXP-006', title: 'Модульный ансамбль: бустинг + нейросеть на табличных ESG-данных', dir: 'Методы', s: 'plan', data: '[уточнить]', result: '—', cr: 'CR-04', author: '[ответственный]' }
+    ];
+    var names = { all: 'Все', done: 'Завершён', review: 'На проверке', run: 'В работе', plan: 'Запланирован' };
+    var f = this.state.f;
+    var picked = this.state.picked;
+    var n = Object.keys(picked).filter(function (k) { return picked[k]; }).length;
+    return {
+      filters: ['all', 'done', 'review', 'run', 'plan'].map(function (k) {
+        var cnt = k === 'all' ? all.length : all.filter(function (e) { return e.s === k; }).length;
+        return { label: names[k] + ' · ' + cnt, on: k === f ? 'true' : 'false', cls: k === f ? 'chip chip-on' : 'chip', pick: function () { self.setState({ f: k }); } };
+      }),
+      rows: all.filter(function (e) { return f === 'all' || e.s === f; }).map(function (e) {
+        return { id: e.id, title: e.title, dir: e.dir, data: e.data, result: e.result, cr: e.cr, author: e.author,
+          status: ST[e.s].label, pill: ST[e.s].css, checked: !!picked[e.id], cbLabel: 'Сравнить ' + e.id,
+          toggle: function () { var p = Object.assign({}, self.state.picked); p[e.id] = !p[e.id]; self.setState({ picked: p }); } };
+      }),
+      cmpLabel: 'Сравнить выбранные (' + n + ')',
+      cmpDisabled: n < 2 ? 'true' : 'false'
+    };
+  }
+}
+</script>
+</body>
+</html>

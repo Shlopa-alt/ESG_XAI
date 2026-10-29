@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Обзор платформы</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F6F3}
+a{color:#1F6F4A}a:hover{color:#14492F}
+.nav-link{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border-radius:8px;color:#C9D6CE;text-decoration:none;font-size:15px}
+.nav-link:hover{background:#1E3329;color:#FFFFFF}
+.nav-active{background:#2A4A3A;color:#FFFFFF}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px;border:0;border-radius:8px;background:#1F6F4A;color:#FFFFFF;font:600 15px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn-primary:hover{background:#17583A;color:#FFFFFF}
+.btn-ghost{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid #CBD5CE;border-radius:8px;background:#FFFFFF;color:#17201B;font:500 14px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn-ghost:hover{border-color:#1F6F4A;color:#1F6F4A}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: #17201B; background: #F4F6F3">
+
+<nav aria-label="Разделы платформы" style="flex: 1 1 240px; background: #14231C; color: #E8EFEA; padding: 24px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px">
+<div style="display: flex; align-items: center; gap: 12px; padding: 0 8px">
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#7FC8A0" stroke-width="2" aria-hidden="true"><circle cx="8" cy="22" r="4"></circle><circle cx="24" cy="10" r="4"></circle><circle cx="24" cy="24" r="3"></circle><path d="M11 19l9-7M12 22h9"></path></svg>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 700; font-size: 16px; color: #FFFFFF">ESG Open Research</span>
+<span style="font-size: 12px; color: #A9BBB0">НИЦ ИИ · Университет «Дубна»</span>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<a class="nav-link nav-active" href="Main.dc.html" aria-current="page">Обзор</a>
+<a class="nav-link" href="Knowledge.dc.html">База знаний</a>
+<a class="nav-link" href="Experiments.dc.html">Эксперименты</a>
+<a class="nav-link" href="Run.dc.html">Запуск экспериментов</a>
+<a class="nav-link" href="Methodology.dc.html">Методология</a>
+</div>
+<div style="margin-top: auto; border-top: 1px solid #2A3C33; padding: 16px 8px 0; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #E8EFEA"><span style="width: 8px; height: 8px; border-radius: 50%; background: #5FBF8A"></span>Внутренняя сеть</div>
+<span style="font-size: 12px; color: #A9BBB0; line-height: 1.5">Доступ только из сети центра, вход по учётной записи</span>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 40px; background: #FFFFFF; border-bottom: 1px solid #DDE3DF">
+<div style="flex: 1 1 320px; display: flex">
+<label for="q-main" class="sr-only">Поиск по платформе</label>
+<input id="q-main" type="search" placeholder="Поиск: методы, датасеты, эксперименты, ID…" style="flex: 1; min-height: 44px; padding: 0 14px; border: 1px solid #CBD5CE; border-radius: 8px; font: 15px 'IBM Plex Sans', sans-serif; color: #17201B; background: #F9FAF8">
+</div>
+<a class="btn-primary" href="Run.dc.html">+ Новый эксперимент</a>
+<button type="button" aria-label="Профиль: Г. Стаценко" style="width: 44px; height: 44px; border-radius: 50%; border: 0; background: #DCEFE3; color: #145A37; font: 600 14px 'IBM Plex Sans', sans-serif; cursor: pointer">ГС</button>
+</header>
+
+<div style="max-width: 1180px; width: 100%; box-sizing: border-box; padding: 36px 40px 64px; display: flex; flex-direction: column; gap: 36px">
+
+<section style="display: flex; flex-direction: column; gap: 10px">
+<span style="font: 500 13px 'IBM Plex Mono', monospace; color: #1F6F4A; letter-spacing: 0.04em">ЛАБОРАТОРИЯ · ИНС В ESG-УПРАВЛЕНИИ</span>
+<h1 style="margin: 0; font-size: 36px; line-height: 1.15; font-weight: 700">Открытые исследования ESG</h1>
+<p style="margin: 0; max-width: 760px; font-size: 17px; line-height: 1.55; color: #47564D">Методология дорабатывается по циклу: источник в базе знаний порождает гипотезу, гипотеза проверяется экспериментом, а результат становится обоснованием изменения методологии.</p>
+</section>
+
+<section aria-label="Исследовательский цикл" style="display: flex; flex-wrap: wrap; gap: 12px">
+<sc-for list="{{cycle}}" as="s" hint-placeholder-count="4">
+<a href="{{s.href}}" style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 8px; padding: 18px; background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px; text-decoration: none; color: #17201B">
+<span style="font: 500 12px 'IBM Plex Mono', monospace; color: #5A6B62">{{s.n}}</span>
+<span style="font-size: 17px; font-weight: 600">{{s.title}}</span>
+<span style="font-size: 14px; line-height: 1.5; color: #5A6B62">{{s.text}}</span>
+<span style="margin-top: auto; font: 500 13px 'IBM Plex Mono', monospace; color: #1F6F4A">{{s.count}}</span>
+</a>
+</sc-for>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<section style="flex: 3 1 460px; min-width: 0; background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px; overflow: hidden">
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 18px 20px; border-bottom: 1px solid #E7ECE8">
+<h2 style="margin: 0; font-size: 18px">Последние эксперименты</h2>
+<a href="Experiments.dc.html" style="font-size: 14px">Весь реестр →</a>
+</div>
+<sc-for list="{{experiments}}" as="e" hint-placeholder-count="4">
+<a href="Experiment.dc.html" style="display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #EEF2EF; text-decoration: none; color: #17201B">
+<span style="font: 500 13px 'IBM Plex Mono', monospace; color: #5A6B62; width: 72px">{{e.id}}</span>
+<span style="flex: 1 1 260px; font-size: 15px; font-weight: 500">{{e.title}}</span>
+<span style="display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 500; {{e.pill}}">{{e.status}}</span>
+<span style="flex-basis: 100%; padding-left: 88px; font: 13px 'IBM Plex Mono', monospace; color: #47564D">{{e.result}}</span>
+</a>
+</sc-for>
+</section>
+
+<section style="flex: 2 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 18px">Открытые вопросы методологии</h2>
+<sc-for list="{{questions}}" as="q" hint-placeholder-count="3">
+<div style="padding: 16px; background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 15px; font-weight: 600; line-height: 1.4">{{q.title}}</span>
+<span style="font-size: 14px; line-height: 1.5; color: #5A6B62">{{q.text}}</span>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+<span style="font: 12px 'IBM Plex Mono', monospace; color: #47564D; background: #F0F3F1; padding: 4px 8px; border-radius: 6px">{{q.link}}</span>
+<a href="Methodology.dc.html" style="font-size: 13px; margin-left: auto">Открыть →</a>
+</div>
+</div>
+</sc-for>
+</section>
+</div>
+
+<section style="display: flex; flex-direction: column; gap: 14px">
+<div style="display: flex; justify-content: space-between; align-items: center">
+<h2 style="margin: 0; font-size: 18px">Новое в базе знаний</h2>
+<a href="Knowledge.dc.html" style="font-size: 14px">Вся база →</a>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<sc-for list="{{kb}}" as="k" hint-placeholder-count="4">
+<a href="Knowledge.dc.html" style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 8px; padding: 16px; background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px; text-decoration: none; color: #17201B">
+<span style="font: 500 12px 'IBM Plex Mono', monospace; color: #1F6F4A">{{k.type}}</span>
+<span style="font-size: 15px; font-weight: 600; line-height: 1.4">{{k.title}}</span>
+<span style="font-size: 13px; color: #5A6B62">{{k.meta}}</span>
+</a>
+</sc-for>
+</div>
+</section>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var ST = {
+      done: { label: 'Завершён', css: 'background:#DCEFE3;color:#145A37' },
+      review: { label: 'На проверке', css: 'background:#FBE8D0;color:#8A4A0F' },
+      run: { label: 'В работе', css: 'background:#DCE8F7;color:#1D4E89' },
+      plan: { label: 'Запланирован', css: 'background:#ECEEEC;color:#4A554F' }
+    };
+    var ex = [
+      { id: 'EXP-001', title: 'Расхождение ESG-рейтингов провайдеров на Dow30', s: 'done', result: 'ρ(S&P, MSCI) = 0.27 · ρ(Sust., MSCI) = −0.32 · ρ(S&P, Sust.) ≈ 0.00' },
+      { id: 'EXP-002', title: 'Воспроизведение бенчмарка AHP + KNN', s: 'review', result: 'Скрипт воспроизведения готов, идёт сверка с публикацией' },
+      { id: 'EXP-003', title: 'Прототип CatBoost + SHAP для ESG-оценки', s: 'run', result: 'Результаты ещё не зафиксированы' },
+      { id: 'EXP-004', title: 'Каузальный граф: ESG-факторы → финансовые результаты', s: 'plan', result: 'Блокер: данные резидентов ОЭЗ' }
+    ];
+    return {
+      cycle: [
+        { n: '01', title: 'База знаний', text: 'Методы, статьи, датасеты и стандарты с паспортами и ссылками на первоисточник.', count: '9 карточек →', href: 'Knowledge.dc.html' },
+        { n: '02', title: 'Гипотеза', text: 'Открытый вопрос методологии формулируется как проверяемое утверждение.', count: '3 открытых вопроса →', href: 'Methodology.dc.html' },
+        { n: '03', title: 'Эксперимент', text: 'Воспроизводимый запуск: версия данных, код, окружение, метрики.', count: '6 в реестре →', href: 'Experiments.dc.html' },
+        { n: '04', title: 'Изменение методологии', text: 'Предложение с обоснованием, рецензией и новой версией документа.', count: 'Текущая: v0.2 →', href: 'Methodology.dc.html' }
+      ],
+      experiments: ex.map(function (e) { return { id: e.id, title: e.title, result: e.result, status: ST[e.s].label, pill: ST[e.s].css }; }),
+      questions: [
+        { title: 'Что считать целевой переменной, если рейтинги провайдеров расходятся?', text: 'Корреляции между S&P, Sustainalytics и MSCI близки к нулю или отрицательны, единичный рейтинг не годится как «истина».', link: 'EXP-001 · CR-03' },
+        { title: 'Нейросеть или градиентный бустинг на табличных ESG-данных?', text: 'Бустинг обычно сильнее на таблицах; рассматривается модульный ансамбль.', link: 'EXP-003 · EXP-006 · CR-04' },
+        { title: 'Оформить обзор как scoping review по PRISMA-ScR?', text: 'Вместо «адаптированного PRISMA с отклонениями».', link: 'CR-02' }
+      ],
+      kb: [
+        { type: 'ДАТАСЕТ', title: 'Dow30 — ESG-рейтинги трёх провайдеров', meta: 'S&P · Sustainalytics · MSCI' },
+        { type: 'МЕТОД', title: 'AHP + KNN (бенчмарк)', meta: 'Связан с EXP-002' },
+        { type: 'ДАТАСЕТ', title: 'World Bank WGI', meta: 'Источник: API Всемирного банка' },
+        { type: 'СТАНДАРТ', title: 'PRISMA-ScR', meta: 'Протокол scoping review' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

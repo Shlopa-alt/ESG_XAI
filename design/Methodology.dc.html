@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Методология</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F6F3}
+a{color:#1F6F4A}a:hover{color:#14492F}
+.nav-link{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border-radius:8px;color:#C9D6CE;text-decoration:none;font-size:15px}
+.nav-link:hover{background:#1E3329;color:#FFFFFF}
+.nav-active{background:#2A4A3A;color:#FFFFFF}
+.btn-primary{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px;border:0;border-radius:8px;background:#1F6F4A;color:#FFFFFF;font:600 15px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn-primary:hover{background:#17583A;color:#FFFFFF}
+.btn-ghost{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid #CBD5CE;border-radius:8px;background:#FFFFFF;color:#17201B;font:500 14px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn-ghost:hover{border-color:#1F6F4A;color:#1F6F4A}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: #17201B; background: #F4F6F3">
+
+<nav aria-label="Разделы платформы" style="flex: 1 1 240px; background: #14231C; color: #E8EFEA; padding: 24px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px">
+<div style="display: flex; align-items: center; gap: 12px; padding: 0 8px">
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#7FC8A0" stroke-width="2" aria-hidden="true"><circle cx="8" cy="22" r="4"></circle><circle cx="24" cy="10" r="4"></circle><circle cx="24" cy="24" r="3"></circle><path d="M11 19l9-7M12 22h9"></path></svg>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 700; font-size: 16px; color: #FFFFFF">ESG Open Research</span>
+<span style="font-size: 12px; color: #A9BBB0">НИЦ ИИ · Университет «Дубна»</span>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<a class="nav-link" href="Main.dc.html">Обзор</a>
+<a class="nav-link" href="Knowledge.dc.html">База знаний</a>
+<a class="nav-link" href="Experiments.dc.html">Эксперименты</a>
+<a class="nav-link" href="Run.dc.html">Запуск экспериментов</a>
+<a class="nav-link nav-active" href="Methodology.dc.html" aria-current="page">Методология</a>
+</div>
+<div style="margin-top: auto; border-top: 1px solid #2A3C33; padding: 16px 8px 0; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #E8EFEA"><span style="width: 8px; height: 8px; border-radius: 50%; background: #5FBF8A"></span>Внутренняя сеть</div>
+<span style="font-size: 12px; color: #A9BBB0; line-height: 1.5">Доступ только из сети центра, вход по учётной записи</span>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 40px; background: #FFFFFF; border-bottom: 1px solid #DDE3DF">
+<div style="flex: 1 1 320px; display: flex">
+<label for="q-m" class="sr-only">Поиск по методологии</label>
+<input id="q-m" type="search" placeholder="Поиск по разделам и предложениям…" style="flex: 1; min-height: 44px; padding: 0 14px; border: 1px solid #CBD5CE; border-radius: 8px; font: 15px 'IBM Plex Sans', sans-serif; color: #17201B; background: #F9FAF8">
+</div>
+<button type="button" class="btn-primary">+ Предложить изменение</button>
+<button type="button" aria-label="Профиль: Г. Стаценко" style="width: 44px; height: 44px; border-radius: 50%; border: 0; background: #DCEFE3; color: #145A37; font: 600 14px 'IBM Plex Sans', sans-serif; cursor: pointer">ГС</button>
+</header>
+
+<div style="max-width: 1180px; width: 100%; box-sizing: border-box; padding: 36px 40px 64px; display: flex; flex-direction: column; gap: 28px">
+
+<section style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font: 500 13px 'IBM Plex Mono', monospace; color: #1F6F4A">ТЕКУЩАЯ ВЕРСИЯ · v0.2 · ЧЕРНОВИК</span>
+<h1 style="margin: 0; font-size: 32px; font-weight: 700">Методология</h1>
+<p style="margin: 0; max-width: 720px; font-size: 16px; line-height: 1.55; color: #47564D">Живой документ. Раздел меняется только через предложение (CR) с обоснованием из эксперимента или проверенного источника и хотя бы одной рецензией.</p>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button type="button" class="btn-ghost">Сравнить версии</button>
+<button type="button" class="btn-ghost">Экспорт .docx</button>
+</div>
+</section>
+
+<section aria-label="Разделы документа" style="background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px; overflow: hidden">
+<div style="padding: 16px 20px; border-bottom: 1px solid #E7ECE8"><h2 style="margin: 0; font-size: 18px">Разделы и их устойчивость</h2></div>
+<sc-for list="{{sections}}" as="s" hint-placeholder-count="7">
+<div style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #EEF2EF">
+<span style="font: 500 13px 'IBM Plex Mono', monospace; color: #5A6B62; width: 28px">{{s.n}}</span>
+<span style="flex: 1 1 280px; font-size: 15px; font-weight: 500">{{s.title}}</span>
+<span style="display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 500; {{s.css}}">{{s.state}}</span>
+<span style="width: 120px; font: 13px 'IBM Plex Mono', monospace; color: #47564D; text-align: right">{{s.cr}}</span>
+</div>
+</sc-for>
+</section>
+
+<section aria-label="Предложения изменений" style="display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 18px">Предложения изменений</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<sc-for list="{{columns}}" as="col" hint-placeholder-count="4">
+<div style="flex: 1 1 220px; min-width: 0; background: #E9EDEA; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px">
+<span style="font-size: 14px; font-weight: 600; padding: 4px 4px 0">{{col.title}} <span style="font-weight: 400; color: #5A6B62">· {{col.count}}</span></span>
+<sc-for list="{{col.items}}" as="c" hint-placeholder-count="1">
+<a href="Experiment.dc.html" style="display: flex; flex-direction: column; gap: 8px; padding: 14px; background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 10px; text-decoration: none; color: #17201B">
+<span style="font: 500 12px 'IBM Plex Mono', monospace; color: #5A6B62">{{c.id}} · раздел {{c.sec}}</span>
+<span style="font-size: 15px; font-weight: 600; line-height: 1.35">{{c.title}}</span>
+<span style="font: 12px 'IBM Plex Mono', monospace; color: #1F6F4A">Основание: {{c.basis}}</span>
+</a>
+</sc-for>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section aria-label="История версий" style="background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 18px">История версий</h2>
+<ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 0">
+<sc-for list="{{versions}}" as="v" hint-placeholder-count="3">
+<li style="display: flex; gap: 16px; align-items: flex-start; padding: 10px 0; border-left: 2px solid #CBD5CE; padding-left: 18px; margin-left: 6px">
+<span style="font: 500 14px 'IBM Plex Mono', monospace; width: 48px; {{v.css}}">{{v.v}}</span>
+<span style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 15px; font-weight: 500">{{v.title}}</span>
+<span style="font-size: 13px; color: #5A6B62">{{v.meta}}</span>
+</span>
+</li>
+</sc-for>
+</ol>
+</section>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1400}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var stable = 'background:#DCEFE3;color:#145A37';
+    var draft = 'background:#ECEEEC;color:#4A554F';
+    var contested = 'background:#FBE8D0;color:#8A4A0F';
+    var cr = [
+      { id: 'CR-01', sec: '1', title: 'Два направления: СППР для менеджмента и рекомендательная система для регуляторов', basis: 'заявка гранта', col: 'acc' },
+      { id: 'CR-02', sec: '7', title: 'Оформить обзор как scoping review по PRISMA-ScR', basis: 'S-01 · PRISMA-ScR', col: 'new' },
+      { id: 'CR-03', sec: '3', title: 'Не использовать единичный рейтинг провайдера как целевую переменную', basis: 'EXP-001', col: 'rev' },
+      { id: 'CR-04', sec: '4', title: 'Модульный ансамбль: бустинг для таблиц + нейросетевой модуль', basis: 'EXP-003, EXP-006 (в работе)', col: 'new' }
+    ];
+    var cols = [['new', 'Предложено'], ['rev', 'На рецензии'], ['acc', 'Принято'], ['rej', 'Отклонено']];
+    return {
+      sections: [
+        { n: '1', title: 'Цели и направления исследования', state: 'Устойчив', css: stable, cr: 'CR-01' },
+        { n: '2', title: 'Источники данных и требования к паспорту датасета', state: 'Черновик', css: draft, cr: '—' },
+        { n: '3', title: 'Целевая переменная и разметка', state: 'Оспаривается', css: contested, cr: 'CR-03' },
+        { n: '4', title: 'Модели и архитектура', state: 'Оспаривается', css: contested, cr: 'CR-04' },
+        { n: '5', title: 'Валидация и метрики', state: 'Черновик', css: draft, cr: '—' },
+        { n: '6', title: 'Интерпретируемость (SHAP и др.)', state: 'Черновик', css: draft, cr: '—' },
+        { n: '7', title: 'Протокол обзора литературы', state: 'Оспаривается', css: contested, cr: 'CR-02' }
+      ],
+      columns: cols.map(function (c) {
+        var items = cr.filter(function (x) { return x.col === c[0]; });
+        return { title: c[1], count: items.length, items: items };
+      }),
+      versions: [
+        { v: 'v0.3', title: 'Планируется: CR-03 после рецензии', meta: '[дата]', css: 'color:#8A4A0F' },
+        { v: 'v0.2', title: '[Изменения версии]', meta: '[дата] · текущая', css: 'color:#1F6F4A' },
+        { v: 'v0.1', title: 'Базовая постановка: CR-01', meta: '[дата]', css: 'color:#47564D' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
