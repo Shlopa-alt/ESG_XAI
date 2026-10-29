@@ -1,0 +1,24 @@
+# Доступ только из подсети центра (переменная ALLOWED_SUBNET).
+# TLS внутренним сертификатом подключается на этапе 7.
+server {
+  listen 80;
+
+  allow ${ALLOWED_SUBNET};
+  deny all;
+
+  location /api/ {
+    proxy_pass http://backend:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # SSE (/api/runs/{id}/stream) не должен буферизоваться
+    proxy_buffering off;
+    proxy_read_timeout 1h;
+  }
+
+  location / {
+    proxy_pass http://frontend:80;
+    proxy_set_header Host $host;
+  }
+}

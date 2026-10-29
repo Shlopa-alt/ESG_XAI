@@ -1,0 +1,62 @@
+name: esg-open-research
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: esg
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в deploy/.env}
+      POSTGRES_DB: esg
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U esg -d esg"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+
+  mlflow:
+    build: ./mlflow
+    volumes:
+      - mlflowdata:/mlflow
+
+  backend:
+    build: ../backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://esg:${POSTGRES_PASSWORD}@postgres:5432/esg
+      SECRET_KEY: ${SECRET_KEY:?задайте SECRET_KEY в deploy/.env}
+      AUTH_BACKEND: ${AUTH_BACKEND:-ldap}
+      LOCAL_DEV_PASSWORD: ${LOCAL_DEV_PASSWORD:-dev}
+      LOCAL_DEV_ROLE: ${LOCAL_DEV_ROLE:-researcher}
+      LDAP_SERVER: ${LDAP_SERVER:-ldap://ldap.example.local}
+      LDAP_USER_DN_TEMPLATE: ${LDAP_USER_DN_TEMPLATE:-uid={login},ou=people,dc=example,dc=local}
+      LDAP_USE_SSL: ${LDAP_USE_SSL:-false}
+      INITIAL_OWNER_LOGINS: ${INITIAL_OWNER_LOGINS:-[]}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ../frontend
+
+  nginx:
+    image: nginx:1.27-alpine
+    environment:
+      ALLOWED_SUBNET: ${ALLOWED_SUBNET:-0.0.0.0/0}
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  pgdata:
+  redisdata:
+  mlflowdata:
