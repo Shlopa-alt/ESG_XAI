@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Запуск эксперимента</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F4F6F3}
+a{color:#1F6F4A}a:hover{color:#14492F}
+.nav-link{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 12px;border-radius:8px;color:#C9D6CE;text-decoration:none;font-size:15px}
+.nav-link:hover{background:#1E3329;color:#FFFFFF}
+.nav-active{background:#2A4A3A;color:#FFFFFF}
+.btn-primary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border:0;border-radius:8px;background:#1F6F4A;color:#FFFFFF;font:600 15px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn-primary:hover{background:#17583A;color:#FFFFFF}
+.btn-ghost{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border:1px solid #CBD5CE;border-radius:8px;background:#FFFFFF;color:#17201B;font:500 14px 'IBM Plex Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn-ghost:hover{border-color:#1F6F4A;color:#1F6F4A}
+.btn-stop{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;border:1px solid #D9A06A;border-radius:8px;background:#FFF6EC;color:#7A3F0B;font:600 14px 'IBM Plex Sans',sans-serif;cursor:pointer}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label,.lbl{font-size:13px;font-weight:500;color:#47564D}
+.inp{min-height:44px;padding:0 12px;border:1px solid #CBD5CE;border-radius:8px;font:15px 'IBM Plex Sans',sans-serif;color:#17201B;background:#FFFFFF;box-sizing:border-box;width:100%}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: #17201B; background: #F4F6F3">
+
+<nav aria-label="Разделы платформы" style="flex: 1 1 240px; background: #14231C; color: #E8EFEA; padding: 24px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px">
+<div style="display: flex; align-items: center; gap: 12px; padding: 0 8px">
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="#7FC8A0" stroke-width="2" aria-hidden="true"><circle cx="8" cy="22" r="4"></circle><circle cx="24" cy="10" r="4"></circle><circle cx="24" cy="24" r="3"></circle><path d="M11 19l9-7M12 22h9"></path></svg>
+<div style="display: flex; flex-direction: column">
+<span style="font-weight: 700; font-size: 16px; color: #FFFFFF">ESG Open Research</span>
+<span style="font-size: 12px; color: #A9BBB0">НИЦ ИИ · Университет «Дубна»</span>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px">
+<a class="nav-link" href="Main.dc.html">Обзор</a>
+<a class="nav-link" href="Knowledge.dc.html">База знаний</a>
+<a class="nav-link" href="Experiments.dc.html">Эксперименты</a>
+<a class="nav-link nav-active" href="Run.dc.html" aria-current="page">Запуск экспериментов</a>
+<a class="nav-link" href="Methodology.dc.html">Методология</a>
+</div>
+<div style="margin-top: auto; border-top: 1px solid #2A3C33; padding: 16px 8px 0; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #E8EFEA"><span style="width: 8px; height: 8px; border-radius: 50%; background: #5FBF8A"></span>Внутренняя сеть</div>
+<span style="font-size: 12px; color: #A9BBB0; line-height: 1.5">Доступ только из сети центра, вход по учётной записи</span>
+</div>
+</nav>
+
+<main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 40px; background: #FFFFFF; border-bottom: 1px solid #DDE3DF">
+<div style="flex: 1 1 320px; display: flex">
+<label for="q-r" class="sr-only">Поиск по платформе</label>
+<input id="q-r" type="search" placeholder="Поиск: методы, датасеты, эксперименты, ID…" style="flex: 1; min-height: 44px; padding: 0 14px; border: 1px solid #CBD5CE; border-radius: 8px; font: 15px 'IBM Plex Sans', sans-serif; color: #17201B; background: #F9FAF8">
+</div>
+<button type="button" aria-label="Профиль: Г. Стаценко" style="width: 44px; height: 44px; border-radius: 50%; border: 0; background: #DCEFE3; color: #145A37; font: 600 14px 'IBM Plex Sans', sans-serif; cursor: pointer">ГС</button>
+</header>
+
+<div style="max-width: 1180px; width: 100%; box-sizing: border-box; padding: 36px 40px 64px; display: flex; flex-direction: column; gap: 24px">
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h1 style="margin: 0; font-size: 32px; font-weight: 700">Запуск эксперимента</h1>
+<p style="margin: 0; max-width: 760px; font-size: 16px; line-height: 1.55; color: #47564D">Конфигурация собирается из карточек базы знаний, запуск идёт на сервере лаборатории, метрики и логи приходят в реальном времени. По завершении эксперимент попадает в реестр со всеми параметрами воспроизведения.</p>
+</section>
+
+<div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start">
+
+<form aria-label="Конфигурация запуска" style="flex: 2 1 340px; min-width: 0; background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px; padding: 22px; display: flex; flex-direction: column; gap: 16px">
+<h2 style="margin: 0; font-size: 18px">Конфигурация</h2>
+<div class="field"><label for="f-tpl">Шаблон</label>
+<select id="f-tpl" class="inp"><option>На основе EXP-003 · CatBoost + SHAP</option><option>На основе EXP-001 · корреляции рейтингов</option><option>Пустой эксперимент</option></select></div>
+<div class="field"><label for="f-h">Гипотеза / вопрос методологии</label>
+<select id="f-h" class="inp"><option>CR-04 · бустинг vs нейросеть на таблицах</option><option>CR-03 · целевая переменная</option><option>Новая гипотеза…</option></select></div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<div class="field" style="flex: 1 1 140px"><label for="f-ds">Датасет</label>
+<select id="f-ds" class="inp"><option>DS-02 · WGI</option><option>DS-01 · Dow30</option><option disabled>DS-03 · ОЭЗ (ожидается)</option></select></div>
+<div class="field" style="flex: 1 1 140px"><label for="f-m">Метод</label>
+<select id="f-m" class="inp"><option>M-02 · CatBoost + SHAP</option><option>M-01 · AHP + KNN</option><option>MLP (нейросеть)</option></select></div>
+</div>
+<div class="field"><label for="f-p">Параметры</label>
+<textarea id="f-p" rows="5" class="inp" style="padding: 10px 12px; font: 13px 'IBM Plex Mono', monospace; resize: vertical; white-space: pre">iterations: [N]
+depth: [N]
+learning_rate: [x]
+target: [колонка]
+cv_folds: [k]</textarea></div>
+<fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px">
+<legend class="lbl" style="margin-bottom: 6px">Ресурсы</legend>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 15px"><input type="radio" name="res" style="width: 18px; height: 18px; accent-color: #1F6F4A">CPU · очередь лаборатории</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 15px"><input type="radio" name="res" checked="{{true}}" style="width: 18px; height: 18px; accent-color: #1F6F4A">GPU · сервер лаборатории</label>
+</fieldset>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<div class="field" style="flex: 0 1 120px"><label for="f-seed">Seed</label><input id="f-seed" class="inp" value="42" style="font-family: 'IBM Plex Mono', monospace"></div>
+<div class="field" style="flex: 1 1 160px"><label for="f-lim">Лимит времени</label><input id="f-lim" class="inp" value="2 ч"></div>
+</div>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 14px"><input type="checkbox" checked="{{true}}" style="width: 18px; height: 18px; accent-color: #1F6F4A">Зафиксировать коммит, окружение и срез данных</label>
+<label style="display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 14px"><input type="checkbox" checked="{{true}}" style="width: 18px; height: 18px; accent-color: #1F6F4A">Добавить в реестр после завершения</label>
+<button type="button" class="btn-primary" onClick="{{start}}" disabled="{{running}}" style="{{startCss}}">{{startLabel}}</button>
+</form>
+
+<section aria-label="Ход выполнения" aria-live="polite" style="flex: 3 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+<div style="background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px; padding: 22px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+<span style="font: 500 13px 'IBM Plex Mono', monospace; color: #5A6B62">EXP-007</span>
+<span style="display: inline-flex; align-items: center; gap: 6px; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 500; {{statusCss}}">{{status}}</span>
+<span style="margin-left: auto; font: 13px 'IBM Plex Mono', monospace; color: #47564D">{{elapsed}}</span>
+</div>
+<div role="progressbar" aria-label="Прогресс запуска" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{pct}}" style="height: 8px; background: #E7ECE8; border-radius: 999px; overflow: hidden">
+<div style="height: 8px; background: #1F6F4A; border-radius: 999px; width: {{pct}}%"></div>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 12px">
+<sc-for list="{{tiles}}" as="t" hint-placeholder-count="3">
+<div style="flex: 1 1 120px; padding: 12px 14px; background: #F4F6F3; border-radius: 10px; display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 12px; color: #5A6B62">{{t.k}}</span>
+<span style="font: 500 20px 'IBM Plex Mono', monospace">{{t.v}}</span>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 13px; font-weight: 500; color: #47564D">Ошибка на валидации по итерациям</span>
+<svg viewBox="0 0 560 180" width="100%" height="180" role="img" aria-label="График ошибки на валидации, обновляется в реальном времени" style="display: block; background: #F9FAF8; border-radius: 8px">
+<path d="M40 20H550M40 80H550M40 140H550" stroke="#E3E8E4" stroke-width="1"></path>
+<path d="M40 10V160H550" stroke="#B8C2BC" stroke-width="1"></path>
+<path d="{{chart}}" stroke="#1F6F4A" stroke-width="2.5" fill="none" stroke-linejoin="round"></path>
+</svg>
+</div>
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 13px; font-weight: 500; color: #47564D">Лог</span>
+<pre style="margin: 0; height: 168px; overflow-y: auto; padding: 12px; background: #14231C; color: #D7E4DB; border-radius: 8px; font: 12.5px/1.6 'IBM Plex Mono', monospace; white-space: pre-wrap">{{log}}</pre>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<button type="button" class="btn-stop" onClick="{{stop}}">Остановить</button>
+<a class="btn-ghost" href="Experiment.dc.html">Открыть в реестре</a>
+<button type="button" class="btn-ghost">Сравнить с EXP-003</button>
+</div>
+<span style="font-size: 12px; color: #5A6B62">Демо: значения генерируются в макете, на платформе поток идёт из трекера экспериментов.</span>
+</div>
+</section>
+</div>
+
+<section aria-label="Очередь" style="background: #FFFFFF; border: 1px solid #DDE3DF; border-radius: 12px; overflow: hidden">
+<div style="padding: 16px 20px; border-bottom: 1px solid #E7ECE8"><h2 style="margin: 0; font-size: 18px">Очередь сервера</h2></div>
+<sc-for list="{{queue}}" as="q" hint-placeholder-count="3">
+<div style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid #EEF2EF">
+<span style="font: 500 13px 'IBM Plex Mono', monospace; color: #5A6B62; width: 72px">{{q.id}}</span>
+<span style="flex: 1 1 240px; font-size: 15px; font-weight: 500">{{q.title}}</span>
+<span style="font-size: 13px; color: #47564D; width: 120px">{{q.res}}</span>
+<span style="display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 500; {{q.css}}">{{q.st}}</span>
+</div>
+</sc-for>
+</section>
+
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { phase: 'idle', step: 0, pts: [], log: ['[ожидание] конфигурация не запущена'] };
+  }
+  componentWillUnmount() { if (this.timer) clearInterval(this.timer); }
+  tick() {
+    var s = this.state.step + 1;
+    var v = 0.18 + 0.7 * Math.exp(-s / 9) + (Math.random() - 0.5) * 0.03;
+    var pts = this.state.pts.concat([v]);
+    var log = this.state.log.concat(['[iter ' + (s * 10) + '] val_loss=' + v.toFixed(4)]);
+    if (s >= 40) {
+      clearInterval(this.timer); this.timer = null;
+      log = log.concat(['[shap] вклады признаков сохранены', '[registry] EXP-007 записан в реестр']);
+      this.setState({ step: s, pts: pts, log: log.slice(-40), phase: 'done' });
+      return;
+    }
+    this.setState({ step: s, pts: pts, log: log.slice(-40) });
+  }
+  renderVals() {
+    var self = this;
+    var st = this.state;
+    var ST = {
+      idle: { t: 'Не запущен', css: 'background:#ECEEEC;color:#4A554F' },
+      run: { t: '● Выполняется', css: 'background:#DCE8F7;color:#1D4E89' },
+      done: { t: 'Завершён', css: 'background:#DCEFE3;color:#145A37' },
+      stop: { t: 'Остановлен', css: 'background:#FBE8D0;color:#8A4A0F' }
+    };
+    var chart = st.pts.map(function (v, i) {
+      var x = 40 + i * (510 / 39);
+      var y = 160 - Math.min(1, v) * 150;
+      return (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }).join(' ');
+    var last = st.pts.length ? st.pts[st.pts.length - 1].toFixed(4) : '—';
+    var best = st.pts.length ? Math.min.apply(null, st.pts).toFixed(4) : '—';
+    var sec = st.step * 3;
+    var running = st.phase === 'run';
+    return {
+      running: running,
+      startLabel: running ? 'Выполняется…' : (st.phase === 'idle' ? 'Запустить эксперимент' : 'Запустить снова'),
+      startCss: running ? 'opacity:0.6;cursor:default' : '',
+      start: function () {
+        if (self.timer) return;
+        self.setState({ phase: 'run', step: 0, pts: [], log: ['[env] окружение зафиксировано · коммит [hash]', '[data] DS-02@[срез] загружен', '[gpu] задача принята сервером, старт'] });
+        self.timer = setInterval(function () { self.tick(); }, 450);
+      },
+      stop: function () {
+        if (!self.timer) return;
+        clearInterval(self.timer); self.timer = null;
+        self.setState({ phase: 'stop', log: self.state.log.concat(['[stop] остановлено пользователем, частичные результаты сохранены']) });
+      },
+      status: ST[st.phase].t,
+      statusCss: ST[st.phase].css,
+      pct: Math.round(st.step / 40 * 100),
+      elapsed: Math.floor(sec / 60) + ' мин ' + (sec % 60) + ' с',
+      tiles: [
+        { k: 'Итерация', v: st.step * 10 + ' / 400' },
+        { k: 'val loss', v: last },
+        { k: 'Лучший', v: best }
+      ],
+      chart: chart || 'M40 160',
+      log: st.log.join('\n'),
+      queue: [
+        { id: 'EXP-007', title: 'CatBoost + SHAP · WGI · seed 42', res: 'GPU', st: ST[st.phase].t, css: ST[st.phase].css },
+        { id: 'EXP-006', title: 'Модульный ансамбль: бустинг + нейросеть', res: 'GPU', st: 'В очереди', css: 'background:#ECEEEC;color:#4A554F' },
+        { id: 'EXP-002', title: 'AHP + KNN · повторный прогон', res: 'CPU', st: 'В очереди', css: 'background:#ECEEEC;color:#4A554F' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
