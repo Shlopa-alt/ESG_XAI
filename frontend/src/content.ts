@@ -20,33 +20,12 @@ export interface CorpusGroup {
   count: number;
 }
 
-export interface MethodSection {
-  number: string;
-  title: string;
-  stability: "stable" | "draft" | "contested";
-  text: string;
-}
-
-export interface ChangeRequest {
-  code: string;
-  section: string;
-  title: string;
-  status: "proposed" | "review" | "accepted" | "rejected";
-  basis: string;
-}
-
 export const TYPE_LABEL: Record<CardType, string> = {
   article: "Статья",
   method: "Метод",
   dataset: "Датасет",
   standard: "Стандарт",
 };
-
-export const STABILITY_LABEL = {
-  stable: "устойчив",
-  draft: "черновик",
-  contested: "оспаривается",
-} as const;
 
 export const CORPUS: CorpusGroup[] = [
   { name: "ESG и финансовые результаты (ML)", count: 330 },
@@ -237,49 +216,4 @@ export const LAB_FILES = [
   { title: "Константинова, Слепцова, Шокин — профориентация вуза", note: "карточка A-03" },
   { title: "ВКР Матвеева Е.Р. — ИНС в управлении бизнесом в формате ESG", note: "карточка M-04" },
   { title: "ESG.xlsx — ранги RAEX и методики агентств", note: "карточки DS-05, S-02" },
-];
-
-export const METHODOLOGY_VERSION = "0.1";
-
-export const SECTIONS: MethodSection[] = [
-  {
-    number: "1",
-    title: "Входные данные: ESG-инвестиции по статьям затрат",
-    stability: "draft",
-    text: "На входе ИНС — объёмы инвестиций компании в ESG в денежном выражении по статьям, взятым из действующих в РФ методик ESG-рейтингов. Вариант 3 добавляет неденежные усилия компании.",
-  },
-  {
-    number: "2",
-    title: "Выходные данные: финансовые результаты на горизонте 3–5 лет",
-    stability: "draft",
-    text: "На выходе — финансовые результаты компании за период не менее 3–5 лет; вариант 2 добавляет нефинансовые ESG-эффекты с перечнем метрик и источников.",
-  },
-  {
-    number: "3",
-    title: "Эффекты для бюджета региона и федерального бюджета",
-    stability: "draft",
-    text: "Задания 2–3: зависимость результатов бюджета региона и федерального бюджета от ESG-инвестиций на горизонте 3 лет, в виде функциональной зависимости.",
-  },
-  {
-    number: "4",
-    title: "Денежная оценка нефинансовых эффектов (ЧДД)",
-    stability: "contested",
-    text: "Методика M-03. Оспаривается трактовка |ЧДД| как точной оценки: при принятом решении это нижняя граница; другие объяснения отрицательного ЧДД — ошибки прогноза, требования закона, интересы менеджмента.",
-  },
-  {
-    number: "5",
-    title: "Проверка моделей",
-    stability: "draft",
-    text: "Требования к проверке заявлений «ESG прогнозирует финансовый результат» — предложены в CR-01 по итогам EXP-007.",
-  },
-];
-
-export const CHANGE_REQUESTS: ChangeRequest[] = [
-  {
-    code: "CR-01",
-    section: "5",
-    title: "Обязательные проверки: отложенная выборка без подбора по ней, 30+ разбиений, плацебо, наивный бенчмарк, контроль размера и отрасли",
-    status: "proposed",
-    basis: "EXP-007",
-  },
 ];

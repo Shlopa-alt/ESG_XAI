@@ -4,10 +4,10 @@ import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
 import { Experiment, Experiments } from "./pages/ExperimentPages";
 import { Login } from "./pages/Login";
+import { Methodology } from "./pages/MethodologyPage";
 import {
   Graph,
   Knowledge,
-  Methodology,
   Overview,
   Run,
 } from "./pages/sections";

@@ -4,17 +4,14 @@ import { Link } from "react-router-dom";
 
 import {
   CARDS,
-  CHANGE_REQUESTS,
   CORPUS,
   CORPUS_TOTAL,
   type CardType,
   LAB_FILES,
-  METHODOLOGY_VERSION,
-  SECTIONS,
-  STABILITY_LABEL,
   TYPE_LABEL,
 } from "../content";
 import { listExperiments, OUTCOME_LABEL, STATUS_LABEL } from "../api/experiments";
+import { getMethodology, listCrs, STABILITY_LABEL } from "../api/methodology";
 import { KbGraphSummary, KbLive } from "./KbLive";
 import { SectionPage } from "./SectionPage";
 
@@ -41,7 +38,11 @@ const fmt = (n: number) => n.toLocaleString("ru-RU");
 
 export function Overview() {
   const exps = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
-  const experiments = exps.data ?? [];
+  const meth = useQuery({ queryKey: ["methodology"], queryFn: getMethodology });
+  const crs = useQuery({ queryKey: ["crs"], queryFn: listCrs });
+  const experiments = Array.isArray(exps.data) ? exps.data : [];
+  const sections = Array.isArray(meth.data?.sections) ? meth.data.sections : [];
+  const openCrs = Array.isArray(crs.data) ? crs.data.filter((c) => c.status === "proposed" || c.status === "review") : [];
   return (
   <>
     <Head
@@ -53,7 +54,7 @@ export function Overview() {
       <Stat value={fmt(CORPUS_TOTAL)} label="статей в корпусе базы знаний" />
       <Stat value={CARDS.length} label="карточек: статьи, методы, датасеты, стандарты" />
       <Stat value={experiments.length} label="экспериментов в реестре" />
-      <Stat value={CHANGE_REQUESTS.length} label="предложение изменения методологии" />
+      <Stat value={openCrs.length} label="открытых предложений изменения методологии" />
     </div>
     <div className="grid-2">
       <section className="card">
@@ -73,7 +74,7 @@ export function Overview() {
       <section className="card">
         <h2 className="h2">Открытые вопросы методологии</h2>
         <ul className="list">
-          {SECTIONS.filter((s) => s.stability !== "stable").map((s) => (
+          {sections.filter((s) => s.stability !== "stable").map((s) => (
             <li key={s.number}>
               <strong>{s.number}.</strong> {s.title}
               <div className="muted">{STABILITY_LABEL[s.stability]}</div>
@@ -212,42 +213,4 @@ export const Run = () => (
     title="Запуск экспериментов"
     lead="Конфигурация запуска, живой поток метрик и логов, очередь сервера. Скрипты EXP-007 уже лежат в runner/hsu2025."
   />
-);
-
-export const Methodology = () => (
-  <>
-    <Head
-      eyebrow={`МЕТОДОЛОГИЯ · ВЕРСИЯ ${METHODOLOGY_VERSION}`}
-      title="Методология"
-      lead="Разделы по постановке задачи лаборатории для ИНС, их устойчивость и предложения изменений."
-    />
-    <div className="grid-2">
-      <section className="card">
-        <h2 className="h2">Разделы</h2>
-        <ol className="list">
-          {SECTIONS.map((s) => (
-            <li key={s.number}>
-              <strong>{s.title}</strong>{" "}
-              <span className={`badge stab-${s.stability}`}>{STABILITY_LABEL[s.stability]}</span>
-              <p className="muted">{s.text}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-      <section className="card">
-        <h2 className="h2">Предложения изменений (CR)</h2>
-        <ul className="list">
-          {CHANGE_REQUESTS.map((cr) => (
-            <li key={cr.code}>
-              <span className="mono">{cr.code}</span> · раздел {cr.section}: {cr.title}
-              <div className="muted">
-                <span className="badge st-planned">предложено</span> основание:{" "}
-                <Link to={`/experiments/${cr.basis}`} className="mono">{cr.basis}</Link>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
-    </div>
-  </>
 );

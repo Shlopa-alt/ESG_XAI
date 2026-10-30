@@ -369,3 +369,10 @@ a:hover {
 .review-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-top: 12px; }
 .field.grow { flex: 1; min-width: 240px; }
 .field textarea { font: inherit; font-size: 14px; color: var(--text); padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; }
+
+/* --- методология --- */
+.h3 { margin: 4px 0; font-size: 16px; }
+.cr-board { display: flex; flex-direction: column; gap: 12px; }
+.cr { display: flex; flex-direction: column; gap: 8px; }
+.blockers { margin: 0; color: #8a4a0f; font-size: 14px; }
+a.btn-ghost { display: inline-block; text-decoration: none; }
