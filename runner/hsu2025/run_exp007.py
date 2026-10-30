@@ -81,6 +81,9 @@ def main(ds_dir: Path, results_root: Path) -> int:
         print(f"готово: {name} — код {code}, {round((time.time() - t0) / 60)} мин", flush=True)
     run["finished_at"] = datetime.now(UTC).isoformat()
     (out / "run.json").write_text(json.dumps(run, ensure_ascii=False, indent=1), encoding="utf-8")
+    if all(v["exit_code"] == 0 for v in run["parts"].values()):
+        # ключевые цифры и графики для страницы эксперимента — в run.json["report"]
+        subprocess.run([PY, "make_report.py", str(out)], cwd=HERE, env=env, check=False)
     print(f"ИТОГ: {out}", flush=True)
     return 0 if all(v["exit_code"] == 0 for v in run["parts"].values()) else 1
 

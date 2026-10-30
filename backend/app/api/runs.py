@@ -106,6 +106,11 @@ def import_run(
     code: str, body: RunImport, db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Researcher],
 ) -> RunOut:
+    return _out(db, register_run(db, code, body, user.id))
+
+
+def register_run(db: Session, code: str, body: RunImport, user_id: int | None) -> Run:
+    """Запуск у эксперимента; удачный с чистым коммитом заполняет воспроизводимость (правило 3)."""
     exp = db.scalar(select(Experiment).where(Experiment.code == code))
     if exp is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет эксперимента {code}")
@@ -127,7 +132,7 @@ def import_run(
         env_lock_sha256=body.env_lock_sha256, python=body.python, seeds=body.seeds,
         parts={k: v.model_dump() for k, v in body.parts.items()}, summary=body.summary,
         results_path=body.results_path, started_at=body.started_at,
-        finished_at=body.finished_at, created_by=user.id,
+        finished_at=body.finished_at, created_by=user_id,
     )
     db.add(run)
     db.flush()
@@ -140,7 +145,7 @@ def import_run(
     if body.report is not None and run.status == "done":
         exp.report = merge_run_report(exp.report or {}, body.report)
     db.commit()
-    return _out(db, run)
+    return run
 
 
 @router.get("/runs", response_model=list[RunOut], dependencies=[Depends(current_user)])
