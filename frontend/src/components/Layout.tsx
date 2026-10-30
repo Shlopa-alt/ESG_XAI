@@ -46,7 +46,7 @@ export function Layout({ user }: { user: User }) {
           </div>
         </div>
         <div className="nav">
-          {NAV.map((item) => (
+          {[...NAV, ...(user.role === "owner" ? [{ to: "/users", label: "Пользователи", end: false }] : [])].map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -74,6 +74,9 @@ export function Layout({ user }: { user: User }) {
             className="search"
             placeholder="Поиск: методы, датасеты, эксперименты, ID…"
           />
+          <NavLink to="/password" className="btn-ghost">
+            Пароль
+          </NavLink>
           <button
             type="button"
             className="btn-ghost"

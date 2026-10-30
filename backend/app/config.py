@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     session_ttl_s: int = 8 * 3600
     cookie_secure: bool = False
 
-    # local — заглушка для разработки, ldap — вход через LDAP университета
-    auth_backend: Literal["local", "ldap"] = "ldap"
+    # password — личные пароли (пользователей заводит owner), ldap — вход через LDAP
+    # университета, local — заглушка для разработки (общий пароль)
+    auth_backend: Literal["password", "ldap", "local"] = "ldap"
     local_dev_password: str = "dev"
     local_dev_role: Role = "researcher"
 

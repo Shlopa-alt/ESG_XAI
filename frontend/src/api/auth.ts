@@ -7,6 +7,8 @@ export interface User {
   email: string;
   role: Role;
   nda_access: boolean;
+  must_change_password?: boolean;
+  is_active?: boolean;
 }
 
 export class ApiError extends Error {
@@ -52,3 +54,22 @@ export function login(loginName: string, password: string): Promise<User> {
 export async function logout(): Promise<void> {
   await request<null>("/auth/logout", { method: "POST" });
 }
+
+export function changePassword(oldPassword: string, newPassword: string): Promise<User> {
+  return request<User>("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  });
+}
+
+export interface NewUser extends User {
+  temporary_password: string;
+}
+
+export const listUsers = () => request<User[]>("/users");
+export const createUser = (u: { login: string; full_name: string; role: Role; nda_access: boolean }) =>
+  request<NewUser>("/users", { method: "POST", body: JSON.stringify(u) });
+export const resetPassword = (login: string) =>
+  request<NewUser>(`/users/${encodeURIComponent(login)}/reset-password`, { method: "POST" });
+export const patchUser = (login: string, patch: Partial<Pick<User, "role" | "nda_access" | "is_active">>) =>
+  request<User>(`/users/${encodeURIComponent(login)}`, { method: "PATCH", body: JSON.stringify(patch) });

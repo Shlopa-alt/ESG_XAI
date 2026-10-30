@@ -5,6 +5,7 @@ import { Layout } from "./components/Layout";
 import { Experiment, Experiments } from "./pages/ExperimentPages";
 import { Login } from "./pages/Login";
 import { Methodology } from "./pages/MethodologyPage";
+import { ChangePassword, Users } from "./pages/UsersPage";
 import {
   Graph,
   Knowledge,
@@ -18,6 +19,7 @@ export function App() {
   if (isPending) return <p className="empty" style={{ padding: 24 }}>Загрузка…</p>;
   if (isError) return <p className="error" role="alert" style={{ padding: 24 }}>Сервер недоступен</p>;
   if (!user) return <Login />;
+  if (user.must_change_password) return <ChangePassword forced />;
 
   return (
     <Routes>
@@ -29,6 +31,8 @@ export function App() {
         <Route path="experiments/:code" element={<Experiment />} />
         <Route path="run" element={<Run />} />
         <Route path="methodology" element={<Methodology />} />
+        <Route path="password" element={<ChangePassword />} />
+        {user.role === "owner" && <Route path="users" element={<Users />} />}
         <Route path="*" element={<Overview />} />
       </Route>
     </Routes>

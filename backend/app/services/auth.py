@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import dataclass
 
 from itsdangerous import BadSignature, URLSafeTimedSerializer
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.models import User
+from app.services.passwords import hash_password, verify_password
 
 
 @dataclass
@@ -49,6 +51,13 @@ def authenticate(db: Session, settings: Settings, login: str, password: str) -> 
     login = login.strip().lower()
     if not login or not password:
         return None
+    if settings.auth_backend == "password":
+        # Личные пароли: пользователя заводит owner, сам при входе он не создаётся
+        found = db.scalar(select(User).where(User.login == login))
+        if found is None or not found.is_active or not found.password_hash:
+            verify_password(password, _DUMMY_HASH)  # время ответа то же, что у настоящего
+            return None
+        return found if verify_password(password, found.password_hash) else None
     if settings.auth_backend == "local":
         identity = _local_authenticate(settings, login, password)
     else:
@@ -72,10 +81,20 @@ def authenticate(db: Session, settings: Settings, login: str, password: str) -> 
         )
         db.add(user)
     else:
+        if not user.is_active:
+            return None
         user.full_name = identity.full_name or user.full_name
         user.email = identity.email or user.email
     db.commit()
     return user
+
+
+_DUMMY_HASH = hash_password("dummy-password-for-timing")
+
+
+def password_stamp(user: User) -> str:
+    """Отпечаток пароля в сессии: сменили или сбросили пароль — старые сессии не действуют."""
+    return hashlib.sha256(user.password_hash.encode()).hexdigest()[:12] if user.password_hash else ""
 
 
 def _serializer(settings: Settings) -> URLSafeTimedSerializer:
@@ -83,13 +102,16 @@ def _serializer(settings: Settings) -> URLSafeTimedSerializer:
 
 
 def make_session_token(settings: Settings, user: User) -> str:
-    return _serializer(settings).dumps({"uid": user.id})
+    return _serializer(settings).dumps({"uid": user.id, "pv": password_stamp(user)})
 
 
-def read_session_token(settings: Settings, token: str) -> int | None:
+def read_session_token(settings: Settings, token: str) -> tuple[int, str] | None:
+    """(id пользователя, отпечаток пароля на момент входа) или None."""
     try:
         data = _serializer(settings).loads(token, max_age=settings.session_ttl_s)
     except BadSignature:
         return None
-    uid = data.get("uid") if isinstance(data, dict) else None
-    return uid if isinstance(uid, int) else None
+    if not isinstance(data, dict):
+        return None
+    uid, stamp = data.get("uid"), data.get("pv", "")
+    return (uid, stamp if isinstance(stamp, str) else "") if isinstance(uid, int) else None
