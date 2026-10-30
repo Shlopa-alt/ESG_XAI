@@ -1,17 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import {
-  CARDS,
-  CORPUS,
-  CORPUS_TOTAL,
-  type CardType,
-  LAB_FILES,
-  TYPE_LABEL,
-} from "../content";
-import { listExperiments, OUTCOME_LABEL, STATUS_LABEL } from "../api/experiments";
+import { listDatasets, listExperiments, OUTCOME_LABEL, STATUS_LABEL } from "../api/experiments";
+import { listHypotheses } from "../api/hypotheses";
+import { kbDocuments, kbStats } from "../api/kb";
 import { getMethodology, listCrs, STABILITY_LABEL } from "../api/methodology";
+import { CORPUS, CORPUS_TOTAL } from "../content";
 import { KbGraphSummary, KbLive } from "./KbLive";
 import { SectionPage } from "./SectionPage";
 
@@ -40,157 +34,150 @@ export function Overview() {
   const exps = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
   const meth = useQuery({ queryKey: ["methodology"], queryFn: getMethodology });
   const crs = useQuery({ queryKey: ["crs"], queryFn: listCrs });
+  const hyps = useQuery({ queryKey: ["hypotheses"], queryFn: listHypotheses });
+  const kb = useQuery({ queryKey: ["kb", "stats", "esg"], queryFn: () => kbStats("esg") });
+  const lab = useQuery({ queryKey: ["kb", "docs", "esg.lab"], queryFn: () => kbDocuments("esg.lab") });
   const experiments = Array.isArray(exps.data) ? exps.data : [];
   const sections = Array.isArray(meth.data?.sections) ? meth.data.sections : [];
   const openCrs = Array.isArray(crs.data) ? crs.data.filter((c) => c.status === "proposed" || c.status === "review") : [];
+  const waiting = Array.isArray(hyps.data) ? hyps.data.filter((h) => h.status === "proposed").length : 0;
+  const labDocs = Array.isArray(lab.data) ? lab.data : [];
   return (
-  <>
-    <Head
-      eyebrow="ЛАБОРАТОРИЯ · ИНС В ESG-УПРАВЛЕНИИ"
-      title="Открытые исследования ESG"
-      lead="Методология дорабатывается по циклу: источник в базе знаний порождает гипотезу, гипотеза проверяется экспериментом, а результат становится обоснованием изменения методологии."
-    />
-    <div className="stats">
-      <Stat value={fmt(CORPUS_TOTAL)} label="статей в корпусе базы знаний" />
-      <Stat value={CARDS.length} label="карточек: статьи, методы, датасеты, стандарты" />
-      <Stat value={experiments.length} label="экспериментов в реестре" />
-      <Stat value={openCrs.length} label="открытых предложений изменения методологии" />
-    </div>
-    <div className="grid-2">
+    <>
+      <Head
+        eyebrow="ЛАБОРАТОРИЯ · ИНС В ESG-УПРАВЛЕНИИ"
+        title="Открытые исследования ESG"
+        lead="Методология дорабатывается по циклу: источник в базе знаний порождает гипотезу, гипотеза проверяется экспериментом, а результат становится обоснованием изменения методологии."
+      />
+      <div className="stats">
+        <Stat value={kb.data ? fmt(kb.data.documents) : "—"} label="статей в базе знаний" />
+        <Stat value={waiting} label="гипотез ждут решения" />
+        <Stat value={experiments.length} label="экспериментов в реестре" />
+        <Stat value={openCrs.length} label="открытых предложений изменения методологии" />
+      </div>
+      <div className="grid-2">
+        <section className="card">
+          <h2 className="h2">Последние эксперименты</h2>
+          <ul className="list">
+            {experiments.map((e) => (
+              <li key={e.code}>
+                <Link to={`/experiments/${e.code}`} className="mono">
+                  {e.code}
+                </Link>{" "}
+                {e.title}
+                <div className="muted">
+                  <span className={`badge st-${e.status}`}>{STATUS_LABEL[e.status]}</span>{" "}
+                  {e.outcome && OUTCOME_LABEL[e.outcome]}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <section className="card">
+          <h2 className="h2">Открытые вопросы методологии</h2>
+          <ul className="list">
+            {sections
+              .filter((s) => s.stability !== "stable")
+              .map((s) => (
+                <li key={s.number}>
+                  <strong>{s.number}.</strong> {s.title}
+                  <div className="muted">{STABILITY_LABEL[s.stability]}</div>
+                </li>
+              ))}
+          </ul>
+        </section>
+      </div>
       <section className="card">
-        <h2 className="h2">Последние эксперименты</h2>
+        <h2 className="h2">Материалы лаборатории в базе знаний</h2>
+        {lab.isError && <p className="muted">База знаний сейчас недоступна.</p>}
         <ul className="list">
-          {experiments.map((e) => (
-            <li key={e.code}>
-              <Link to={`/experiments/${e.code}`} className="mono">{e.code}</Link> {e.title}
+          {labDocs.map((d) => (
+            <li key={d.doc_id}>
+              <Link to={`/knowledge/article/${encodeURIComponent(d.doc_id)}`}>{d.title || d.doc_id}</Link>
               <div className="muted">
-                <span className={`badge st-${e.status}`}>{STATUS_LABEL[e.status]}</span>{" "}
-                {e.outcome && OUTCOME_LABEL[e.outcome]}
+                {d.year ?? "—"} · {d.chunks} фрагментов
               </div>
             </li>
           ))}
         </ul>
       </section>
-      <section className="card">
-        <h2 className="h2">Открытые вопросы методологии</h2>
-        <ul className="list">
-          {sections.filter((s) => s.stability !== "stable").map((s) => (
-            <li key={s.number}>
-              <strong>{s.number}.</strong> {s.title}
-              <div className="muted">{STABILITY_LABEL[s.stability]}</div>
-            </li>
-          ))}
-        </ul>
-      </section>
-    </div>
-    <section className="card">
-      <h2 className="h2">Новое в базе знаний: материалы лаборатории</h2>
-      <ul className="list">
-        {LAB_FILES.map((f) => (
-          <li key={f.title}>
-            {f.title}
-            <div className="muted">{f.note}</div>
-          </li>
-        ))}
-      </ul>
-    </section>
-  </>
+    </>
   );
 }
 
-const FILTERS: Array<{ key: CardType | "all"; label: string }> = [
-  { key: "all", label: "Все" },
-  { key: "article", label: "Статьи" },
-  { key: "method", label: "Методы" },
-  { key: "dataset", label: "Датасеты" },
-  { key: "standard", label: "Стандарты" },
-];
-
 export function Knowledge() {
-  const [type, setType] = useState<CardType | "all">("all");
-  const [selected, setSelected] = useState(CARDS[0].code);
-  const cards = CARDS.filter((c) => type === "all" || c.type === type);
-  const card = CARDS.find((c) => c.code === selected) ?? CARDS[0];
+  const ds = useQuery({ queryKey: ["datasets"], queryFn: listDatasets });
+  const datasets = Array.isArray(ds.data) ? ds.data : [];
   return (
     <>
       <Head
         eyebrow="БАЗА ЗНАНИЙ"
         title="База знаний"
-        lead="Статьи корпуса разобраны в базе знаний KBRAG: поиск по смыслу и по словам, русский запрос находит и английские статьи. Ниже — паспорта материалов и датасетов лаборатории."
+        lead="Статьи корпуса и материалы лаборатории разобраны в базе знаний KBRAG: поиск по смыслу и по словам, русский запрос находит и английские статьи. Из найденной статьи можно предложить гипотезу или сослаться на неё в эксперименте."
       />
       <KbLive />
-      <h2 className="h2">Материалы и датасеты лаборатории</h2>
-      <div className="filters" role="group" aria-label="Тип карточки">
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            type="button"
-            className={type === f.key ? "chip active" : "chip"}
-            aria-pressed={type === f.key}
-            onClick={() => setType(f.key)}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-      <div className="grid-kb">
-        <ul className="cards">
-          {cards.map((c) => (
-            <li key={c.code}>
-              <button
-                type="button"
-                className={c.code === card.code ? "card kb-card active" : "card kb-card"}
-                onClick={() => setSelected(c.code)}
-              >
-                <span className="kb-meta">
-                  <span className="mono">{c.code}</span> · {TYPE_LABEL[c.type]} · {c.direction}
-                  {!c.verified && <span className="badge st-review">требует источника</span>}
-                </span>
-                <span className="kb-title">{c.title}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <aside className="card passport" aria-label="Паспорт карточки">
-          <span className="eyebrow">ПАСПОРТ · {card.code}</span>
-          <h2 className="h2">{card.title}</h2>
-          <p>{card.summary}</p>
-          <dl className="dl">
-            <dt>Тип</dt>
-            <dd>{TYPE_LABEL[card.type]}</dd>
-            <dt>Направление</dt>
-            <dd>{card.direction}</dd>
-            <dt>Источник</dt>
-            <dd>{card.source}</dd>
-            <dt>Источник проверен</dt>
-            <dd>{card.verified ? "да" : "нет"}</dd>
-            <dt>Связи</dt>
-            <dd>{card.links.length ? card.links.join(", ") : "—"}</dd>
-          </dl>
-        </aside>
-      </div>
       <section className="card">
-        <h2 className="h2">Корпус статей: {fmt(CORPUS_TOTAL)} PDF</h2>
-        <p className="muted">
-          Открытый доступ, 2018 г. и новее; источники OpenAlex, DOAJ, КиберЛенинка. Пилот базы знаний — 296 статей
-          по направлениям 1–2 и материалы лаборатории.
-        </p>
-        <table className="table">
-          <thead>
-            <tr>
-              <th scope="col">Направление</th>
-              <th scope="col" className="num">Статей</th>
-            </tr>
-          </thead>
-          <tbody>
-            {CORPUS.map((g) => (
-              <tr key={g.name}>
-                <td>{g.name}</td>
-                <td className="num mono">{fmt(g.count)}</td>
+        <h2 className="h2">Датасеты</h2>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">Код</th>
+                <th scope="col">Датасет</th>
+                <th scope="col">Доступ</th>
+                <th scope="col">Источник</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {datasets.map((d) => (
+                <tr key={d.code}>
+                  <td className="mono">{d.code}</td>
+                  <td>
+                    <strong>{d.title}</strong>
+                    <div className="muted">{d.description}</div>
+                  </td>
+                  <td>{d.access_level === "nda" ? <span className="badge st-review">NDA</span> : "открытый"}</td>
+                  <td>
+                    {d.source_url.startsWith("http") ? (
+                      <a href={d.source_url} target="_blank" rel="noreferrer">
+                        ссылка
+                      </a>
+                    ) : (
+                      <span className="muted">{d.source_url || "—"}</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section className="card">
+        <h2 className="h2">Корпус для загрузки: {fmt(CORPUS_TOTAL)} PDF</h2>
+        <p className="muted">
+          Собранные статьи открытого доступа (2018 г. и новее; OpenAlex, DOAJ, КиберЛенинка). В базе знаний пока пилот —
+          около 300 статей по направлениям 1–2 и материалы лаборатории; остальное загружается по веткам.
+        </p>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">Направление</th>
+                <th scope="col" className="num">
+                  Статей
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {CORPUS.map((g) => (
+                <tr key={g.name}>
+                  <td>{g.name}</td>
+                  <td className="num mono">{fmt(g.count)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </>
   );
