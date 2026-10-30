@@ -364,3 +364,8 @@ a:hover {
 .hit-text { margin: 0; line-height: 1.5; font-size: 14px; }
 .docs summary { cursor: pointer; color: var(--accent); font-weight: 500; }
 .docs .table { margin-top: 8px; }
+
+/* --- рецензии --- */
+.review-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-top: 12px; }
+.field.grow { flex: 1; min-width: 240px; }
+.field textarea { font: inherit; font-size: 14px; color: var(--text); padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; }

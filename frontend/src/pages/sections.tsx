@@ -1,5 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 import {
   CARDS,
@@ -7,15 +8,13 @@ import {
   CORPUS,
   CORPUS_TOTAL,
   type CardType,
-  EXPERIMENTS,
   LAB_FILES,
   METHODOLOGY_VERSION,
-  OUTCOME_LABEL,
   SECTIONS,
   STABILITY_LABEL,
-  STATUS_LABEL,
   TYPE_LABEL,
 } from "../content";
+import { listExperiments, OUTCOME_LABEL, STATUS_LABEL } from "../api/experiments";
 import { KbGraphSummary, KbLive } from "./KbLive";
 import { SectionPage } from "./SectionPage";
 
@@ -40,7 +39,10 @@ function Stat({ value, label }: { value: string | number; label: string }) {
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
-export const Overview = () => (
+export function Overview() {
+  const exps = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
+  const experiments = exps.data ?? [];
+  return (
   <>
     <Head
       eyebrow="ЛАБОРАТОРИЯ · ИНС В ESG-УПРАВЛЕНИИ"
@@ -50,14 +52,14 @@ export const Overview = () => (
     <div className="stats">
       <Stat value={fmt(CORPUS_TOTAL)} label="статей в корпусе базы знаний" />
       <Stat value={CARDS.length} label="карточек: статьи, методы, датасеты, стандарты" />
-      <Stat value={EXPERIMENTS.length} label="эксперимента в реестре" />
+      <Stat value={experiments.length} label="экспериментов в реестре" />
       <Stat value={CHANGE_REQUESTS.length} label="предложение изменения методологии" />
     </div>
     <div className="grid-2">
       <section className="card">
         <h2 className="h2">Последние эксперименты</h2>
         <ul className="list">
-          {EXPERIMENTS.map((e) => (
+          {experiments.map((e) => (
             <li key={e.code}>
               <Link to={`/experiments/${e.code}`} className="mono">{e.code}</Link> {e.title}
               <div className="muted">
@@ -92,7 +94,8 @@ export const Overview = () => (
       </ul>
     </section>
   </>
-);
+  );
+}
 
 const FILTERS: Array<{ key: CardType | "all"; label: string }> = [
   { key: "all", label: "Все" },
@@ -202,98 +205,6 @@ export const Graph = () => (
     <KbGraphSummary />
   </>
 );
-
-export const Experiments = () => (
-  <>
-    <Head
-      eyebrow="ЭКСПЕРИМЕНТЫ"
-      title="Реестр экспериментов"
-      lead="Воспроизводимые запуски: версия данных, код, окружение, метрики. Отрицательные результаты публикуются наравне с положительными."
-    />
-    <div className="card table-wrap">
-      <table className="table">
-        <thead>
-          <tr>
-            <th scope="col">Код</th>
-            <th scope="col">Эксперимент</th>
-            <th scope="col">Направление</th>
-            <th scope="col">Статус</th>
-            <th scope="col">Данные</th>
-            <th scope="col">Итог</th>
-            <th scope="col">CR</th>
-          </tr>
-        </thead>
-        <tbody>
-          {EXPERIMENTS.map((e) => (
-            <tr key={e.code}>
-              <td><Link to={`/experiments/${e.code}`} className="mono">{e.code}</Link></td>
-              <td>{e.title}</td>
-              <td>{e.direction}</td>
-              <td><span className={`badge st-${e.status}`}>{STATUS_LABEL[e.status]}</span></td>
-              <td>{e.data}</td>
-              <td>{e.outcome ? OUTCOME_LABEL[e.outcome] : "—"}</td>
-              <td className="mono">{e.cr}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  </>
-);
-
-function Block({ title, items }: { title: string; items: string[] }) {
-  return (
-    <section className="card">
-      <h2 className="h2">{title}</h2>
-      <ul className="list">
-        {items.map((t) => (
-          <li key={t}>{t}</li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-export function Experiment() {
-  const { code } = useParams();
-  const e = EXPERIMENTS.find((x) => x.code === code);
-  if (!e) {
-    return (
-      <SectionPage eyebrow="ЭКСПЕРИМЕНТЫ" title="Эксперимент не найден" lead={`Нет эксперимента с кодом ${code ?? ""}.`} />
-    );
-  }
-  return (
-    <>
-      <div className="muted">
-        <Link to="/experiments">Эксперименты</Link> / <span className="mono">{e.code}</span>
-      </div>
-      <Head eyebrow={`${e.code} · ${e.direction}`} title={e.title} lead={e.data} />
-      <div>
-        <span className={`badge st-${e.status}`}>{STATUS_LABEL[e.status]}</span>{" "}
-        {e.outcome && <span className="badge st-planned">{OUTCOME_LABEL[e.outcome]}</span>}
-      </div>
-      <section className="card">
-        <h2 className="h2">Гипотеза</h2>
-        <p>{e.hypothesis}</p>
-      </section>
-      <Block title="Постановка" items={e.setup} />
-      <Block title="Результат" items={e.result} />
-      <section className="card accent">
-        <h2 className="h2">Вывод</h2>
-        <p>{e.conclusion}</p>
-        {e.cr !== "—" && (
-          <p className="muted">
-            Влияние на методологию: <Link to="/methodology" className="mono">{e.cr}</Link>
-          </p>
-        )}
-      </section>
-      <div className="grid-2">
-        <Block title="Ограничения" items={e.limitations} />
-        <Block title="Воспроизводимость" items={e.reproducibility} />
-      </div>
-    </>
-  );
-}
 
 export const Run = () => (
   <SectionPage

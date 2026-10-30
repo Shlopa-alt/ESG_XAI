@@ -3,7 +3,6 @@
 // корпус статей и отчёт docs/experiments/EXP-007_hsu2025_replication.md.
 
 export type CardType = "article" | "method" | "dataset" | "standard";
-export type ExpStatus = "done" | "review" | "running" | "planned";
 
 export interface KbCard {
   code: string;
@@ -19,22 +18,6 @@ export interface KbCard {
 export interface CorpusGroup {
   name: string;
   count: number;
-}
-
-export interface Experiment {
-  code: string;
-  title: string;
-  direction: string;
-  status: ExpStatus;
-  outcome: "confirmed" | "rejected" | "inconclusive" | null;
-  data: string;
-  hypothesis: string;
-  setup: string[];
-  result: string[];
-  conclusion: string;
-  limitations: string[];
-  reproducibility: string[];
-  cr: string;
 }
 
 export interface MethodSection {
@@ -58,19 +41,6 @@ export const TYPE_LABEL: Record<CardType, string> = {
   dataset: "Датасет",
   standard: "Стандарт",
 };
-
-export const STATUS_LABEL: Record<ExpStatus, string> = {
-  done: "завершён",
-  review: "на проверке",
-  running: "в работе",
-  planned: "запланирован",
-};
-
-export const OUTCOME_LABEL = {
-  confirmed: "гипотеза подтверждена",
-  rejected: "гипотеза отклонена",
-  inconclusive: "результат неоднозначен",
-} as const;
 
 export const STABILITY_LABEL = {
   stable: "устойчив",
@@ -267,66 +237,6 @@ export const LAB_FILES = [
   { title: "Константинова, Слепцова, Шокин — профориентация вуза", note: "карточка A-03" },
   { title: "ВКР Матвеева Е.Р. — ИНС в управлении бизнесом в формате ESG", note: "карточка M-04" },
   { title: "ESG.xlsx — ранги RAEX и методики агентств", note: "карточки DS-05, S-02" },
-];
-
-export const EXPERIMENTS: Experiment[] = [
-  {
-    code: "EXP-007",
-    title: "Воспроизведение Hsu et al. (2025): прогноз ROA/ROE по ESG-данным глубоким обучением",
-    direction: "Напр. 1",
-    status: "review",
-    outcome: "rejected",
-    data: "DS-04 · TWSE ESG + MOPS, 194 компании",
-    hypothesis:
-      "Результаты статьи воспроизводятся на тех же открытых источниках: LSTM даёт R² ≈ 0,7 по ROA/ROE и превосходит бустинг и линейную регрессию.",
-    setup: [
-      "ESG 2021 г. → ROA/ROE 2022 г. (регрессия) и рост ROA/ROE (классификация), разбиение 80/20, seed 42.",
-      "Модели статьи: MLR, XGBoost, LightGBM, LSTM, DT, RF, CNN; Optuna, 100 испытаний.",
-      "Протокол paper — подбор по тестовой выборке; протокол honest — 5-кратная CV на обучающей.",
-      "Проверки: 30 случайных разбиений, плацебо на перемешанной цели, наивный прогноз «как в прошлом году».",
-    ],
-    result: [
-      "LSTM: R² 0,03 / 0,06 (paper) и −0,03 / −0,12 (honest) против 0,71 / 0,72 в статье.",
-      "Лучшее на ESG-признаках: LightGBM, honest, R² 0,13 / 0,16.",
-      "Классификация: 67–80 % при протоколе paper, 49–67 % при honest; CNN по ROE — F1 = 0.",
-      "30 разбиений: средний R² всех моделей от −0,03 до −0,27; наивный прогноз лучше всех.",
-      "Плацебо при протоколе paper — R² до 0,35 без всякой связи.",
-    ],
-    conclusion:
-      "Гипотеза отклонена. ESG-признаки сами по себе не прогнозируют ROA/ROE лучше среднего; высокие метрики статьи согласуются с подбором гиперпараметров по тесту.",
-    limitations: [
-      "194 компании вместо 179, признак X8 заменён средней зарплатой, финансовые показатели — из MOPS, а не TEJ.",
-      "Протокол paper — прочтение статьи: как авторы использовали тест, не описано.",
-      "Один год ESG и горизонт в один год; связи ассоциативные.",
-    ],
-    reproducibility: [
-      "Код: runner/hsu2025 (build_dataset, replicate_hsu, robustness, lab_method).",
-      "Seed: разбиение 42, Optuna 0, повторы 0…29.",
-      "Срез данных: [нужно пересобрать — исходные выгрузки утрачены].",
-      "Окружение: [версии библиотек не зафиксированы].",
-    ],
-    cr: "CR-01",
-  },
-  {
-    code: "EXP-001",
-    title: "Расхождение ESG-рейтингов провайдеров на Dow30",
-    direction: "Напр. 2",
-    status: "review",
-    outcome: "rejected",
-    data: "DS-01 · Dow30 (S&P, Sustainalytics, MSCI)",
-    hypothesis: "ESG-рейтинги разных провайдеров согласованы между собой.",
-    setup: ["Ранговая корреляция Спирмена между оценками трёх провайдеров для 30 компаний."],
-    result: [
-      "ρ(S&P, MSCI) = 0,27.",
-      "ρ(Sustainalytics, MSCI) = −0,32 в исходном расчёте; после приведения шкалы риска Sustainalytics к направлению «больше — лучше» — около +0,29.",
-      "ρ(S&P, Sustainalytics) ≈ 0,00 (после приведения шкалы ≈ +0,02).",
-    ],
-    conclusion:
-      "Гипотеза о согласованности отклонена: связь между провайдерами слабая. Вывод об обратной связи Sustainalytics–MSCI снят: знак был артефактом шкалы риска.",
-    limitations: ["30 компаний, один срез; расхождение −0,32 и −0,29 в разных расчётах нужно сверить."],
-    reproducibility: ["Срез данных: DS-01@[срез]", "Код: [скрипт расчёта]"],
-    cr: "—",
-  },
 ];
 
 export const METHODOLOGY_VERSION = "0.1";

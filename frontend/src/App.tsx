@@ -2,10 +2,9 @@ import { Route, Routes } from "react-router-dom";
 
 import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
+import { Experiment, Experiments } from "./pages/ExperimentPages";
 import { Login } from "./pages/Login";
 import {
-  Experiment,
-  Experiments,
   Graph,
   Knowledge,
   Methodology,
