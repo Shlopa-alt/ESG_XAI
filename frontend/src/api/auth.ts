@@ -73,3 +73,15 @@ export const resetPassword = (login: string) =>
   request<NewUser>(`/users/${encodeURIComponent(login)}/reset-password`, { method: "POST" });
 export const patchUser = (login: string, patch: Partial<Pick<User, "role" | "nda_access" | "is_active">>) =>
   request<User>(`/users/${encodeURIComponent(login)}`, { method: "PATCH", body: JSON.stringify(patch) });
+
+export interface AuditRow {
+  created_at: string;
+  login: string;
+  method: string;
+  path: string;
+  status: number;
+  client: string;
+}
+
+export const listAudit = (login?: string) =>
+  request<AuditRow[]>(`/audit?limit=200${login ? `&login=${encodeURIComponent(login)}` : ""}`);

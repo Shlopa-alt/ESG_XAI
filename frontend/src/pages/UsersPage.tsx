@@ -11,6 +11,7 @@ import {
   type Role,
 } from "../api/auth";
 import { ME_KEY } from "../auth/useAuth";
+import { AuditLog } from "./AuditLog";
 
 const ROLES: Array<{ value: Role; label: string }> = [
   { value: "reader", label: "reader — чтение" },
@@ -167,6 +168,7 @@ export function Users() {
           </tbody>
         </table>
       </div>
+      <AuditLog />
     </>
   );
 }
