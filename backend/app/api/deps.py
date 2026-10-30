@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
@@ -11,10 +11,12 @@ from app.services.auth import read_session_token
 
 
 def current_user(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
-    token: Annotated[str | None, Cookie(alias="esg_session")] = None,
 ) -> User:
+    # Имя cookie — из настроек, то же, под которым её выдаёт /auth/login
+    token = request.cookies.get(settings.session_cookie_name)
     uid = read_session_token(settings, token) if token else None
     user = db.get(User, uid) if uid is not None else None
     if user is None:

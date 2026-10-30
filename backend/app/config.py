@@ -36,6 +36,18 @@ class Settings(BaseSettings):
     kbrag_timeout_s: float = 30.0
 
 
+WEAK_LOCAL_PASSWORDS = frozenset({"", "dev", "change-me"})
+
+
+def check_settings(settings: Settings) -> None:
+    """Отказ стартовать с настройками, при которых войти может кто угодно из сети."""
+    if settings.auth_backend == "local" and settings.local_dev_password in WEAK_LOCAL_PASSWORDS:
+        raise RuntimeError(
+            "AUTH_BACKEND=local с паролем по умолчанию: войти сможет любой, кто видит порт. "
+            "Задайте свой LOCAL_DEV_PASSWORD в deploy/.env или включите AUTH_BACKEND=ldap."
+        )
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

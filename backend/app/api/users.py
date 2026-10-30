@@ -2,7 +2,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.auth import UserOut
@@ -30,6 +30,12 @@ def patch_user(login: str, body: UserPatch, db: Annotated[Session, Depends(get_d
     user = db.scalar(select(User).where(User.login == login))
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+    if body.role is not None and body.role != "owner" and user.role == "owner":
+        owners = db.scalar(select(func.count()).select_from(User).where(User.role == "owner"))
+        if (owners or 0) <= 1:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "Нельзя снять роль с последнего владельца"
+            )
     if body.role is not None:
         user.role = body.role
     if body.nda_access is not None:

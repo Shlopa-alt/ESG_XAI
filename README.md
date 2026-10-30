@@ -11,7 +11,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
 Откройте http://localhost:8080. В режиме `AUTH_BACKEND=local` войти можно под любым логином
-с паролем `LOCAL_DEV_PASSWORD` (по умолчанию `dev`), роль нового пользователя берётся из `LOCAL_DEV_ROLE`.
+с паролем `LOCAL_DEV_PASSWORD` — задайте свой: с пустым или `dev` backend не стартует. Роль нового пользователя — `LOCAL_DEV_ROLE`.
 Для боевого режима поставьте `AUTH_BACKEND=ldap`, заполните `LDAP_*`, `ALLOWED_SUBNET` и `INITIAL_OWNER_LOGINS`.
 Миграции применяются при старте backend.
 

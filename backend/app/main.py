@@ -1,8 +1,24 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, FastAPI
 
 from app.api import auth, kb, users
+from app.config import check_settings, get_settings
 
-app = FastAPI(title="ESG Open Research", docs_url="/api/docs", openapi_url="/api/openapi.json")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    check_settings(get_settings())
+    yield
+
+
+app = FastAPI(
+    title="ESG Open Research",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan,
+)
 
 api = APIRouter(prefix="/api")
 

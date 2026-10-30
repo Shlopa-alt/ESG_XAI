@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 from ldap3 import Connection, Server
 from ldap3.core.exceptions import LDAPException
+from ldap3.utils.dn import escape_rdn
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,7 +19,8 @@ class Identity:
 
 
 def _ldap_authenticate(settings: Settings, login: str, password: str) -> Identity | None:
-    dn = settings.ldap_user_dn_template.format(login=login)
+    # Логин подставляется в DN экранированным: «,» «=» «+» и т.п. не меняют запрос к LDAP
+    dn = settings.ldap_user_dn_template.format(login=escape_rdn(login))
     server = Server(settings.ldap_server, use_ssl=settings.ldap_use_ssl)
     try:
         with Connection(server, user=dn, password=password) as conn:
@@ -43,6 +45,8 @@ def _local_authenticate(settings: Settings, login: str, password: str) -> Identi
 
 def authenticate(db: Session, settings: Settings, login: str, password: str) -> User | None:
     """Проверяет пароль и возвращает пользователя из БД, создавая его при первом входе."""
+    # Логин без учёта регистра: «Ivanov» и «ivanov» — один пользователь
+    login = login.strip().lower()
     if not login or not password:
         return None
     if settings.auth_backend == "local":
@@ -56,7 +60,7 @@ def authenticate(db: Session, settings: Settings, login: str, password: str) -> 
     if user is None:
         if settings.auth_backend == "local":
             role = settings.local_dev_role
-        elif identity.login in settings.initial_owner_logins:
+        elif identity.login in {x.strip().lower() for x in settings.initial_owner_logins}:
             role = "owner"
         else:
             role = "reader"

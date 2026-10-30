@@ -31,7 +31,7 @@ services:
       DATABASE_URL: postgresql+psycopg://esg:${POSTGRES_PASSWORD}@postgres:5432/esg
       SECRET_KEY: ${SECRET_KEY:?задайте SECRET_KEY в deploy/.env}
       AUTH_BACKEND: ${AUTH_BACKEND:-ldap}
-      LOCAL_DEV_PASSWORD: ${LOCAL_DEV_PASSWORD:-dev}
+      LOCAL_DEV_PASSWORD: ${LOCAL_DEV_PASSWORD:-}
       LOCAL_DEV_ROLE: ${LOCAL_DEV_ROLE:-researcher}
       LDAP_SERVER: ${LDAP_SERVER:-ldap://ldap.example.local}
       LDAP_USER_DN_TEMPLATE: ${LDAP_USER_DN_TEMPLATE:-uid={login},ou=people,dc=example,dc=local}
