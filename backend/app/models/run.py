@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -30,6 +30,11 @@ class Run(Base):
     summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)  # итоговые метрики
     results_path: Mapped[str] = mapped_column(String(1024), default="")
     mlflow_run_id: Mapped[str] = mapped_column(String(64), default="")
+    # Запуск из формы: шаблон (app/services/run_templates.py), его параметры, задача в очереди
+    template: Mapped[str] = mapped_column(String(64), default="")
+    config: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    task_id: Mapped[str] = mapped_column(String(64), default="")
+    message: Mapped[str] = mapped_column(Text, default="")  # почему остановлен или упал
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)

@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     kb_import_max_mb: int = 60
     kb_import_token: str = ""
 
+    # Запуск экспериментов из формы: очередь Celery в Redis, исполнитель runner/ (контейнер
+    # runner-cpu) сообщает ход и итог по токену RUNNER_TOKEN
+    redis_url: str = "redis://redis:6379/0"
+    runner_token: str = ""
+    gpu_runs_per_user: int = 1
+
 
 WEAK_LOCAL_PASSWORDS = frozenset({"", "dev", "change-me"})
 

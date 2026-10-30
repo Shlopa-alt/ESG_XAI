@@ -49,6 +49,9 @@ services:
       # deploy/windows/kb_import_worker.py на машине KBRAG (токен — KB_IMPORT_TOKEN)
       KB_IMPORT_TOKEN: ${KB_IMPORT_TOKEN:-}
       KB_IMPORT_MAX_MB: ${KB_IMPORT_MAX_MB:-60}
+      # Запуск экспериментов из формы: очередь Celery в Redis, исполнитель runner-cpu
+      REDIS_URL: redis://redis:6379/0
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
     volumes:
       - ${KB_INBOX_DIR:-../.local/kb_inbox}:/data/kb_inbox
     extra_hosts:
@@ -56,6 +59,28 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Исполнитель запусков (очередь cpu): скрипты runner/ из рабочей копии репозитория,
+  # данные и результаты — папка ESG_DATA_HOST, метрики и артефакты — MLflow
+  runner-cpu:
+    restart: unless-stopped
+    build: ../runner
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      PLATFORM_URL: http://backend:8000
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      ESG_DATA_HOST: ${ESG_DATA_HOST:-}
+      ESG_DATA_DIR: /data/esg
+      RUNNER_QUEUE: cpu
+    volumes:
+      - ..:/repo:ro
+      - ${ESG_DATA_HOST:-../.local/esg_data}:/data/esg
+      - mlflowdata:/mlflow
+    depends_on:
+      - redis
+      - backend
+      - mlflow
 
   frontend:
     restart: unless-stopped

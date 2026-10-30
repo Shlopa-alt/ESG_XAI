@@ -610,3 +610,17 @@ a.btn-ghost.active { border-color: var(--accent); }
 .import-form { display: flex; flex-direction: column; gap: 12px; }
 .import-form input[type="file"] { font: inherit; font-size: 14px; padding: 8px 0; border: 0; }
 .import-msg { font-size: 13px; overflow-wrap: anywhere; }
+
+/* --- запуск экспериментов --- */
+.launch-form { display: flex; flex-direction: column; gap: 12px; }
+.run-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 8px; }
+.run-progress-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.run-progress { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.run-progress > div { height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.3s ease; }
+.run-facts { margin: 0; display: grid; gap: 6px; }
+.run-fact { display: grid; grid-template-columns: minmax(110px, 160px) minmax(0, 1fr); gap: 12px; }
+.run-fact dt { color: var(--text-muted); }
+.run-fact dd { margin: 0; overflow-wrap: anywhere; }
+.run-path { font-size: 13px; }
+.run-log { max-height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; }
+.run-summary { max-height: 320px; overflow: auto; font-size: 12.5px; }

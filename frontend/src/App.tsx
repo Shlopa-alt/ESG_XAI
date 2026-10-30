@@ -9,7 +9,7 @@ import { Hypotheses } from "./pages/HypothesesPage";
 import { Import } from "./pages/ImportPage";
 import { Login } from "./pages/Login";
 import { Methodology } from "./pages/MethodologyPage";
-import { Run } from "./pages/RunPage";
+import { Run, RunDetail } from "./pages/RunPage";
 import { ChangePassword, Users } from "./pages/UsersPage";
 import {
   Knowledge,
@@ -36,6 +36,7 @@ export function App() {
         <Route path="experiments" element={<Experiments />} />
         <Route path="experiments/:code" element={<Experiment />} />
         <Route path="run" element={<Run />} />
+        <Route path="run/:id" element={<RunDetail />} />
         <Route path="methodology" element={<Methodology />} />
         <Route path="password" element={<ChangePassword />} />
         {user.role === "owner" && <Route path="users" element={<Users />} />}

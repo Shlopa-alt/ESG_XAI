@@ -1,6 +1,6 @@
 """EXP-001: согласованность ESG-рейтингов S&P Global, Sustainalytics и MSCI на Dow30 (DS-01).
 
-    python run_exp001.py <каталог DS-01> <каталог результатов>
+    python run_exp001.py <каталог DS-01> <каталог результатов> [--seed 42] [--n-boot 10000] [--n-perm 10000]
 
 <каталог DS-01>/raw/03_Dow30_ESG_Stock_Data.csv и manifest.json — выгрузка с Яндекс.Диска
 лаборатории (sha256 каждого файла в манифесте). В <каталог результатов>/<время>/ пишутся
@@ -10,8 +10,11 @@ results.json и run.json: коммит runner, sha256 среза, sha256 окр�
 лучше), Sustainalytics — оценка неуправляемого риска (больше — хуже). Поэтому считаются два
 варианта: «исходный» (шкала Sustainalytics как в файле) и «согласованный» (риск обращён).
 Для ρ Спирмена обращение шкалы меняет только знак.
+
+Ход и метрики печатаются строками `@event {...}` — их показывает платформа при запуске из формы.
 """
 
+import argparse
 import hashlib
 import json
 import subprocess
@@ -47,6 +50,11 @@ def git_commit() -> str:
         return commit + ("-dirty" if dirty else "")
     except (OSError, subprocess.CalledProcessError):
         return ""
+
+
+def event(kind: str, **data: object) -> None:
+    """Событие для живого потока платформы (исполнитель runner/worker); в консоли — просто строка."""
+    print("@event " + json.dumps({"type": kind, **data}, ensure_ascii=False), flush=True)
 
 
 def rho(a: np.ndarray, b: np.ndarray) -> float:
@@ -86,9 +94,10 @@ def compute(df: pd.DataFrame) -> dict:
                     for s, r in d.set_index("symbol").iterrows() if r.isna().any()},
         "pairs": {},
     }
-    for a, b in PAIRS:
+    for i, (a, b) in enumerate(PAIRS, start=1):
         pw = d.dropna(subset=[a, b])
         key = f"{NAMES[a]} — {NAMES[b]}"
+        event("progress", done=i - 1, total=len(PAIRS), label=key)
         # согласованная шкала: риск Sustainalytics обращён, «больше — лучше» у всех
         x, y = (complete[c].to_numpy(float) * (-1 if c == "Sustainalytics" else 1) for c in (a, b))
         cc = pair_stats(x, y, np.random.default_rng(SEED))
@@ -100,6 +109,8 @@ def compute(df: pd.DataFrame) -> dict:
             # согласованная шкала, полные данные: ρ, интервал, p
             "aligned_complete": cc,
         }
+        event("metric", name=f"rho {key}", value=cc["rho"])
+        event("progress", done=i, total=len(PAIRS), label=key)
     return out
 
 
@@ -197,6 +208,12 @@ def main(ds_dir: Path, results_root: Path) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        raise SystemExit(__doc__)
-    raise SystemExit(main(Path(sys.argv[1]), Path(sys.argv[2])))
+    ap = argparse.ArgumentParser(description="EXP-001: согласованность ESG-рейтингов Dow30")
+    ap.add_argument("ds_dir", type=Path, help="каталог DS-01 (в нём raw/)")
+    ap.add_argument("results_root", type=Path, help="каталог результатов")
+    ap.add_argument("--seed", type=int, default=SEED)
+    ap.add_argument("--n-boot", type=int, default=N_BOOT)
+    ap.add_argument("--n-perm", type=int, default=N_PERM)
+    args = ap.parse_args()
+    SEED, N_BOOT, N_PERM = args.seed, args.n_boot, args.n_perm
+    raise SystemExit(main(args.ds_dir, args.results_root))
