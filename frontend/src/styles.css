@@ -503,3 +503,4 @@ a.btn-ghost.active { border-color: var(--accent); }
 @media (max-width: 640px) { .article-title { font-size: 22px; } }
 .fragments { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 14px; }
 .fragments p { margin: 4px 0; line-height: 1.55; white-space: pre-wrap; }
+.code { margin: 8px 0 0; padding: 12px; background: #14231c; color: #e8efea; border-radius: 8px; font: 13px "IBM Plex Mono", monospace; white-space: pre-wrap; overflow-x: auto; }

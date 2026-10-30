@@ -7,12 +7,12 @@ import { Experiment, Experiments } from "./pages/ExperimentPages";
 import { Hypotheses } from "./pages/HypothesesPage";
 import { Login } from "./pages/Login";
 import { Methodology } from "./pages/MethodologyPage";
+import { Run } from "./pages/RunPage";
 import { ChangePassword, Users } from "./pages/UsersPage";
 import {
   Graph,
   Knowledge,
   Overview,
-  Run,
 } from "./pages/sections";
 
 export function App() {

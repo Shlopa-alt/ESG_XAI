@@ -7,7 +7,6 @@ import { kbDocuments, kbStats } from "../api/kb";
 import { getMethodology, listCrs, STABILITY_LABEL } from "../api/methodology";
 import { CORPUS, CORPUS_TOTAL } from "../content";
 import { KbGraphSummary, KbLive } from "./KbLive";
-import { SectionPage } from "./SectionPage";
 
 function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: string }) {
   return (
@@ -192,12 +191,4 @@ export const Graph = () => (
     />
     <KbGraphSummary />
   </>
-);
-
-export const Run = () => (
-  <SectionPage
-    eyebrow="ЭКСПЕРИМЕНТЫ · ЗАПУСК"
-    title="Запуск экспериментов"
-    lead="Конфигурация запуска, живой поток метрик и логов, очередь сервера. Скрипты EXP-007 уже лежат в runner/hsu2025."
-  />
 );

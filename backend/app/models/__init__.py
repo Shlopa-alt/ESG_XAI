@@ -8,6 +8,7 @@ from app.models.research import (
     KbRef,
     Review,
 )
+from app.models.run import Run
 from app.models.user import User
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "MethodologySection",
     "MethodologyVersion",
     "Review",
+    "Run",
     "User",
 ]

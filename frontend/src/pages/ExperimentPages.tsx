@@ -12,6 +12,7 @@ import {
   VERDICT_LABEL,
 } from "../api/experiments";
 import { useMe } from "../auth/useAuth";
+import { experimentRuns, RunsTable } from "./RunPage";
 
 const BADGE: Record<ExpStatus, string> = {
   draft: "st-planned",
@@ -144,6 +145,7 @@ export function Experiment() {
   const { code = "" } = useParams();
   const me = useMe();
   const q = useQuery({ queryKey: ["experiment", code], queryFn: () => getExperiment(code) });
+  const runs = useQuery({ queryKey: ["runs", code], queryFn: () => experimentRuns(code) });
   if (q.isPending) return <p className="muted">Загрузка…</p>;
   if (q.isError) {
     return (
@@ -197,6 +199,10 @@ export function Experiment() {
           </ul>
         </section>
       </div>
+      <section className="card">
+        <h2 className="h2">Запуски</h2>
+        <RunsTable runs={Array.isArray(runs.data) ? runs.data : []} />
+      </section>
       {e.links.length > 0 && (
         <section className="card">
           <h2 className="h2">Связи с базой знаний</h2>
