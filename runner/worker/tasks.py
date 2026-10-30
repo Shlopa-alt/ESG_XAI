@@ -167,7 +167,8 @@ class Tracker:
             if results is not None and results.is_dir():
                 for f in sorted(results.rglob("*")):
                     if f.is_file() and f.stat().st_size < 50 * 2**20:
-                        self.ml.log_artifact(str(f), str(f.parent.relative_to(results)))
+                        sub = f.parent.relative_to(results).as_posix()
+                        self.ml.log_artifact(str(f), None if sub == "." else sub)
             self.ml.end_run({"done": "FINISHED", "stopped": "KILLED"}.get(status, "FAILED"))
         except Exception as exc:  # noqa: BLE001
             self.ev.emit("log", line=f"[исполнитель] MLflow: {exc}")
