@@ -32,6 +32,12 @@ if (-not (Test-Path (Join-Path $day "esg.sql"))) { $ok = $false; Say "ОШИБК
 & $Docker cp kbrag-db:/tmp/kbrag.sql (Join-Path $day "kbrag.sql")
 if (-not (Test-Path (Join-Path $day "kbrag.sql"))) { $ok = $false; Say "ОШИБКА: дамп KBRAG" }
 
+# MLflow: база запусков и артефакты (метрики и файлы результатов запусков из формы)
+& $Docker compose -f (Join-Path $Platform "deploy\docker-compose.yml") exec -T mlflow `
+    sh -c "tar czf /tmp/mlflow.tgz -C /mlflow ."
+& $Docker compose -f (Join-Path $Platform "deploy\docker-compose.yml") cp mlflow:/tmp/mlflow.tgz (Join-Path $day "mlflow.tgz")
+if (-not (Test-Path (Join-Path $day "mlflow.tgz"))) { $ok = $false; Say "ОШИБКА: архив MLflow" }
+
 # Настройки и доступы KBRAG (в git не идут), срезы данных экспериментов
 Copy-Item (Join-Path $Kbrag "config\kbs") (Join-Path $day "kbrag-config-kbs") -Recurse -Force
 Copy-Item (Join-Path $Kbrag ".local\access.yaml") $day -Force -ErrorAction SilentlyContinue
