@@ -3,7 +3,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import type { KbRefIn } from "../api/hypotheses";
-import { type KbHit, kbDocuments, kbNetwork, kbSearch, kbStats, kbTree } from "../api/kb";
+import { type KbHit, kbDocuments, kbSearch, kbStats, kbTree } from "../api/kb";
 
 /** Ссылка на найденный фрагмент — опора гипотезы, эксперимента или CR. */
 export function refFromHit(h: KbHit, kb: string): KbRefIn {
@@ -152,46 +152,5 @@ export function KbLive() {
         </table>
       </details>
     </section>
-  );
-}
-
-/** Сводка графа фактов KBRAG; визуализация — когда граф построен. */
-export function KbGraphSummary() {
-  const net = useQuery({ queryKey: ["kb", "network", ROOT], queryFn: () => kbNetwork(ROOT) });
-  if (net.isPending) return <div className="card muted">Загрузка графа…</div>;
-  if (net.isError) {
-    return (
-      <div className="card error" role="alert">
-        {net.error.message}
-      </div>
-    );
-  }
-  const entities = net.data.nodes.filter((n) => n.kind === "сущность");
-  const facts = net.data.edges.filter((e) => e.type === "факт");
-  if (facts.length === 0) {
-    return (
-      <div className="card">
-        <h2 className="h2">Граф фактов</h2>
-        <p className="muted">
-          Граф ещё не построен: статьи загружены, фактов пока нет. Граф выписывает языковая модель Qwen3 по правилам
-          ветки esg — следующий шаг после загрузки модели.
-        </p>
-      </div>
-    );
-  }
-  const top = [...entities].sort((a, b) => (b.facts ?? 0) - (a.facts ?? 0)).slice(0, 30);
-  return (
-    <div className="card">
-      <h2 className="h2">
-        Граф фактов: {fmt(entities.length)} сущностей, {fmt(facts.length)} связей
-      </h2>
-      <ul className="list">
-        {top.map((n) => (
-          <li key={n.id}>
-            {n.name} <span className="muted">— фактов {n.facts ?? 0}, статей {n.documents ?? 0}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }

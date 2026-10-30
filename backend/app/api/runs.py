@@ -98,7 +98,8 @@ def _seed(seeds: dict[str, Any]) -> int | None:
         value = seeds.get(key)
         if isinstance(value, int):
             return value
-    return None
+    # другие имена (bootstrap, permutation…) — первый целый seed
+    return next((v for k, v in seeds.items() if not k.startswith("n_") and isinstance(v, int)), None)
 
 
 @router.post("/experiments/{code}/runs", response_model=RunOut, status_code=status.HTTP_201_CREATED)

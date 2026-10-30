@@ -119,15 +119,23 @@ export function Run() {
       <section className="card">
         <h2 className="h2">Как запустить расчёт</h2>
         <p className="muted">
-          Сейчас расчёт запускается на сервере лаборатории скриптом из <span className="mono">runner/</span>, а его итог —
-          файл <span className="mono">run.json</span> — регистрируется здесь. Запуск из формы с очередью и живым потоком
-          метрик — следующий шаг этапа.
+          Расчёт запускается на сервере лаборатории скриптом из <span className="mono">runner/</span>. Скрипт сам
+          записывает коммит, sha256 среза данных, окружение и seed в <span className="mono">run.json</span>; файл
+          регистрируется командой <span className="mono">python -m app.manage import-run</span> в контейнере backend.
         </p>
         <pre className="code">
-          {`cd runner/hsu2025
+          {`# EXP-001 · согласованность рейтингов Dow30 (DS-01)
+cd runner/dow30
+python run_exp001.py <каталог DS-01> <каталог результатов>
+
+# EXP-007 · повтор Hsu et al. (2025) (DS-04)
+cd runner/hsu2025
 python fetch_mops.py <каталог>/raw              # данные с хешами в manifest.json
 python build_dataset.py <каталог>/raw <каталог>/build
-python run_exp007.py <каталог> <каталог результатов>   # run.json рядом с результатами`}
+python run_exp007.py <каталог> <каталог результатов>
+
+# регистрация: run.json лежит в каталоге результатов
+docker compose exec backend python -m app.manage import-run EXP-001 /tmp/run.json`}
         </pre>
       </section>
     </>

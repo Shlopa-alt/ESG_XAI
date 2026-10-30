@@ -52,3 +52,11 @@ def test_same_dataset_hash_reuses_snapshot(make_client, seeded) -> None:  # type
 
 def test_reader_cannot_import(make_client, seeded) -> None:  # type: ignore[no-untyped-def]
     assert make_client("r", "reader").post("/api/experiments/EXP-007/runs", json=_run()).status_code == 403
+
+
+def test_seed_from_other_key_names() -> None:
+    from app.api.runs import _seed
+
+    assert _seed({"split": 7, "bootstrap": 42}) == 7
+    assert _seed({"n_boot": 10000, "bootstrap": 42}) == 42
+    assert _seed({"repeats": "0..29"}) is None

@@ -1,7 +1,8 @@
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Dataset, DatasetSnapshot
+from app.models import Dataset, DatasetSnapshot, Experiment, Hypothesis
 
 
 def _create(c, code: str = "EXP-100"):  # type: ignore[no-untyped-def]
@@ -93,3 +94,20 @@ def test_link_to_kbrag_article(make_client) -> None:  # type: ignore[no-untyped-
 
 def test_list_requires_login(client) -> None:  # type: ignore[no-untyped-def]
     assert client.get("/api/experiments").status_code == 401
+
+
+def test_done_marks_hypothesis_tested(make_client, snapshot: int, db_session: Session) -> None:  # type: ignore[no-untyped-def]
+    c = make_client("res", "researcher")
+    _create(c)
+    exp_id = db_session.scalar(select(Experiment.id).where(Experiment.code == "EXP-100"))
+    db_session.add(Hypothesis(code="H-100", title="проверка", statement="s", status="testing",
+                              experiment_id=exp_id))
+    db_session.commit()
+    r = c.patch(
+        "/api/experiments/EXP-100",
+        json={"status": "done", "runner_commit": "abc123", "dataset_snapshot_id": snapshot,
+              "env_lock": "numpy==2.1", "seed": 42},
+    )
+    assert r.status_code == 200, r.text
+    db_session.expire_all()
+    assert db_session.scalar(select(Hypothesis.status).where(Hypothesis.code == "H-100")) == "tested"

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_user, require_role
 from app.db import get_db
-from app.models import Dataset, Experiment, ExperimentLink, KbRef, Review, User
+from app.models import Dataset, Experiment, ExperimentLink, Hypothesis, KbRef, Review, User
 from app.services.codes import next_code
 from app.services.experiments import DomainError, set_status
 from app.services.report import Report
@@ -224,6 +224,11 @@ def patch_experiment(
         except DomainError as exc:
             db.rollback()
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        if new_status == "done":
+            # завершённый эксперимент закрывает проверку своей гипотезы
+            for h in db.scalars(select(Hypothesis).where(Hypothesis.experiment_id == exp.id,
+                                                         Hypothesis.status == "testing")):
+                h.status = "tested"
     db.commit()
     return _detail(db, exp)
 
