@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_user, require_role
 from app.db import get_db
 from app.models import Dataset, DatasetSnapshot, Experiment, Run, User
+from app.services.report import Report, merge_run_report
 
 router = APIRouter(tags=["runs"])
 
@@ -45,6 +46,7 @@ class RunImport(BaseModel):
     finished_at: datetime | None = None
     summary: dict[str, Any] = {}
     results_path: str = ""
+    report: Report | None = None  # графики и цифры, посчитанные самим расчётом
 
 
 class RunOut(BaseModel):
@@ -135,6 +137,8 @@ def import_run(
         exp.dataset_snapshot_id = snap.id
         exp.env_lock = f"requirements.lock sha256:{body.env_lock_sha256}; python {body.python}"
         exp.seed = _seed(body.seeds)
+    if body.report is not None and run.status == "done":
+        exp.report = merge_run_report(exp.report or {}, body.report)
     db.commit()
     return _out(db, run)
 

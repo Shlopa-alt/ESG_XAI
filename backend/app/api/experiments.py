@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_user, require_role
 from app.db import get_db
 from app.models import Dataset, Experiment, ExperimentLink, KbRef, Review, User
+from app.services.codes import next_code
 from app.services.experiments import DomainError, set_status
+from app.services.report import Report
 
 router = APIRouter(tags=["experiments"])
 
@@ -72,17 +74,24 @@ class ExperimentDetail(ExperimentOut):
 
 
 class ExperimentIn(BaseModel):
-    code: str = Field(pattern=r"^EXP-\d{3}$")
+    code: str | None = Field(default=None, pattern=r"^EXP-\d{3}$")  # нет — следующий свободный
     title: str = Field(min_length=3)
     hypothesis: str = ""
     direction: str = ""
     method: str = ""
     data_summary: str = ""
+    setup: list[str] = []
 
 
 class ExperimentPatch(BaseModel):
     title: str | None = None
     hypothesis: str | None = None
+    direction: str | None = None
+    method: str | None = None
+    data_summary: str | None = None
+    setup: list[str] | None = None
+    reproducibility: list[str] | None = None
+    report: Report | None = None
     status: Status | None = None
     outcome: Outcome | None = None
     dataset_snapshot_id: int | None = None
@@ -186,10 +195,12 @@ def create_experiment(
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Researcher],
 ) -> Experiment:
-    if db.scalar(select(Experiment).where(Experiment.code == body.code)):
-        raise HTTPException(status.HTTP_409_CONFLICT, f"Код {body.code} уже занят")
-    exp = Experiment(**body.model_dump(), status="draft", author_id=user.id, config={},
-                     setup=[], results=[], limitations=[], reproducibility=[])
+    code = body.code or next_code(db, Experiment.code, "EXP", 3)
+    if db.scalar(select(Experiment).where(Experiment.code == code)):
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Код {code} уже занят")
+    exp = Experiment(**body.model_dump(exclude={"code"}), code=code, status="draft",
+                     author_id=user.id, config={}, results=[], limitations=[],
+                     reproducibility=[], report={})
     db.add(exp)
     db.commit()
     db.refresh(exp)
@@ -203,6 +214,8 @@ def patch_experiment(
     exp = _get(db, code)
     data = body.model_dump(exclude_unset=True)
     new_status = data.pop("status", None)
+    if body.report is not None:
+        data["report"] = body.report.model_dump()
     for key, value in data.items():
         setattr(exp, key, value)
     if new_status is not None:

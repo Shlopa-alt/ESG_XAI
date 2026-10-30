@@ -62,3 +62,10 @@ export const CR_STATUS_LABEL: Record<CrStatus, string> = {
   accepted: "принято",
   rejected: "отклонено",
 };
+export const createCr = (cr: { section: string; title: string; description: string; proposed_content: string }) =>
+  call<ChangeRequest>("/change-requests", { method: "POST", body: JSON.stringify(cr) });
+export const addCrBasis = (code: string, experimentCode: string) =>
+  call<ChangeRequest>(`/change-requests/${code}/bases`, {
+    method: "POST",
+    body: JSON.stringify({ basis_type: "experiment", experiment_code: experimentCode }),
+  });

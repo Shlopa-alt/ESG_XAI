@@ -21,6 +21,7 @@ from app.models import (
     User,
 )
 from app.services import methodology as svc
+from app.services.codes import next_code
 from app.services.experiments import DomainError
 
 router = APIRouter(tags=["methodology"])
@@ -75,7 +76,7 @@ class CrOut(BaseModel):
 
 
 class CrIn(BaseModel):
-    code: str = Field(pattern=r"^CR-\d{2,3}$")
+    code: str | None = Field(default=None, pattern=r"^CR-\d{2,3}$")  # нет — следующий свободный
     section: str
     title: str = Field(min_length=3)
     description: str = ""
@@ -223,10 +224,11 @@ def list_crs(db: Annotated[Session, Depends(get_db)]) -> list[CrOut]:
 def create_cr(
     body: CrIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Researcher]
 ) -> CrOut:
-    if db.scalar(select(ChangeRequest).where(ChangeRequest.code == body.code)):
-        raise HTTPException(status.HTTP_409_CONFLICT, f"Код {body.code} уже занят")
+    code = body.code or next_code(db, ChangeRequest.code, "CR", 2)
+    if db.scalar(select(ChangeRequest).where(ChangeRequest.code == code)):
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Код {code} уже занят")
     section = _section(db, body.section)
-    cr = ChangeRequest(code=body.code, section_id=section.id, title=body.title,
+    cr = ChangeRequest(code=code, section_id=section.id, title=body.title,
                        description=body.description, proposed_content=body.proposed_content,
                        status="proposed", author_id=user.id)
     db.add(cr)

@@ -52,6 +52,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const listExperiments = () => call<Experiment[]>("/experiments");
 export const getExperiment = (code: string) => call<ExperimentDetail>(`/experiments/${code}`);
+export const createExperiment = (e: { title: string; hypothesis: string; direction: string; method: string; data_summary: string }) =>
+  call<Experiment>("/experiments", { method: "POST", body: JSON.stringify(e) });
 export const listDatasets = () => call<Dataset[]>("/datasets");
 export const addReview = (code: string, verdict: string, text: string) =>
   call<ExperimentDetail>("/reviews", {

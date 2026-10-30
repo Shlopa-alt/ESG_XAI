@@ -1,7 +1,6 @@
 """Гипотезы: предложить может любой вошедший; принять или отклонить — reviewer/owner;
 проверить экспериментом — researcher/owner."""
 
-import re
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -13,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_user, require_role
 from app.db import get_db
 from app.models import Experiment, ExperimentLink, Hypothesis, HypothesisRef, KbRef, User
+from app.services.codes import next_code
 
 router = APIRouter(prefix="/hypotheses", tags=["hypotheses"])
 
@@ -66,12 +66,6 @@ class DecisionIn(BaseModel):
     note: str = ""
 
 
-def _next_code(db: Session, prefix: str, model: type[Hypothesis] | type[Experiment], width: int) -> str:
-    codes = db.scalars(select(model.code).where(model.code.like(f"{prefix}-%")))
-    nums = [int(m.group(1)) for c in codes if (m := re.fullmatch(rf"{prefix}-(\d+)", c))]
-    return f"{prefix}-{max(nums, default=0) + 1:0{width}d}"
-
-
 def _get(db: Session, code: str) -> Hypothesis:
     h = db.scalar(select(Hypothesis).where(Hypothesis.code == code))
     if h is None:
@@ -123,7 +117,7 @@ def propose(
     user: Annotated[User, Depends(current_user)],
 ) -> HypothesisOut:
     """Предложить гипотезу может любой вошедший пользователь, в том числе reader."""
-    h = Hypothesis(code=_next_code(db, "H", Hypothesis, 3), title=body.title,
+    h = Hypothesis(code=next_code(db, Hypothesis.code, "H", 3), title=body.title,
                    statement=body.statement, rationale=body.rationale, direction=body.direction,
                    status="proposed", author_id=user.id)
     db.add(h)
@@ -172,7 +166,7 @@ def start_experiment(
     h = _get(db, code)
     if h.status != "accepted":
         raise HTTPException(status.HTTP_409_CONFLICT, "Проверять экспериментом можно принятую гипотезу")
-    exp = Experiment(code=_next_code(db, "EXP", Experiment, 3), title=h.title,
+    exp = Experiment(code=next_code(db, Experiment.code, "EXP", 3), title=h.title,
                      hypothesis=h.statement, direction=h.direction, status="planned",
                      author_id=user.id, config={}, setup=[], results=[], limitations=[],
                      reproducibility=[], data_summary="", method="")

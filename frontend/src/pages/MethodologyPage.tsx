@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { listExperiments } from "../api/experiments";
 import {
+  addCrBasis,
   type ChangeRequest,
+  createCr,
   CR_STATUS_LABEL,
   getMethodology,
   listCrs,
@@ -116,8 +119,91 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
   );
 }
 
+function NewCr({ sections, onDone }: { sections: Array<{ number: string; title: string; content: string }>; onDone: () => void }) {
+  const qc = useQueryClient();
+  const exps = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
+  const [section, setSection] = useState(sections[0]?.number ?? "");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const current = sections.find((s) => s.number === section)?.content ?? "";
+  const [proposed, setProposed] = useState("");
+  const [basis, setBasis] = useState("");
+  const m = useMutation({
+    mutationFn: async () => {
+      const cr = await createCr({ section, title, description, proposed_content: proposed });
+      if (basis) await addCrBasis(cr.code, basis);
+      return cr;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["crs"] });
+      onDone();
+    },
+  });
+  const submit = (ev: FormEvent) => {
+    ev.preventDefault();
+    m.mutate();
+  };
+  const expList = Array.isArray(exps.data) ? exps.data : [];
+  return (
+    <form className="card propose" onSubmit={submit}>
+      <h2 className="h2">Предложить изменение методологии</h2>
+      <p className="muted">
+        CR принимает владелец после одобряющей рецензии — и только если есть основание: завершённый эксперимент, факт
+        или статья базы знаний с источником. Статью можно добавить основанием со страницы статьи.
+      </p>
+      <label className="field">
+        Раздел
+        <select value={section} onChange={(ev) => setSection(ev.target.value)}>
+          {sections.map((s) => (
+            <option key={s.number} value={s.number}>
+              {s.number}. {s.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        Что меняется — коротко
+        <input value={title} onChange={(ev) => setTitle(ev.target.value)} required minLength={3} />
+      </label>
+      <label className="field">
+        Зачем — что показали эксперименты или статьи
+        <textarea rows={3} value={description} onChange={(ev) => setDescription(ev.target.value)} />
+      </label>
+      <label className="field">
+        Новый текст раздела
+        <textarea rows={5} value={proposed} onChange={(ev) => setProposed(ev.target.value)} placeholder={current} />
+      </label>
+      <label className="field">
+        Основание — эксперимент (можно добавить позже)
+        <select value={basis} onChange={(ev) => setBasis(ev.target.value)}>
+          <option value="">— без основания пока —</option>
+          {expList.map((e) => (
+            <option key={e.code} value={e.code}>
+              {e.code} · {e.title.slice(0, 70)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {m.isError && (
+        <p className="error" role="alert">
+          {m.error.message}
+        </p>
+      )}
+      <div className="review-form">
+        <button type="submit" className="btn-primary" disabled={m.isPending}>
+          Отправить на рецензию
+        </button>
+        <button type="button" className="btn-ghost" onClick={onDone}>
+          Отмена
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function Methodology() {
   const me = useMe();
+  const [creating, setCreating] = useState(false);
   const m = useQuery({ queryKey: ["methodology"], queryFn: getMethodology });
   const crs = useQuery({ queryKey: ["crs"], queryFn: listCrs });
   const versions = useQuery({ queryKey: ["versions"], queryFn: listVersions });
@@ -125,6 +211,7 @@ export function Methodology() {
   const sections = Array.isArray(m.data?.sections) ? m.data.sections : [];
   const crList = Array.isArray(crs.data) ? crs.data : [];
   const versionList = Array.isArray(versions.data) ? versions.data : [];
+  const canPropose = me.data?.role === "researcher" || me.data?.role === "owner";
   return (
     <>
       <section className="page-head">
@@ -160,6 +247,14 @@ export function Methodology() {
         </section>
         <section className="cr-board">
           <h2 className="h2">Предложения изменений</h2>
+          {canPropose && !creating && (
+            <div>
+              <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
+                Предложить изменение
+              </button>
+            </div>
+          )}
+          {creating && <NewCr sections={sections} onDone={() => setCreating(false)} />}
           {crList.map((cr) => (
             <CrCard key={cr.code} cr={cr} role={me.data?.role} />
           ))}

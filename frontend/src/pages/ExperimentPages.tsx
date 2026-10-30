@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   addReview,
+  createExperiment,
   type ExpStatus,
   getExperiment,
   listExperiments,
@@ -13,12 +14,18 @@ import {
 } from "../api/experiments";
 import { useMe } from "../auth/useAuth";
 import { experimentRuns, RunsTable } from "./RunPage";
-import { Chart, type ChartSpec } from "../components/Charts";
+import { Chart } from "../components/Charts";
+import { ExperimentEditor, toReport } from "./ExperimentEditor";
 
-interface ExperimentReport {
-  kpis?: Array<{ label: string; value: string; was?: string; note?: string }>;
-  charts?: ChartSpec[];
-  analysis?: { summary?: string; why?: string[]; meaning?: string[]; next?: string[] };
+/** Пустой раздел: что в нём должно быть и откуда это возьмётся. */
+function Empty({ title, text, canEdit }: { title: string; text: string; canEdit: boolean }) {
+  return (
+    <section className="card empty-state">
+      <h2 className="h2">{title}</h2>
+      <p className="muted">{text}</p>
+      {canEdit && <p className="muted">Заполнить — кнопка «Редактировать» вверху.</p>}
+    </section>
+  );
 }
 
 const BADGE: Record<ExpStatus, string> = {
@@ -40,8 +47,82 @@ function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: 
   );
 }
 
+function NewExperiment({ onDone }: { onDone: () => void }) {
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const [title, setTitle] = useState("");
+  const [hypothesis, setHypothesis] = useState("");
+  const [direction, setDirection] = useState("");
+  const [method, setMethod] = useState("");
+  const [data, setData] = useState("");
+  const m = useMutation({
+    mutationFn: () => createExperiment({ title, hypothesis, direction, method, data_summary: data }),
+    onSuccess: (e) => {
+      void qc.invalidateQueries({ queryKey: ["experiments"] });
+      onDone();
+      navigate(`/experiments/${e.code}`);
+    },
+  });
+  const submit = (ev: FormEvent) => {
+    ev.preventDefault();
+    m.mutate();
+  };
+  return (
+    <form className="card propose" onSubmit={submit}>
+      <h2 className="h2">Новый эксперимент</h2>
+      <p className="muted">
+        Обычно эксперимент создаётся из принятой гипотезы (раздел «Гипотезы»). Здесь — напрямую, например для
+        воспроизведения статьи. Код присвоится автоматически.
+      </p>
+      <label className="field">
+        Название
+        <input value={title} onChange={(ev) => setTitle(ev.target.value)} required minLength={3} />
+      </label>
+      <label className="field">
+        Гипотеза — что должно подтвердиться
+        <textarea rows={3} value={hypothesis} onChange={(ev) => setHypothesis(ev.target.value)} />
+      </label>
+      <div className="form-grid">
+        <label className="field">
+          Направление
+          <select value={direction} onChange={(ev) => setDirection(ev.target.value)}>
+            <option value="">—</option>
+            <option value="Напр. 1">Напр. 1</option>
+            <option value="Напр. 2">Напр. 2</option>
+            <option value="Методы">Методы</option>
+          </select>
+        </label>
+        <label className="field">
+          Метод
+          <input value={method} onChange={(ev) => setMethod(ev.target.value)} />
+        </label>
+        <label className="field span-2">
+          Данные
+          <input value={data} onChange={(ev) => setData(ev.target.value)} placeholder="DS-05 · ранги RAEX" />
+        </label>
+      </div>
+      {m.isError && (
+        <p className="error" role="alert">
+          {m.error.message}
+        </p>
+      )}
+      <div className="review-form">
+        <button type="submit" className="btn-primary" disabled={m.isPending}>
+          Создать
+        </button>
+        <button type="button" className="btn-ghost" onClick={onDone}>
+          Отмена
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export function Experiments() {
   const q = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
+  const me = useMe();
+  const [creating, setCreating] = useState(false);
+  const canCreate = me.data?.role === "researcher" || me.data?.role === "owner";
   return (
     <>
       <Head
@@ -49,6 +130,14 @@ export function Experiments() {
         title="Реестр экспериментов"
         lead="Воспроизводимые запуски: версия данных, код, окружение, метрики. Отрицательные результаты публикуются наравне с положительными."
       />
+      {canCreate && !creating && (
+        <div>
+          <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
+            Новый эксперимент
+          </button>
+        </div>
+      )}
+      {creating && <NewExperiment onDone={() => setCreating(false)} />}
       {q.isError && (
         <p className="error" role="alert">
           {q.error.message}
@@ -151,6 +240,7 @@ function ReviewForm({ code }: { code: string }) {
 export function Experiment() {
   const { code = "" } = useParams();
   const me = useMe();
+  const [editing, setEditing] = useState(false);
   const q = useQuery({ queryKey: ["experiment", code], queryFn: () => getExperiment(code) });
   const runs = useQuery({ queryKey: ["runs", code], queryFn: () => experimentRuns(code) });
   if (q.isPending) return <p className="muted">Загрузка…</p>;
@@ -163,19 +253,30 @@ export function Experiment() {
   }
   const e = q.data;
   const canReview = me.data?.role === "reviewer" || me.data?.role === "owner";
-  const report = (e.report ?? {}) as ExperimentReport;
-  const charts = Array.isArray(report.charts) ? report.charts : [];
+  const canEdit = me.data?.role === "researcher" || me.data?.role === "owner";
+  const report = toReport(e.report);
+  const charts = report.charts;
+  const a = report.analysis;
+  const hasAnalysis = Boolean(a.why.length || a.meaning.length || a.next.length);
   return (
     <>
       <div className="muted">
         <Link to="/experiments">Эксперименты</Link> / <span className="mono">{e.code}</span>
       </div>
-      <Head eyebrow={`${e.code} · ${e.direction}`} title={e.title} lead={e.data_summary} />
-      <div>
-        <span className={`badge ${BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>{" "}
-        {e.outcome && <span className="badge st-planned">{OUTCOME_LABEL[e.outcome]}</span>}
+      <Head eyebrow={`${e.code} · ${e.direction || "направление не указано"}`} title={e.title} lead={e.data_summary} />
+      <div className="exp-actions">
+        <span>
+          <span className={`badge ${BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>{" "}
+          {e.outcome && <span className="badge st-planned">{OUTCOME_LABEL[e.outcome]}</span>}
+        </span>
+        {canEdit && !editing && (
+          <button type="button" className="btn-primary" onClick={() => setEditing(true)}>
+            Редактировать
+          </button>
+        )}
       </div>
-      {report.kpis && report.kpis.length > 0 && (
+      {editing && <ExperimentEditor e={e} onClose={() => setEditing(false)} />}
+      {report.kpis.length > 0 ? (
         <div className="kpis">
           {report.kpis.map((k) => (
             <div key={k.label} className="card kpi">
@@ -186,40 +287,51 @@ export function Experiment() {
             </div>
           ))}
         </div>
+      ) : (
+        <Empty title="Ключевые цифры" text="2–4 главных числа результата: что получили, с чем сравнивали, насколько надёжно." canEdit={canEdit} />
       )}
       <section className="card summary-card">
         <h2 className="h2">Вывод</h2>
-        <p>{report.analysis?.summary || e.conclusion || "—"}</p>
-        {report.analysis?.summary && e.conclusion && <p className="muted" style={{ marginTop: 8 }}>{e.conclusion}</p>}
+        <p>{a.summary || e.conclusion || "Вывода пока нет — он появится, когда эксперимент будет посчитан."}</p>
+        {a.summary && e.conclusion && <p className="muted" style={{ marginTop: 8 }}>{e.conclusion}</p>}
       </section>
       <div className="grid-2">
         <section className="card">
           <h2 className="h2">Гипотеза</h2>
-          <p>{e.hypothesis}</p>
+          <p>{e.hypothesis || "—"}</p>
           {e.method && <p className="muted">Метод: {e.method}</p>}
         </section>
-        <Block title="Постановка" items={e.setup} />
+        {e.setup.length > 0 ? (
+          <Block title="Постановка" items={e.setup} />
+        ) : (
+          <Empty title="Постановка" text="Данные, модели, протокол проверки, seed — всё, что нужно, чтобы повторить." canEdit={canEdit} />
+        )}
       </div>
-      {charts.length > 0 && (
-        <>
-          <h2 className="section-title">Результаты</h2>
-          <div className="charts">
-            {charts.map((c) => (
-              <Chart key={c.id} spec={c} />
-            ))}
-          </div>
-        </>
+      <h2 className="section-title">Результаты</h2>
+      {charts.length > 0 ? (
+        <div className="charts">
+          {charts.map((c) => (
+            <Chart key={c.id} spec={c} />
+          ))}
+        </div>
+      ) : e.results.length > 0 ? (
+        <Block title="Результат" items={e.results} />
+      ) : (
+        <Empty
+          title="Графиков пока нет"
+          text="Они появятся сами, когда зарегистрируется запуск с отчётом, или их можно добавить вручную — вставить таблицу из Excel."
+          canEdit={canEdit}
+        />
       )}
-      {charts.length === 0 && <Block title="Результат" items={e.results} />}
-      {report.analysis && (
-        <>
-          <h2 className="section-title">Интерпретация</h2>
-          <div className="grid-3">
-            <Block title="Почему так" items={report.analysis.why ?? []} />
-            <Block title="Что это значит для лаборатории" items={report.analysis.meaning ?? []} />
-            <Block title="Что дальше" items={report.analysis.next ?? []} />
-          </div>
-        </>
+      <h2 className="section-title">Интерпретация</h2>
+      {hasAnalysis ? (
+        <div className="grid-3">
+          <Block title="Почему так" items={a.why} />
+          <Block title="Что это значит для лаборатории" items={a.meaning} />
+          <Block title="Что дальше" items={a.next} />
+        </div>
+      ) : (
+        <Empty title="Разбор результата" text="Почему получилось так, что это значит для методологии и что проверить дальше." canEdit={canEdit} />
       )}
       {e.report_path && <p className="muted">Полный отчёт в репозитории: <span className="mono">{e.report_path}</span></p>}
       <div className="grid-2">
