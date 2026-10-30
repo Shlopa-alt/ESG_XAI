@@ -6,7 +6,7 @@ import { listHypotheses } from "../api/hypotheses";
 import { kbDocuments, kbStats } from "../api/kb";
 import { getMethodology, listCrs, STABILITY_LABEL } from "../api/methodology";
 import { CORPUS, CORPUS_TOTAL } from "../content";
-import { KbGraphSummary, KbLive } from "./KbLive";
+import { KbLive } from "./KbLive";
 
 function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: string }) {
   return (
@@ -182,13 +182,3 @@ export function Knowledge() {
   );
 }
 
-export const Graph = () => (
-  <>
-    <Head
-      eyebrow="БАЗА ЗНАНИЙ · ГРАФ"
-      title="Граф связей"
-      lead="Граф фактов из статей строится в базе знаний KBRAG по правилам ветки esg: ESG-фактор → механизм влияния → финансовый результат. Каждый факт — с дословной цитатой из статьи."
-    />
-    <KbGraphSummary />
-  </>
-);

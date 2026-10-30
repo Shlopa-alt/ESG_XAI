@@ -255,3 +255,22 @@ def add_review(
 @router.get("/datasets", response_model=list[DatasetOut], dependencies=[Depends(current_user)])
 def list_datasets(db: Annotated[Session, Depends(get_db)]) -> list[Dataset]:
     return list(db.scalars(select(Dataset).order_by(Dataset.code)))
+
+
+class GraphLinkOut(BaseModel):
+    experiment: str
+    title: str
+    status: str
+    relation: str
+    kbrag_id: str
+
+
+@router.get("/experiment-links", response_model=list[GraphLinkOut], dependencies=[Depends(current_user)])
+def experiment_links(db: Annotated[Session, Depends(get_db)]) -> list[GraphLinkOut]:
+    """Связи экспериментов со статьями и фактами KBRAG — узлы платформы на графе знаний."""
+    rows = db.execute(
+        select(Experiment.code, Experiment.title, Experiment.status, ExperimentLink.relation, KbRef.kbrag_id)
+        .join(ExperimentLink, ExperimentLink.experiment_id == Experiment.id)
+        .join(KbRef, KbRef.id == ExperimentLink.kb_ref_id)
+    ).all()
+    return [GraphLinkOut(experiment=c, title=t, status=s, relation=r, kbrag_id=k) for c, t, s, r, k in rows]

@@ -4,13 +4,13 @@ import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
 import { Article } from "./pages/ArticlePage";
 import { Experiment, Experiments } from "./pages/ExperimentPages";
+import { Graph } from "./pages/GraphPage";
 import { Hypotheses } from "./pages/HypothesesPage";
 import { Login } from "./pages/Login";
 import { Methodology } from "./pages/MethodologyPage";
 import { Run } from "./pages/RunPage";
 import { ChangePassword, Users } from "./pages/UsersPage";
 import {
-  Graph,
   Knowledge,
   Overview,
 } from "./pages/sections";

@@ -586,3 +586,20 @@ a.btn-ghost.active { border-color: var(--accent); }
 .editor-actions { position: sticky; bottom: 0; background: var(--surface); padding-top: 8px; }
 .empty-state { border-style: dashed; background: transparent; }
 .empty-state .h2 { color: var(--text-muted); }
+
+/* --- граф связей --- */
+.graph-controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; }
+.graph-controls .search-row { flex: 1 1 280px; }
+.rel-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.rel-swatch { display: inline-block; width: 12px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.chip.active-rel { border-color: var(--text); background: var(--surface); font-weight: 500; }
+.graph-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.graph-layout.with-panel { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
+@media (max-width: 1023px) { .graph-layout.with-panel { grid-template-columns: minmax(0, 1fr); } }
+.graph-canvas { height: min(70vh, 640px); min-height: 380px; padding: 0; overflow: hidden; }
+.graph-panel { max-height: min(70vh, 640px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.fact-line { line-height: 1.5; }
+.rel-tag { display: inline-block; padding: 0 8px; border: 2px solid; border-radius: 999px; font-size: 13px; }
+.facts blockquote { margin: 6px 0 0; padding: 6px 10px; border-left: 3px solid var(--border); font-size: 13px; color: var(--text-muted); }
+.facts cite { display: block; margin-top: 4px; font-style: normal; font-size: 12px; }
