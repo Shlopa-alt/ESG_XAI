@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     # Логины, которые становятся owner при первом входе (через запятую)
     initial_owner_logins: list[str] = Field(default_factory=list)
 
+    # База знаний KBRAG: веб-сервер (kbrag.py web) и служебный токен платформы
+    # (kbrag.py access add platform --kb esg)
+    kbrag_url: str = "http://host.docker.internal:8000"
+    kbrag_token: str = ""
+    kbrag_timeout_s: float = 30.0
+
 
 @lru_cache
 def get_settings() -> Settings:

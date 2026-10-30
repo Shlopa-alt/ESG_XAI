@@ -37,6 +37,11 @@ services:
       LDAP_USER_DN_TEMPLATE: ${LDAP_USER_DN_TEMPLATE:-uid={login},ou=people,dc=example,dc=local}
       LDAP_USE_SSL: ${LDAP_USE_SSL:-false}
       INITIAL_OWNER_LOGINS: ${INITIAL_OWNER_LOGINS:-[]}
+      # База знаний KBRAG на этой же машине (python kbrag.py web), токен — kbrag.py access add
+      KBRAG_URL: ${KBRAG_URL:-http://host.docker.internal:8000}
+      KBRAG_TOKEN: ${KBRAG_TOKEN:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
