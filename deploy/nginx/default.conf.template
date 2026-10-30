@@ -1,7 +1,23 @@
-# Доступ только из подсети центра (переменная ALLOWED_SUBNET).
-# TLS внутренним сертификатом подключается на этапе 7.
+# Доступ только из подсети центра (переменная ALLOWED_SUBNET), только по HTTPS.
+# Сертификат — deploy/certs/server.crt, подписан корневым сертификатом лаборатории
+# deploy/certs/lab-root-ca.crt (его ставят в доверенные на компьютерах сотрудников).
+# HTTPS слушает тот же порт, что раньше HTTP: обычный http:// на него перенаправляется (497).
 server {
-  listen 80;
+  listen 443 ssl;
+  http2 on;
+
+  ssl_certificate /etc/nginx/certs/server.crt;
+  ssl_certificate_key /etc/nginx/certs/server.key;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_session_cache shared:SSL:10m;
+
+  # http:// на HTTPS-порт — сразу на https:// того же адреса и порта
+  error_page 497 =301 https://$host:${HTTP_PORT}$request_uri;
+
+  add_header Strict-Transport-Security "max-age=31536000" always;
+  add_header X-Content-Type-Options nosniff always;
+  add_header X-Frame-Options SAMEORIGIN always;
+  add_header Referrer-Policy same-origin always;
 
   allow ${ALLOWED_SUBNET};
   deny all;
@@ -11,7 +27,7 @@ server {
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto https;
     # SSE (/api/runs/{id}/stream) не должен буферизоваться
     proxy_buffering off;
     proxy_read_timeout 1h;

@@ -42,6 +42,7 @@ services:
       LDAP_USE_SSL: ${LDAP_USE_SSL:-false}
       INITIAL_OWNER_LOGINS: ${INITIAL_OWNER_LOGINS:-[]}
       # База знаний KBRAG на этой же машине (python kbrag.py web), токен — kbrag.py access add
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       KBRAG_URL: ${KBRAG_URL:-http://host.docker.internal:8000}
       KBRAG_TOKEN: ${KBRAG_TOKEN:-}
     extra_hosts:
@@ -59,10 +60,13 @@ services:
     image: nginx:1.27-alpine
     environment:
       ALLOWED_SUBNET: ${ALLOWED_SUBNET:-0.0.0.0/0}
+      HTTP_PORT: ${HTTP_PORT:-8080}
     volumes:
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      # server.crt и server.key: deploy/certs (см. deploy/certs/README в .env.example)
+      - ./certs:/etc/nginx/certs:ro
     ports:
-      - "${HTTP_PORT:-8080}:80"
+      - "${HTTP_PORT:-8080}:443"
     depends_on:
       - backend
       - frontend

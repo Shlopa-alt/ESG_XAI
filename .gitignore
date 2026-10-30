@@ -12,3 +12,4 @@ dist/
 .vscode/
 *.db
 deploy/windows/logs/
+deploy/certs/
