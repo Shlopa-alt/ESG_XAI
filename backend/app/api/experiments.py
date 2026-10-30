@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -61,6 +61,7 @@ class ExperimentOut(BaseModel):
     limitations: list[str]
     reproducibility: list[str]
     report_path: str
+    report: dict[str, Any] = {}
     created_at: datetime
     finished_at: datetime | None
 

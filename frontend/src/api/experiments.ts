@@ -20,6 +20,7 @@ export interface Experiment {
   limitations: string[];
   reproducibility: string[];
   report_path: string;
+  report?: Record<string, unknown>;
 }
 
 export interface ExperimentDetail extends Experiment {

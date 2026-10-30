@@ -13,6 +13,13 @@ import {
 } from "../api/experiments";
 import { useMe } from "../auth/useAuth";
 import { experimentRuns, RunsTable } from "./RunPage";
+import { Chart, type ChartSpec } from "../components/Charts";
+
+interface ExperimentReport {
+  kpis?: Array<{ label: string; value: string; was?: string; note?: string }>;
+  charts?: ChartSpec[];
+  analysis?: { summary?: string; why?: string[]; meaning?: string[]; next?: string[] };
+}
 
 const BADGE: Record<ExpStatus, string> = {
   draft: "st-planned",
@@ -156,6 +163,8 @@ export function Experiment() {
   }
   const e = q.data;
   const canReview = me.data?.role === "reviewer" || me.data?.role === "owner";
+  const report = (e.report ?? {}) as ExperimentReport;
+  const charts = Array.isArray(report.charts) ? report.charts : [];
   return (
     <>
       <div className="muted">
@@ -166,18 +175,53 @@ export function Experiment() {
         <span className={`badge ${BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>{" "}
         {e.outcome && <span className="badge st-planned">{OUTCOME_LABEL[e.outcome]}</span>}
       </div>
-      <section className="card">
-        <h2 className="h2">Гипотеза</h2>
-        <p>{e.hypothesis}</p>
-        {e.method && <p className="muted">Метод: {e.method}</p>}
-      </section>
-      <Block title="Постановка" items={e.setup} />
-      <Block title="Результат" items={e.results} />
-      <section className="card accent">
+      {report.kpis && report.kpis.length > 0 && (
+        <div className="kpis">
+          {report.kpis.map((k) => (
+            <div key={k.label} className="card kpi">
+              <span className="kpi-label">{k.label}</span>
+              <span className="kpi-value">{k.value}</span>
+              {k.was && <span className="kpi-was">{k.was}</span>}
+              {k.note && <span className="muted">{k.note}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      <section className="card summary-card">
         <h2 className="h2">Вывод</h2>
-        <p>{e.conclusion || "—"}</p>
-        {e.report_path && <p className="muted">Полный отчёт: {e.report_path}</p>}
+        <p>{report.analysis?.summary || e.conclusion || "—"}</p>
+        {report.analysis?.summary && e.conclusion && <p className="muted" style={{ marginTop: 8 }}>{e.conclusion}</p>}
       </section>
+      <div className="grid-2">
+        <section className="card">
+          <h2 className="h2">Гипотеза</h2>
+          <p>{e.hypothesis}</p>
+          {e.method && <p className="muted">Метод: {e.method}</p>}
+        </section>
+        <Block title="Постановка" items={e.setup} />
+      </div>
+      {charts.length > 0 && (
+        <>
+          <h2 className="section-title">Результаты</h2>
+          <div className="charts">
+            {charts.map((c) => (
+              <Chart key={c.id} spec={c} />
+            ))}
+          </div>
+        </>
+      )}
+      {charts.length === 0 && <Block title="Результат" items={e.results} />}
+      {report.analysis && (
+        <>
+          <h2 className="section-title">Интерпретация</h2>
+          <div className="grid-3">
+            <Block title="Почему так" items={report.analysis.why ?? []} />
+            <Block title="Что это значит для лаборатории" items={report.analysis.meaning ?? []} />
+            <Block title="Что дальше" items={report.analysis.next ?? []} />
+          </div>
+        </>
+      )}
+      {e.report_path && <p className="muted">Полный отчёт в репозитории: <span className="mono">{e.report_path}</span></p>}
       <div className="grid-2">
         <Block title="Ограничения" items={e.limitations} />
         <section className="card">

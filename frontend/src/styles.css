@@ -504,3 +504,64 @@ a.btn-ghost.active { border-color: var(--accent); }
 .fragments { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 14px; }
 .fragments p { margin: 4px 0; line-height: 1.55; white-space: pre-wrap; }
 .code { margin: 8px 0 0; padding: 12px; background: #14231c; color: #e8efea; border-radius: 8px; font: 13px "IBM Plex Mono", monospace; white-space: pre-wrap; overflow-x: auto; }
+
+/* --- графики отчёта (палитра: слоты 1–3 проверенной категориальной палитры) --- */
+:root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --grid: #e6ebe7;
+  --ref: #5a6b62;
+}
+.viz { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.viz-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.viz-title { margin: 0; }
+.viz-sub { margin: 4px 0 0; }
+.viz-toggle { min-height: 36px; flex: none; }
+.viz-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--text-muted); }
+.viz-legend li { display: flex; align-items: center; gap: 6px; }
+.viz-swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.viz-swatch.s1, .viz-bar.s1 { background: var(--series-1); }
+.viz-swatch.s2, .viz-bar.s2 { background: var(--series-2); }
+.viz-swatch.s3, .viz-bar.s3 { background: var(--series-3); }
+.viz-plot { display: flex; flex-direction: column; gap: 14px; }
+.viz-row { display: grid; grid-template-columns: minmax(110px, 26%) minmax(0, 1fr); gap: 12px; align-items: center; }
+.viz-label { font-size: 13px; color: var(--text); line-height: 1.3; text-align: right; }
+.viz-track { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 2px 0; }
+.viz-grid { position: absolute; inset: -7px 0; pointer-events: none; }
+.viz-grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
+.viz-grid .viz-ref { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ref); }
+.viz-bar-slot, .viz-range-slot { position: relative; height: 12px; }
+.viz-bar { position: absolute; top: 0; height: 12px; border-radius: 0 4px 4px 0; outline-offset: 2px; cursor: default; }
+.viz-bar.neg { border-radius: 4px 0 0 4px; }
+.viz-bar.active, .viz-bar:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+.viz-range-slot { height: 16px; }
+.viz-whisker { position: absolute; top: 7px; height: 2px; background: #9aa8a0; border-radius: 1px; }
+.viz-dot { position: absolute; top: 2px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--series-1); box-shadow: 0 0 0 2px var(--surface); cursor: default; }
+.viz-dot.active, .viz-dot:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+.viz-row.with-value { grid-template-columns: minmax(110px, 26%) minmax(0, 1fr) 56px; }
+.viz-value { font-size: 12px; color: var(--text); white-space: nowrap; text-align: right; }
+.viz-tip { position: absolute; bottom: calc(100% + 8px); transform: translateX(-50%); z-index: 5; padding: 6px 10px; background: #17201b; color: #fff; border-radius: 6px; font-size: 12px; white-space: nowrap; pointer-events: none; }
+.viz-axis { position: relative; height: 18px; font-size: 12px; color: var(--text-muted); }
+.viz-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.viz-note { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.viz-ref-key { width: 14px; height: 2px; background: var(--ref); display: inline-block; }
+.viz-interp { margin: 0; padding: 12px 14px; background: #f4f6f3; border-radius: 8px; line-height: 1.55; font-size: 15px; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 1fr)); gap: 16px; }
+@media (max-width: 640px) {
+  .viz-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .viz-label { text-align: left; font-weight: 500; }
+  .viz-row.with-value { grid-template-columns: minmax(0, 1fr) 52px; }
+  .viz-row.with-value .viz-label { grid-column: 1 / -1; }
+}
+
+/* --- карточка эксперимента --- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 16px; }
+.kpi { display: flex; flex-direction: column; gap: 4px; }
+.kpi-value { font: 600 30px "IBM Plex Sans", sans-serif; color: var(--text); font-variant-numeric: proportional-nums; }
+.kpi-was { font-size: 13px; color: var(--text-muted); text-decoration: line-through; }
+.kpi-label { font-weight: 500; font-size: 14px; }
+.summary-card { border-left: 4px solid var(--accent); font-size: 17px; line-height: 1.55; }
+.summary-card p { margin: 0; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); gap: 16px; }
+.section-title { margin: 8px 0 0; font-size: 20px; }

@@ -87,6 +87,8 @@ class Experiment(Base):
     limitations: Mapped[list[str]] = mapped_column(JSON, default=list)
     reproducibility: Mapped[list[str]] = mapped_column(JSON, default=list)
     report_path: Mapped[str] = mapped_column(String(512), default="")
+    # Отчёт для страницы: ключевые цифры, графики с интерпретацией, разбор результата
+    report: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
