@@ -4,14 +4,17 @@
 пользователя уходят в веб-сервер KBRAG со служебным токеном платформы.
 """
 
-from typing import Annotated
+import json
+from collections.abc import Iterator
+from typing import Annotated, Literal
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as ApiRequest
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.api.deps import current_user
 from app.config import Settings, get_settings
@@ -45,6 +48,58 @@ def fetch(url: str, token: str, timeout_s: float) -> tuple[int, bytes, str]:
             return r.status, r.read(), r.headers.get("Content-Type", "application/json")
     except HTTPError as exc:
         return exc.code, exc.read(), exc.headers.get("Content-Type", "application/json")
+
+
+class Turn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=20_000)
+
+
+class ChatIn(BaseModel):
+    question: str = Field(min_length=2, max_length=2000)
+    kb: str = Field(default="esg", pattern=r"^esg(\.[a-z0-9_]+)*$")
+    history: list[Turn] = Field(default_factory=list, max_length=20)
+    conflicts: bool | None = None  # сверять ли расхождения между статьями (по умолчанию — как в KBRAG)
+
+
+@router.post("/chat")
+def chat(
+    body: ChatIn,
+    _user: Annotated[User, Depends(current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> StreamingResponse:
+    """Чат-бот KBRAG потоком: строка JSON на событие (status, sources, token, revised, done,
+    error). Отвечает модель по фрагментам статей ветки со ссылками [n]; очередь к модели —
+    общая с Телеграм-ботом KBRAG. Ушёл со страницы — поток закрывается, модель перестаёт писать."""
+    payload = body.model_dump(exclude_none=True)
+    payload["history"] = payload["history"][-10:]
+    req = Request(
+        f"{settings.kbrag_url.rstrip('/')}/api/chat",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json; charset=utf-8",
+                 **({"X-KBRAG-Token": settings.kbrag_token} if settings.kbrag_token else {})},
+        method="POST",
+    )
+    try:
+        upstream = urlopen(req, timeout=180)  # между событиями — не дольше (в очереди — раз в 2 с)
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"База знаний: {exc.code} {detail}") from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"База знаний недоступна: {exc}") from exc
+
+    def lines() -> Iterator[bytes]:
+        try:
+            for line in upstream:
+                yield line
+        except (TimeoutError, OSError) as exc:
+            yield (json.dumps({"type": "error", "error": f"База знаний не ответила: {exc}"},
+                              ensure_ascii=False) + "\n").encode("utf-8")
+        finally:
+            upstream.close()
+
+    return StreamingResponse(lines(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @router.get("/{name}")

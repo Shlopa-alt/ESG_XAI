@@ -7,6 +7,7 @@ import { useLogout } from "../auth/useAuth";
 const NAV = [
   { to: "/", label: "Обзор", end: true },
   { to: "/knowledge", label: "База знаний", end: false },
+  { to: "/knowledge/chat", label: "Вопрос к базе", end: false },
   { to: "/knowledge/graph", label: "Граф связей", end: false },
   { to: "/knowledge/import", label: "Импорт статей", end: false },
   { to: "/hypotheses", label: "Гипотезы", end: false },
