@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { kbDocuments, kbNetwork, kbSearch, kbStats, kbTree } from "../api/kb";
 
@@ -29,15 +30,19 @@ function BranchSelect({ value, onChange }: { value: string; onChange: (v: string
 /** Поиск, статьи и сводка базы знаний KBRAG — живые данные через /api/kb/*. */
 export function KbLive() {
   const [kb, setKb] = useState(ROOT);
-  const [draft, setDraft] = useState("");
-  const [q, setQ] = useState("");
+  // Запрос живёт в адресе (?q=): сюда ведёт и поиск из шапки
+  const [params, setParams] = useSearchParams();
+  const q = params.get("q") ?? "";
+  const [draft, setDraft] = useState(q);
+  useEffect(() => setDraft(q), [q]);
   const stats = useQuery({ queryKey: ["kb", "stats", kb], queryFn: () => kbStats(kb) });
   const docs = useQuery({ queryKey: ["kb", "docs", kb], queryFn: () => kbDocuments(kb) });
   const hits = useQuery({ queryKey: ["kb", "search", kb, q], queryFn: () => kbSearch(q, kb), enabled: q !== "" });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    setQ(draft.trim());
+    const next = draft.trim();
+    setParams(next ? { q: next } : {});
   };
 
   if (stats.isError) {
