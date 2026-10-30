@@ -499,3 +499,7 @@ a.btn-ghost.active { border-color: var(--accent); }
 .propose { display: flex; flex-direction: column; gap: 12px; }
 .field textarea, .field select { font: inherit; font-size: 15px; padding: 8px 12px; border: 1px solid #cbd5ce; border-radius: 8px; color: var(--text); background: #fff; }
 .field select { min-height: 44px; }
+.article-title { font-size: 30px; line-height: 1.25; }
+@media (max-width: 640px) { .article-title { font-size: 22px; } }
+.fragments { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 14px; }
+.fragments p { margin: 4px 0; line-height: 1.55; white-space: pre-wrap; }

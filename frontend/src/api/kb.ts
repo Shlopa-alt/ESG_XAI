@@ -50,6 +50,22 @@ export interface KbDocument {
   chunks: number;
 }
 
+export interface KbArticle {
+  doc_id: string;
+  title: string | null;
+  authors: string[] | null;
+  year: number | null;
+  journal: string | null;
+  doi: string | null;
+  url: string | null;
+  pages: number | null;
+  chunks: number;
+  kbs: string[];
+  fragments?: Array<{ ord: number; text: string; headings: string[]; pages: number[] }>;
+  fragments_total?: number;
+  next_offset?: number | null;
+}
+
 export interface KbNetwork {
   nodes: Array<{ id: string; kind: string; name?: string; facts?: number; documents?: number }>;
   edges: Array<{ source: string; target: string; type: string; label?: string; weight?: number }>;
@@ -73,3 +89,5 @@ export const kbSearch = (q: string, kb: string) =>
 export const kbDocuments = (kb: string) =>
   get<{ documents: KbDocument[] }>("documents", { kb }).then((r) => r.documents);
 export const kbNetwork = (kb: string) => get<KbNetwork>("network", { kb });
+export const kbArticle = (docId: string, offset: number) =>
+  get<KbArticle>("article", { doc_id: docId, text: "1", offset: String(offset), limit: "20" });

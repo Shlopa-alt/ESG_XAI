@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import type { KbRefIn } from "../api/hypotheses";
 import { type KbHit, kbDocuments, kbNetwork, kbSearch, kbStats, kbTree } from "../api/kb";
@@ -109,13 +109,7 @@ export function KbLive() {
             <article key={h.chunk_id} className="hit">
               <div className="kb-meta">
                 <span className="mono">{h.year ?? "—"}</span> ·{" "}
-                {h.url ? (
-                  <a href={h.url} target="_blank" rel="noreferrer">
-                    {h.title}
-                  </a>
-                ) : (
-                  h.title
-                )}
+                <Link to={`/knowledge/article/${encodeURIComponent(h.doc_id)}`}>{h.title}</Link>
                 {h.pages.length > 0 && <span> · с. {h.pages.join(", ")}</span>}
               </div>
               {h.headings.length > 0 && <div className="muted">{h.headings.join(" › ")}</div>}
@@ -149,13 +143,7 @@ export function KbLive() {
               <tr key={d.doc_id}>
                 <td className="mono">{d.year ?? "—"}</td>
                 <td>
-                  {d.url ? (
-                    <a href={d.url} target="_blank" rel="noreferrer">
-                      {d.title || d.doc_id}
-                    </a>
-                  ) : (
-                    d.title || d.doc_id
-                  )}
+                  <Link to={`/knowledge/article/${encodeURIComponent(d.doc_id)}`}>{d.title || d.doc_id}</Link>
                 </td>
                 <td className="num mono">{d.chunks}</td>
               </tr>

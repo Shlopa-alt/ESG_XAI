@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 
 import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
+import { Article } from "./pages/ArticlePage";
 import { Experiment, Experiments } from "./pages/ExperimentPages";
 import { Hypotheses } from "./pages/HypothesesPage";
 import { Login } from "./pages/Login";
@@ -28,6 +29,7 @@ export function App() {
         <Route index element={<Overview />} />
         <Route path="knowledge" element={<Knowledge />} />
         <Route path="knowledge/graph" element={<Graph />} />
+        <Route path="knowledge/article/:docId" element={<Article />} />
         <Route path="hypotheses" element={<Hypotheses />} />
         <Route path="experiments" element={<Experiments />} />
         <Route path="experiments/:code" element={<Experiment />} />
