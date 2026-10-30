@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 
-from app.api import auth, experiments, kb, methodology, users
+from app.api import auth, experiments, hypotheses, kb, methodology, users
 from app.config import check_settings, get_settings
 
 
@@ -33,4 +33,5 @@ api.include_router(users.router)
 api.include_router(kb.router)
 api.include_router(experiments.router)
 api.include_router(methodology.router)
+api.include_router(hypotheses.router)
 app.include_router(api)

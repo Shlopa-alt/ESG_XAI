@@ -17,6 +17,7 @@
 | Обзор | `Main.dc.html` | Исследовательский цикл, последние эксперименты, открытые вопросы методологии, новое в БЗ |
 | База знаний, список | `Knowledge.dc.html` | Поиск по корпусу KBRAG, статьи с фильтром по ветке `esg.*`, паспорт выбранной статьи (метаданные, фрагменты, факты с цитатами, эксперименты, где она использована), срезы датасетов платформы |
 | База знаний, граф | `Graph.dc.html` | Граф фактов KBRAG (сущности и статьи) с наложенными узлами экспериментов платформы; клик подсвечивает связи, внизу — факты о сущности с цитатами |
+| Гипотезы | — | Предложить гипотезу может любой вошедший (в т.ч. reader), с опорой на статью или факт KBRAG; рецензент принимает к проверке или отклоняет с объяснением; researcher создаёт из принятой эксперимент |
 | Реестр экспериментов | `Experiments.dc.html` | Таблица, фильтр по статусу, выбор для сравнения |
 | Карточка эксперимента | `Experiment.dc.html` | Гипотеза, постановка, результат, вывод, влияние на методологию, воспроизводимость, рецензии |
 | Запуск экспериментов | `Run.dc.html` | Форма конфигурации, живой поток метрик и логов, очередь сервера |
@@ -35,6 +36,11 @@ Dataset(id, code UNIQUE, title, description, source_url, license,
 DatasetSnapshot(id, dataset_id, version, sha256, storage_path, row_count, created_at)
 
 ExperimentLink(experiment_id, kb_ref_id, relation[tests|uses_method|replicates|motivated_by])
+
+Hypothesis(id, code H-001 UNIQUE, title, statement, rationale, direction,
+           status[proposed|accepted|rejected|testing|tested], decision_note, decided_by,
+           experiment_id, author_id, created_at)
+HypothesisRef(hypothesis_id, kb_ref_id)                 -- опоры гипотезы в базе знаний
      -- узлы платформы (эксперименты) на графе KBRAG
 
 Experiment(id, code UNIQUE, title, hypothesis, direction, status[draft|planned|running|review|done|failed],
@@ -58,6 +64,7 @@ AuditLog(id, user_id, action, entity_type, entity_id, payload JSONB, created_at)
 - `ChangeRequest.status = accepted` ⇒ ∃ CrBasis на Experiment(status=done), или на факт KBRAG (KbRef kind=fact с непустой цитатой, прошедший проверку KBRAG), или на статью KBRAG с DOI либо ссылкой на источник; и ∃ Review(verdict=approve).
 - Статья KBRAG без DOI и без ссылки на источник помечается «требует источника» и не может быть основанием CR.
 - Принятие CR создаёт новую `MethodologyVersion` и меняет `stability` раздела.
+- Hypothesis отклоняется только с объяснением (`decision_note`); эксперимент создаётся только из принятой гипотезы, опоры переносятся как ExperimentLink(motivated_by).
 - Experiment попадает в реестр (`status=done`) только при заполненных runner_commit, dataset_snapshot_id, env_lock, seed.
 - Файлы DatasetSnapshot с `access_level=nda` отдаются только пользователям с `nda_access=true`.
 
@@ -79,6 +86,12 @@ POST            /kb/refs                              (зафиксироват�
 GET/POST        /datasets
 GET             /datasets/{code}
 POST            /datasets/{code}/snapshots            (загрузка среза датасета)
+
+GET/POST        /hypotheses                          (POST — любой вошедший)
+GET             /hypotheses/{code}
+POST            /hypotheses/{code}/refs              (автор или researcher+)
+PATCH           /hypotheses/{code}                   (reviewer/owner: accepted | rejected с причиной)
+POST            /hypotheses/{code}/experiment        (researcher/owner: эксперимент из принятой)
 
 GET/POST        /experiments          ?status=&direction=
 GET/PATCH       /experiments/{code}

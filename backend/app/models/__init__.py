@@ -1,3 +1,4 @@
+from app.models.hypothesis import Hypothesis, HypothesisRef
 from app.models.methodology import ChangeRequest, CrBasis, MethodologySection, MethodologyVersion
 from app.models.research import (
     Dataset,
@@ -16,6 +17,8 @@ __all__ = [
     "DatasetSnapshot",
     "Experiment",
     "ExperimentLink",
+    "Hypothesis",
+    "HypothesisRef",
     "KbRef",
     "MethodologySection",
     "MethodologyVersion",

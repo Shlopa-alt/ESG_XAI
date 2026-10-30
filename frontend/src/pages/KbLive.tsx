@@ -1,8 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { kbDocuments, kbNetwork, kbSearch, kbStats, kbTree } from "../api/kb";
+import type { KbRefIn } from "../api/hypotheses";
+import { type KbHit, kbDocuments, kbNetwork, kbSearch, kbStats, kbTree } from "../api/kb";
+
+/** Ссылка на найденный фрагмент — опора гипотезы, эксперимента или CR. */
+export function refFromHit(h: KbHit, kb: string): KbRefIn {
+  const doi = h.url?.match(/10\.\d{4,9}\/\S+/)?.[0] ?? "";
+  return { kind: "article", kbrag_id: h.doc_id, kb_path: kb, title: h.title, doi, quote: h.text.slice(0, 400), page: h.pages[0] ?? null };
+}
 
 const ROOT = "esg";
 const fmt = (n: number) => n.toLocaleString("ru-RU");
@@ -35,6 +42,7 @@ export function KbLive() {
   const q = params.get("q") ?? "";
   const [draft, setDraft] = useState(q);
   useEffect(() => setDraft(q), [q]);
+  const navigate = useNavigate();
   const stats = useQuery({ queryKey: ["kb", "stats", kb], queryFn: () => kbStats(kb) });
   const docs = useQuery({ queryKey: ["kb", "docs", kb], queryFn: () => kbDocuments(kb) });
   const hits = useQuery({ queryKey: ["kb", "search", kb, q], queryFn: () => kbSearch(q, kb), enabled: q !== "" });
@@ -112,6 +120,15 @@ export function KbLive() {
               </div>
               {h.headings.length > 0 && <div className="muted">{h.headings.join(" › ")}</div>}
               <p className="hit-text">{h.text.length > 600 ? `${h.text.slice(0, 600)}…` : h.text}</p>
+              <div>
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => navigate("/hypotheses", { state: { ref: refFromHit(h, kb) } })}
+                >
+                  Предложить гипотезу по этой статье
+                </button>
+              </div>
             </article>
           ))}
         </div>

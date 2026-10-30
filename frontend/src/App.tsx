@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
 import { Experiment, Experiments } from "./pages/ExperimentPages";
+import { Hypotheses } from "./pages/HypothesesPage";
 import { Login } from "./pages/Login";
 import { Methodology } from "./pages/MethodologyPage";
 import { ChangePassword, Users } from "./pages/UsersPage";
@@ -27,6 +28,7 @@ export function App() {
         <Route index element={<Overview />} />
         <Route path="knowledge" element={<Knowledge />} />
         <Route path="knowledge/graph" element={<Graph />} />
+        <Route path="hypotheses" element={<Hypotheses />} />
         <Route path="experiments" element={<Experiments />} />
         <Route path="experiments/:code" element={<Experiment />} />
         <Route path="run" element={<Run />} />
