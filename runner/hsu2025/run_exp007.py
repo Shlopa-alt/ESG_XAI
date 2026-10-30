@@ -71,7 +71,7 @@ def main(ds_dir: Path, results_root: Path) -> int:
     for name, argv in PARTS.items():
         args = [a.format(data=data, out=out) for a in argv]
         log = (out / f"{name}.log").open("w", encoding="utf-8")
-        procs[name] = (subprocess.Popen([PY, "-I", *args], cwd=HERE, env=env, stdout=log,
+        procs[name] = (subprocess.Popen([PY, *args], cwd=HERE, env=env, stdout=log,
                                         stderr=subprocess.STDOUT), log, args, time.time())
         print(f"запущено: {name}", flush=True)
     for name, (p, log, args, t0) in procs.items():
