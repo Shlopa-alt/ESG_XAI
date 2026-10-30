@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     kbrag_token: str = ""
     kbrag_timeout_s: float = 30.0
 
+    # Импорт статей через сайт: папка приёма PDF (общая с обработчиком на машине KBRAG),
+    # предел размера файла и токен обработчика (deploy/windows/kb_import_worker.py)
+    kb_inbox_dir: str = "/data/kb_inbox"
+    kb_import_max_mb: int = 60
+    kb_import_token: str = ""
+
 
 WEAK_LOCAL_PASSWORDS = frozenset({"", "dev", "change-me"})
 

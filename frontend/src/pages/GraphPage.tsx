@@ -8,8 +8,8 @@ import { kbNetwork, kbTree } from "../api/kb";
 // Граф фактов KBRAG. Цвет связи — её направление: это три слота проверенной палитры
 // и серый для «прочих»; легенда и текстовая панель фактов дублируют цвет.
 const REL_GROUPS = [
-  { key: "up", label: "повышает", color: "#1baf7a", match: (r: string) => r.startsWith("повыша") },
-  { key: "down", label: "снижает", color: "#eb6834", match: (r: string) => r.startsWith("снижа") },
+  { key: "up", label: "повышает", color: "#1baf7a", match: (r: string) => r.includes("повыша") && !r.startsWith("не ") },
+  { key: "down", label: "снижает", color: "#eb6834", match: (r: string) => r.includes("снижа") && !r.startsWith("не ") },
   { key: "none", label: "не влияет", color: "#8a948e", match: (r: string) => r.includes("не влияет") },
   { key: "other", label: "прочие связи", color: "#2a78d6", match: () => true },
 ] as const;

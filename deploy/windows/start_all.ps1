@@ -1,5 +1,5 @@
 ﻿# Автозапуск после входа в Windows: ждёт Docker, поднимает платформу и базу KBRAG,
-# запускает веб-сервер KBRAG (поиск и граф для платформы). Журнал — logs\start_all.log рядом.
+# запускает веб-сервер KBRAG (поиск и граф для платформы) и обработчик импорта статей с сайта. Журнал — logs\start_all.log рядом.
 #
 # Ставится один раз: deploy\windows\install.ps1 (ярлык в автозагрузке и ночной бэкап).
 # Пути — переменные ниже; KBRAG_DSN — порт базы KBRAG на этой машине.
@@ -41,4 +41,21 @@ if (-not $running) {
     Say "веб-сервер KBRAG запущен"
 } else {
     Say "веб-сервер KBRAG уже работает"
+}
+
+# Обработчик импорта статей, загруженных через сайт (kb_import_worker.py): разбор на процессоре
+$worker = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -like "*kb_import_worker.py*" }
+if (-not $worker) {
+    $env:KBRAG_DSN = "postgresql://kbrag:kbrag@127.0.0.1:5434/kbrag"
+    $env:KBRAG_HOME = $Kbrag
+    $env:PYTHONIOENCODING = "utf-8"
+    Start-Process -FilePath (Join-Path $Kbrag ".venv\Scripts\python.exe") `
+        -ArgumentList (Join-Path $PSScriptRoot "kb_import_worker.py") `
+        -WorkingDirectory $Kbrag -WindowStyle Hidden `
+        -RedirectStandardOutput (Join-Path $PSScriptRoot "logs\kb_import.log") `
+        -RedirectStandardError (Join-Path $PSScriptRoot "logs\kb_import.err.log")
+    Say "обработчик импорта статей запущен"
+} else {
+    Say "обработчик импорта статей уже работает"
 }

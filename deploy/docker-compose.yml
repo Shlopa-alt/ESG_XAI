@@ -45,6 +45,12 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       KBRAG_URL: ${KBRAG_URL:-http://host.docker.internal:8000}
       KBRAG_TOKEN: ${KBRAG_TOKEN:-}
+      # Импорт статей через сайт: PDF кладутся в папку приёма, её же читает обработчик
+      # deploy/windows/kb_import_worker.py на машине KBRAG (токен — KB_IMPORT_TOKEN)
+      KB_IMPORT_TOKEN: ${KB_IMPORT_TOKEN:-}
+      KB_IMPORT_MAX_MB: ${KB_IMPORT_MAX_MB:-60}
+    volumes:
+      - ${KB_INBOX_DIR:-../.local/kb_inbox}:/data/kb_inbox
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

@@ -3,7 +3,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 
-from app.api import audit, auth, experiments, hypotheses, kb, methodology, runs, users
+from app.api import (
+    audit,
+    auth,
+    experiments,
+    hypotheses,
+    kb,
+    kb_imports,
+    methodology,
+    runs,
+    users,
+)
 from app.audit import AuditMiddleware
 from app.config import check_settings, get_settings
 
@@ -34,6 +44,7 @@ def health() -> dict[str, str]:
 api.include_router(auth.router)
 api.include_router(users.router)
 api.include_router(kb.router)
+api.include_router(kb_imports.router)
 api.include_router(experiments.router)
 api.include_router(methodology.router)
 api.include_router(hypotheses.router)

@@ -6,6 +6,7 @@ import { Article } from "./pages/ArticlePage";
 import { Experiment, Experiments } from "./pages/ExperimentPages";
 import { Graph } from "./pages/GraphPage";
 import { Hypotheses } from "./pages/HypothesesPage";
+import { Import } from "./pages/ImportPage";
 import { Login } from "./pages/Login";
 import { Methodology } from "./pages/MethodologyPage";
 import { Run } from "./pages/RunPage";
@@ -29,6 +30,7 @@ export function App() {
         <Route index element={<Overview />} />
         <Route path="knowledge" element={<Knowledge />} />
         <Route path="knowledge/graph" element={<Graph />} />
+        <Route path="knowledge/import" element={<Import />} />
         <Route path="knowledge/article/:docId" element={<Article />} />
         <Route path="hypotheses" element={<Hypotheses />} />
         <Route path="experiments" element={<Experiments />} />

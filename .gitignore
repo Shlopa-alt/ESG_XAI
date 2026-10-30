@@ -13,3 +13,5 @@ dist/
 *.db
 deploy/windows/logs/
 deploy/certs/
+
+.local/

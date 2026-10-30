@@ -8,6 +8,7 @@ const NAV = [
   { to: "/", label: "Обзор", end: true },
   { to: "/knowledge", label: "База знаний", end: false },
   { to: "/knowledge/graph", label: "Граф связей", end: false },
+  { to: "/knowledge/import", label: "Импорт статей", end: false },
   { to: "/hypotheses", label: "Гипотезы", end: false },
   { to: "/experiments", label: "Эксперименты", end: false },
   { to: "/run", label: "Запуск экспериментов", end: false },

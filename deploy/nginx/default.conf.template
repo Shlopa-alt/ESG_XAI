@@ -23,6 +23,8 @@ server {
   deny all;
 
   location /api/ {
+    # PDF статей загружаются через сайт (KB_IMPORT_MAX_MB на бэкенде)
+    client_max_body_size 64m;
     proxy_pass http://backend:8000;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
