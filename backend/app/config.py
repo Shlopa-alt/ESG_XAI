@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     runner_token: str = ""
     gpu_runs_per_user: int = 1
 
+    # Датасеты: папка данных сервера (в контейнере и на хосте) — срезы хранятся путями хоста
+    esg_data_dir: str = "/data/esg"
+    esg_data_host: str = ""
+    dataset_upload_max_mb: int = 60
+
 
 WEAK_LOCAL_PASSWORDS = frozenset({"", "dev", "change-me"})
 

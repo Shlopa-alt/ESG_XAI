@@ -7,7 +7,7 @@
 1. сверяет sha256 файла среза с записанным в платформе — изменившиеся данные не считаются
    (правило 3);
 2. запускает скрипт runner/<каталог>/<скрипт> <каталог датасета> <каталог результатов>
-   <параметры> интерпретатором с зафиксированным окружением (requirements.lock);
+   --data <файл среза> <параметры> интерпретатором с зафиксированным окружением (requirements.lock);
 3. строки вывода и события `@event {...}` (ход, метрики) публикует в Redis: канал run:{id}
    и журнал run:{id}:log — их отдаёт платформа потоком /api/runs/{id}/stream;
    метрики и итог пишет в MLflow;
@@ -279,7 +279,9 @@ def execute(job: dict[str, Any]) -> str:
         results = Path(DATA_DIR) / job["experiment"] / f"run-{run_id:05d}"
         results.mkdir(parents=True, exist_ok=True)
         workdir = REPO / "runner" / job["workdir"]
-        argv = [RUN_PYTHON, "-u", "-B", job["script"], str(ds_dir), str(results), *job["args"]]
+        # скрипт считает именно сверенный файл среза, а не то, что лежит в каталоге датасета
+        argv = [RUN_PYTHON, "-u", "-B", job["script"], str(ds_dir), str(results), "--data", str(snap),
+                *job["args"]]
         ev.emit("log", line="$ " + " ".join(argv[3:]))
         tracker.start(job)
         code, reason = run_script(argv, workdir, ev, tracker, int(job["limit_min"]) * 60,

@@ -6,6 +6,7 @@ from fastapi import APIRouter, FastAPI
 from app.api import (
     audit,
     auth,
+    datasets,
     experiments,
     hypotheses,
     kb,
@@ -46,6 +47,7 @@ api.include_router(users.router)
 api.include_router(kb.router)
 api.include_router(kb_imports.router)
 api.include_router(experiments.router)
+api.include_router(datasets.router)
 api.include_router(methodology.router)
 api.include_router(hypotheses.router)
 api.include_router(audit.router)

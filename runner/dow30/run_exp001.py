@@ -1,6 +1,6 @@
 """EXP-001: согласованность ESG-рейтингов S&P Global, Sustainalytics и MSCI на Dow30 (DS-01).
 
-    python run_exp001.py <каталог DS-01> <каталог результатов> [--seed 42] [--n-boot 10000] [--n-perm 10000]
+    python run_exp001.py <каталог DS-01> <каталог результатов> [--data файл] [--seed 42] [--n-boot 10000] [--n-perm 10000]
 
 <каталог DS-01>/raw/03_Dow30_ESG_Stock_Data.csv и manifest.json — выгрузка с Яндекс.Диска
 лаборатории (sha256 каждого файла в манифесте). В <каталог результатов>/<время>/ пишутся
@@ -175,8 +175,9 @@ def report(res: dict) -> dict:
     }
 
 
-def main(ds_dir: Path, results_root: Path) -> int:
-    data = ds_dir / "raw" / CSV
+def main(ds_dir: Path, results_root: Path, data: Path | None = None) -> int:
+    # срез: файл, выбранный при запуске (исполнитель сверил его sha256), иначе выгрузка в raw/
+    data = data or ds_dir / "raw" / CSV
     manifest = ds_dir / "raw" / "manifest.json"
     out = results_root / datetime.now().strftime("%Y%m%d-%H%M%S")
     out.mkdir(parents=True)
@@ -211,9 +212,10 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="EXP-001: согласованность ESG-рейтингов Dow30")
     ap.add_argument("ds_dir", type=Path, help="каталог DS-01 (в нём raw/)")
     ap.add_argument("results_root", type=Path, help="каталог результатов")
+    ap.add_argument("--data", type=Path, help="файл среза (по умолчанию raw/" + CSV + ")")
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--n-boot", type=int, default=N_BOOT)
     ap.add_argument("--n-perm", type=int, default=N_PERM)
     args = ap.parse_args()
     SEED, N_BOOT, N_PERM = args.seed, args.n_boot, args.n_perm
-    raise SystemExit(main(args.ds_dir, args.results_root))
+    raise SystemExit(main(args.ds_dir, args.results_root, args.data))

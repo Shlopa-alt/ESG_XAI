@@ -4,6 +4,7 @@ import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
 import { Article } from "./pages/ArticlePage";
 import { Chat } from "./pages/ChatPage";
+import { DatasetPage } from "./pages/DatasetPage";
 import { Experiment, Experiments } from "./pages/ExperimentPages";
 import { Graph } from "./pages/GraphPage";
 import { Hypotheses } from "./pages/HypothesesPage";
@@ -33,6 +34,7 @@ export function App() {
         <Route path="knowledge/graph" element={<Graph />} />
         <Route path="knowledge/import" element={<Import />} />
         <Route path="knowledge/chat" element={<Chat />} />
+        <Route path="datasets/:code" element={<DatasetPage />} />
         <Route path="knowledge/article/:docId" element={<Article />} />
         <Route path="hypotheses" element={<Hypotheses />} />
         <Route path="experiments" element={<Experiments />} />

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { listDatasets, listExperiments, OUTCOME_LABEL, STATUS_LABEL } from "../api/experiments";
@@ -6,6 +7,8 @@ import { listHypotheses } from "../api/hypotheses";
 import { kbDocuments, kbStats } from "../api/kb";
 import { getMethodology, listCrs, STABILITY_LABEL } from "../api/methodology";
 import { CORPUS, CORPUS_TOTAL } from "../content";
+import { useMe } from "../auth/useAuth";
+import { NewDataset } from "./DatasetPage";
 import { KbLive } from "./KbLive";
 
 function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: string }) {
@@ -106,6 +109,9 @@ export function Overview() {
 
 export function Knowledge() {
   const ds = useQuery({ queryKey: ["datasets"], queryFn: listDatasets });
+  const me = useMe();
+  const canCreate = me.data?.role === "researcher" || me.data?.role === "owner";
+  const [creating, setCreating] = useState(false);
   const datasets = Array.isArray(ds.data) ? ds.data : [];
   return (
     <>
@@ -124,7 +130,15 @@ export function Knowledge() {
       </p>
       <KbLive />
       <section className="card">
-        <h2 className="h2">Датасеты</h2>
+        <div className="viz-head">
+          <h2 className="h2">Датасеты</h2>
+          {canCreate && !creating && (
+            <button type="button" className="btn-ghost" onClick={() => setCreating(true)}>
+              Новый датасет
+            </button>
+          )}
+        </div>
+        {creating && <NewDataset onDone={() => setCreating(false)} />}
         <div className="table-wrap">
           <table className="table">
             <thead>
@@ -138,7 +152,9 @@ export function Knowledge() {
             <tbody>
               {datasets.map((d) => (
                 <tr key={d.code}>
-                  <td className="mono">{d.code}</td>
+                  <td className="mono">
+                    <Link to={`/datasets/${d.code}`}>{d.code}</Link>
+                  </td>
                   <td>
                     <strong>{d.title}</strong>
                     <div className="muted">{d.description}</div>

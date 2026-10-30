@@ -641,3 +641,8 @@ a.btn-ghost.active { border-color: var(--accent); }
 .chat-form { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; position: sticky; bottom: 0; }
 .chat-form textarea { width: 100%; }
 .chat-actions { display: flex; gap: 8px; }
+
+/* --- датасеты --- */
+.dataset-form { display: flex; flex-direction: column; gap: 12px; }
+.dataset-form .h3 { margin: 8px 0 0; font-size: 16px; }
+.file-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }

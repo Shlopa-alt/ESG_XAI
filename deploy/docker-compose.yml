@@ -52,8 +52,11 @@ services:
       # Запуск экспериментов из формы: очередь Celery в Redis, исполнитель runner-cpu
       REDIS_URL: redis://redis:6379/0
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      # Датасеты: срезы загружаются и регистрируются в папке данных сервера
+      ESG_DATA_HOST: ${ESG_DATA_HOST:-}
     volumes:
       - ${KB_INBOX_DIR:-../.local/kb_inbox}:/data/kb_inbox
+      - ${ESG_DATA_HOST:-../.local/esg_data}:/data/esg
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

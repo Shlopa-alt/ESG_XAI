@@ -90,7 +90,11 @@ POST            /kb-imports/doi     {doi, kb_path}    (метаданные и �
 POST            /kb-imports/{id}/retry                (повтор неудавшегося)
 POST            /kb-imports/worker/{requeue|next|{id}/result}   (обработчик на машине KBRAG, X-Import-Token)
 
-GET/POST        /datasets
+GET/POST        /datasets                              (POST — researcher+, код DS-NN по порядку)
+GET/PATCH       /datasets/{code}                       (карточка, срезы, эксперименты; NDA — уровень меняет owner)
+POST            /datasets/{code}/snapshots             multipart: file, version?  (срез с сайта, sha256 и строки считает сервер)
+POST            /datasets/{code}/snapshots/register    {path, version?}  (файл из каталога датасета на сервере)
+GET             /datasets/{code}/files                 (файлы каталога датасета; NDA — только owner)
 GET             /datasets/{code}
 POST            /datasets/{code}/snapshots            (загрузка среза датасета)
 

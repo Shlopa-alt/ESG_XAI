@@ -1,6 +1,6 @@
 """Полный повтор EXP-007 с фиксацией воспроизводимости (CLAUDE.md, правило 3).
 
-    python run_exp007.py <каталог DS-04> <каталог результатов> [--seed 42] [--trials 100]
+    python run_exp007.py <каталог DS-04> <каталог результатов> [--data файл] [--seed 42] [--trials 100]
 
 <каталог DS-04>/build/hsu_dataset.csv — срез (build_dataset.py из raw/ после fetch_mops.py).
 В <каталог результатов>/<время>/ пишутся результаты частей и run.json: коммит runner,
@@ -55,8 +55,10 @@ def event(kind: str, **data: object) -> None:
     print("@event " + json.dumps({"type": kind, **data}, ensure_ascii=False), flush=True)
 
 
-def main(ds_dir: Path, results_root: Path, seed: int = 42, trials: int = 100) -> int:
-    data = ds_dir / "build" / "hsu_dataset.csv"
+def main(ds_dir: Path, results_root: Path, seed: int = 42, trials: int = 100,
+         data: Path | None = None) -> int:
+    # срез: файл, выбранный при запуске (исполнитель сверил его sha256), иначе build/
+    data = data or ds_dir / "build" / "hsu_dataset.csv"
     out = results_root / datetime.now().strftime("%Y%m%d-%H%M%S")
     out.mkdir(parents=True)
     lock = HERE / "requirements.lock"
@@ -101,7 +103,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="EXP-007: повтор Hsu et al. (2025)")
     ap.add_argument("ds_dir", type=Path, help="каталог DS-04 (в нём build/hsu_dataset.csv)")
     ap.add_argument("results_root", type=Path, help="каталог результатов")
+    ap.add_argument("--data", type=Path, help="файл среза (по умолчанию build/hsu_dataset.csv)")
     ap.add_argument("--seed", type=int, default=42, help="разбиение и подбор")
     ap.add_argument("--trials", type=int, default=100, help="испытаний Optuna в протоколах Hsu")
     a = ap.parse_args()
-    sys.exit(main(a.ds_dir, a.results_root, a.seed, a.trials))
+    sys.exit(main(a.ds_dir, a.results_root, a.seed, a.trials, a.data))
