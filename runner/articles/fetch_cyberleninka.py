@@ -1,4 +1,4 @@
-"""Русскоязычные статьи с КиберЛенинки по направлениям лаборатории → 13_Russian_CyberLeninka/<направление>.
+"""Русскоязычные статьи с КиберЛенинки по направлениям лаборатории → 13_Russian_CL/<направление>.
 
 Поиск — POST /api/search (не больше 1000 записей на запрос), PDF — /article/n/<slug>/pdf. Сайт за Cloudflare,
 поэтому качаем в несколько потоков с паузами. Манифест общей папки дописывается.
@@ -14,11 +14,24 @@ from pathlib import Path
 
 OUT = Path(sys.argv[1])
 TARGET = int(sys.argv[2]) if len(sys.argv) > 2 else 2000
-ROOT = "13_Russian_CyberLeninka"
-MANIFEST = OUT / "_список_статей.csv"
+ROOT = "13_Russian_CL"
+MANIFEST = OUT / "_articles_list.csv"
 FIELDS = ["topic", "file", "title", "year", "language", "doi", "cited_by"]
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36"}
-CACHE = Path(__file__).parent.parent / "data" / "cyberleninka_candidates.json"
+# Кэш — не во временной папке: её чистит Windows
+CACHE = Path.home() / "ESG_data" / "cache" / "cyberleninka_candidates.json"
+
+# Короткие имена папок архива (длинные пути не открывал Проводник)
+FOLDER = {"01_ESG_financial_performance": "01_ESG_finance", "02_AI_XAI_ESG": "02_AI_XAI",
+          "04_Decision_support_investment": "04_Investment", "06_Reporting_greenwashing": "06_Reporting",
+          "07_Monitoring_emissions": "07_Emissions", "09_Project_valuation_behavioral": "09_Valuation",
+          "11_ESG_Russia_regions": "11_Regions"}
+
+_TR = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъыьэюя", ["a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya"]))
+
+
+def translit(s):
+    return "".join(_TR.get(ch.lower(), ch) for ch in s)
 
 TOPICS = {
     "01_ESG_financial_performance": ["ESG финансовые результаты", "ESG рентабельность", "ESG стоимость компании",
@@ -77,9 +90,10 @@ def search(q):
 
 
 def safe_name(c):
-    a = re.sub(r"[^\w]+", "", (c["author"].split() or ["NA"])[0])[:20] or "NA"
-    t = re.sub(r"\s+", "_", re.sub(r"[^\w\s-]", "", c["title"]).strip())[:80]
-    return f"{c['year']}_{a}_{t}.pdf"
+    # Только латиница и короткая длина — архив открывается встроенным zip Windows
+    a = re.sub(r"[^A-Za-z0-9]+", "", translit((c["author"].split() or ["NA"])[0]))[:20] or "NA"
+    t = re.sub(r"[^A-Za-z0-9_-]+", "_", translit(c["title"])).strip("_")[:45].rstrip("_")
+    return f"{c['year']}_{a.lower()}_{t.lower()}.pdf"
 
 
 def download(c, folder):
@@ -114,6 +128,7 @@ def main():
             if (t, q) not in done_q:
                 cs = list(search(q))
                 raw.append([t, q, cs])
+                CACHE.parent.mkdir(parents=True, exist_ok=True)
                 CACHE.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
                 print(f"  {t} | {q}: {len(cs)}", flush=True)
     seen, pools = set(), {}
@@ -143,7 +158,7 @@ def main():
 
         def submit():
             t, c = next(it)
-            folder = OUT / ROOT / t
+            folder = OUT / ROOT / FOLDER.get(t, t)
             folder.mkdir(parents=True, exist_ok=True)
             running[ex.submit(download, c, folder)] = (t, c)
         try:
@@ -158,7 +173,7 @@ def main():
                 p = f.result()
                 if p and done < target:
                     done += 1
-                    wr.writerow({"topic": f"{ROOT}/{t}", "file": str(p.relative_to(OUT)), "title": c["title"],
+                    wr.writerow({"topic": f"{ROOT}/{FOLDER.get(t, t)}", "file": p.relative_to(OUT).as_posix(), "title": c["title"],
                                  "year": c["year"], "language": "ru", "doi": "https://cyberleninka.ru" + c["link"],
                                  "cited_by": ""})
                     if done % 100 == 0:
