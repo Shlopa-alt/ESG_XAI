@@ -2,6 +2,7 @@ name: esg-open-research
 
 services:
   postgres:
+    restart: unless-stopped
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: esg
@@ -16,16 +17,19 @@ services:
       retries: 10
 
   redis:
+    restart: unless-stopped
     image: redis:7-alpine
     volumes:
       - redisdata:/data
 
   mlflow:
+    restart: unless-stopped
     build: ./mlflow
     volumes:
       - mlflowdata:/mlflow
 
   backend:
+    restart: unless-stopped
     build: ../backend
     environment:
       DATABASE_URL: postgresql+psycopg://esg:${POSTGRES_PASSWORD}@postgres:5432/esg
@@ -47,9 +51,11 @@ services:
         condition: service_healthy
 
   frontend:
+    restart: unless-stopped
     build: ../frontend
 
   nginx:
+    restart: unless-stopped
     image: nginx:1.27-alpine
     environment:
       ALLOWED_SUBNET: ${ALLOWED_SUBNET:-0.0.0.0/0}

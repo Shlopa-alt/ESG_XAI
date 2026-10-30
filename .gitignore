@@ -11,3 +11,4 @@ dist/
 .idea/
 .vscode/
 *.db
+deploy/windows/logs/
