@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -37,11 +37,17 @@ function LinkPanel({ refIn }: { refIn: KbRefIn }) {
   const [exp, setExp] = useState("");
   const [relation, setRelation] = useState("replicates");
   const [cr, setCr] = useState("");
+  const qc = useQueryClient();
   const link = useMutation({
     mutationFn: () => post(`/experiments/${exp}/links`, { ...refIn, relation }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["experiment", exp] });
+      void qc.invalidateQueries({ queryKey: ["experiment-links"] });
+    },
   });
   const basis = useMutation({
     mutationFn: () => post(`/change-requests/${cr}/bases`, { basis_type: "kb_article", ...refIn }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["crs"] }),
   });
   const expList = Array.isArray(exps.data) ? exps.data : [];
   const openCrs = (Array.isArray(crs.data) ? crs.data : []).filter((c) => c.status === "proposed" || c.status === "review");

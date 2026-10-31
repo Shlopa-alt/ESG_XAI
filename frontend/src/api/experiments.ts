@@ -24,6 +24,7 @@ export interface Experiment {
 }
 
 export interface ExperimentDetail extends Experiment {
+  dataset_snapshot: string;
   reviews: Array<{ id: number; reviewer: string; verdict: "approve" | "changes" | "reject"; text: string; created_at: string }>;
   links: Array<{ relation: string; kind: string; kbrag_id: string; title: string; doi: string; quote: string }>;
 }

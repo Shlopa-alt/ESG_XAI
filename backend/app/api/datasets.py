@@ -248,7 +248,7 @@ def register_snapshot(code: str, body: RegisterIn, db: Annotated[Session, Depend
 
 
 @router.post("/{code}/snapshots", response_model=DatasetDetail, status_code=status.HTTP_201_CREATED)
-async def upload_snapshot(
+def upload_snapshot(
     code: str,
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
@@ -260,7 +260,7 @@ async def upload_snapshot(
     ds = _get(db, code)
     _files_guard(ds, user)
     limit = settings.dataset_upload_max_mb * 2**20
-    data = await file.read(limit + 1)
+    data = file.file.read(limit + 1)
     if len(data) > limit:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                             f"Файл больше {settings.dataset_upload_max_mb} МБ — положите его в каталог "

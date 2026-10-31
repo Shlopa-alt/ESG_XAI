@@ -28,7 +28,13 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
     void qc.invalidateQueries({ queryKey: ["methodology"] });
     void qc.invalidateQueries({ queryKey: ["versions"] });
   };
-  const review = useMutation({ mutationFn: (v: string) => reviewCr(cr.code, v, text), onSuccess: refresh });
+  const review = useMutation({
+    mutationFn: (v: string) => reviewCr(cr.code, v, text),
+    onSuccess: () => {
+      setText("");
+      refresh();
+    },
+  });
   const decide = useMutation({
     mutationFn: (s: "accepted" | "rejected") => setCrStatus(cr.code, s),
     onSuccess: refresh,
@@ -87,11 +93,14 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
             Комментарий рецензента
             <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} />
           </label>
-          <button type="button" className="btn-ghost" onClick={() => review.mutate("approve")}>
+          <button type="button" className="btn-ghost" disabled={review.isPending} onClick={() => review.mutate("approve")}>
             Одобрить
           </button>
-          <button type="button" className="btn-ghost" onClick={() => review.mutate("changes")}>
+          <button type="button" className="btn-ghost" disabled={review.isPending} onClick={() => review.mutate("changes")}>
             Нужны правки
+          </button>
+          <button type="button" className="btn-ghost" disabled={review.isPending} onClick={() => review.mutate("reject")}>
+            Отклонить
           </button>
         </div>
       )}
@@ -105,8 +114,8 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
           >
             Принять
           </button>
-          <button type="button" className="btn-ghost" onClick={() => decide.mutate("rejected")}>
-            Отклонить
+          <button type="button" className="btn-ghost" disabled={decide.isPending} onClick={() => decide.mutate("rejected")}>
+            Отклонить CR
           </button>
         </div>
       )}
@@ -125,13 +134,23 @@ function NewCr({ sections, onDone }: { sections: Array<{ number: string; title: 
   const [section, setSection] = useState(sections[0]?.number ?? "");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const current = sections.find((s) => s.number === section)?.content ?? "";
-  const [proposed, setProposed] = useState("");
+  const textOf = (n: string) => sections.find((s) => s.number === n)?.content ?? "";
+  // Новый текст начинается с текущего: его правят, а не пишут с нуля (пустой CR ничего не меняет)
+  const [proposed, setProposed] = useState(textOf(sections[0]?.number ?? ""));
   const [basis, setBasis] = useState("");
+  const [created, setCreated] = useState(""); // CR создан, а основание не добавилось — не создавать дубль
   const m = useMutation({
     mutationFn: async () => {
       const cr = await createCr({ section, title, description, proposed_content: proposed });
-      if (basis) await addCrBasis(cr.code, basis);
+      setCreated(cr.code);
+      void qc.invalidateQueries({ queryKey: ["crs"] });
+      if (basis) {
+        try {
+          await addCrBasis(cr.code, basis);
+        } catch (err) {
+          throw new Error(`${cr.code} создан, но основание не добавлено: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       return cr;
     },
     onSuccess: () => {
@@ -153,7 +172,13 @@ function NewCr({ sections, onDone }: { sections: Array<{ number: string; title: 
       </p>
       <label className="field">
         Раздел
-        <select value={section} onChange={(ev) => setSection(ev.target.value)}>
+        <select
+          value={section}
+          onChange={(ev) => {
+            if (proposed === textOf(section)) setProposed(textOf(ev.target.value));
+            setSection(ev.target.value);
+          }}
+        >
           {sections.map((s) => (
             <option key={s.number} value={s.number}>
               {s.number}. {s.title}
@@ -171,7 +196,7 @@ function NewCr({ sections, onDone }: { sections: Array<{ number: string; title: 
       </label>
       <label className="field">
         Новый текст раздела
-        <textarea rows={5} value={proposed} onChange={(ev) => setProposed(ev.target.value)} placeholder={current} />
+        <textarea rows={6} value={proposed} onChange={(ev) => setProposed(ev.target.value)} required />
       </label>
       <label className="field">
         Основание — эксперимент (можно добавить позже)
@@ -190,9 +215,15 @@ function NewCr({ sections, onDone }: { sections: Array<{ number: string; title: 
         </p>
       )}
       <div className="review-form">
-        <button type="submit" className="btn-primary" disabled={m.isPending}>
-          Отправить на рецензию
-        </button>
+        {created ? (
+          <button type="button" className="btn-primary" onClick={onDone}>
+            Закрыть
+          </button>
+        ) : (
+          <button type="submit" className="btn-primary" disabled={m.isPending || proposed.trim() === textOf(section).trim()}>
+            Отправить на рецензию
+          </button>
+        )}
         <button type="button" className="btn-ghost" onClick={onDone}>
           Отмена
         </button>

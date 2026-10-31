@@ -40,6 +40,17 @@ ALLOWED = frozenset(
 )
 
 
+def slim_network(body: bytes) -> bytes:
+    """Граф для экрана: без цитат у рёбер и написаний у узлов. Цитаты страница берёт по
+    щелчку (/kb/dataset), а с ними ответ по всей ветке esg весит ~4 МБ вместо ~2."""
+    data = json.loads(body)
+    for edge in data.get("edges", []):
+        edge.pop("quotes", None)
+    for node in data.get("nodes", []):
+        node.pop("spellings", None)
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
 def fetch(url: str, token: str, timeout_s: float) -> tuple[int, bytes, str]:
     """GET к KBRAG: (код, тело, тип содержимого). Ошибку KBRAG возвращает как есть."""
     headers = {"X-KBRAG-Token": token} if token else {}
@@ -119,4 +130,6 @@ def proxy(
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, f"База знаний недоступна: {exc}"
         ) from exc
+    if name == "network" and code == 200:
+        body = slim_network(body)
     return Response(content=body, status_code=code, media_type=kind)

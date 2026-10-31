@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile, status
-from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
@@ -157,7 +156,7 @@ def list_imports(db: Annotated[Session, Depends(get_db)]) -> list[ImportOut]:
 
 
 @router.post("", response_model=ImportOut, status_code=status.HTTP_201_CREATED)
-async def upload(
+def upload(
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
     user: Annotated[User, Researcher],
@@ -172,7 +171,7 @@ async def upload(
     Указан DOI, а остального нет — недостающее берётся из OpenAlex."""
     path = _kb_path(kb_path)
     limit = settings.kb_import_max_mb * 2**20
-    data = await file.read(limit + 1)
+    data = file.file.read(limit + 1)
     if len(data) > limit:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                             f"Файл больше {settings.kb_import_max_mb} МБ")
@@ -189,7 +188,7 @@ async def upload(
     if norm_doi and not all(meta[k] for k in ("title", "year", "authors")):
         # Свойства PDF часто врут (автор — тот, кто сохранял файл): по DOI — из OpenAlex
         try:
-            work = await run_in_threadpool(openalex_work, norm_doi, 15.0)
+            work = openalex_work(norm_doi, 15.0)
             meta.update({k: meta[k] or work[k] for k in ("title", "year", "authors", "journal")})
         except (FetchError, ValueError):
             pass

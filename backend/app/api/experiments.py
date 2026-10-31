@@ -8,7 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_user, require_role
 from app.db import get_db
-from app.models import Dataset, Experiment, ExperimentLink, Hypothesis, KbRef, Review, User
+from app.models import (
+    Dataset,
+    DatasetSnapshot,
+    Experiment,
+    ExperimentLink,
+    Hypothesis,
+    KbRef,
+    Review,
+    User,
+)
 from app.services.codes import next_code
 from app.services.experiments import DomainError, set_status
 from app.services.report import Report
@@ -71,6 +80,7 @@ class ExperimentOut(BaseModel):
 class ExperimentDetail(ExperimentOut):
     reviews: list[ReviewOut] = []
     links: list[LinkOut] = []
+    dataset_snapshot: str = ""  # «DS-01 · 2026-10-30» — срез из воспроизводимости
 
 
 class ExperimentIn(BaseModel):
@@ -150,8 +160,11 @@ def _detail(db: Session, exp: Experiment) -> ExperimentDetail:
         .join(KbRef, KbRef.id == ExperimentLink.kb_ref_id)
         .where(ExperimentLink.experiment_id == exp.id)
     ).all()
+    snap = db.get(DatasetSnapshot, exp.dataset_snapshot_id) if exp.dataset_snapshot_id else None
+    ds = db.get(Dataset, snap.dataset_id) if snap else None
     return ExperimentDetail(
         **ExperimentOut.model_validate(exp).model_dump(),
+        dataset_snapshot=f"{ds.code} · {snap.version}" if snap and ds else "",
         reviews=[
             ReviewOut(id=r.id, reviewer=login, verdict=r.verdict, text=r.text, created_at=r.created_at)
             for r, login in reviews

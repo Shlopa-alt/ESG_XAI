@@ -14,6 +14,7 @@ const REL_GROUPS = [
   { key: "other", label: "прочие связи", color: "#2a78d6", match: () => true },
 ] as const;
 type RelKey = (typeof REL_GROUPS)[number]["key"];
+const MAX_NODES = 250;
 const groupOf = (rel: string): (typeof REL_GROUPS)[number] => REL_GROUPS.find((g) => g.match(rel)) ?? REL_GROUPS[3];
 
 interface DatasetFact {
@@ -93,7 +94,9 @@ function FactsPanel({ name, kb, onClose }: { name: string; kb: string; onClose: 
 export function Graph() {
   const [kb, setKb] = useState("esg");
   const [rels, setRels] = useState<Set<RelKey>>(new Set(["up", "down", "none", "other"]));
-  const [minFacts, setMinFacts] = useState(1);
+  const [minFacts, setMinFacts] = useState(2);
+  const [minDraft, setMinDraft] = useState(2); // ползунок: применяется, когда его отпустили
+  const [note, setNote] = useState("");
   const [withArticles, setWithArticles] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -102,16 +105,27 @@ export function Graph() {
   const tree = useQuery({ queryKey: ["kb", "kbs"], queryFn: () => kbTree("esg") });
   const net = useQuery({ queryKey: ["kb", "network", kb], queryFn: () => kbNetwork(kb) });
   const links = useQuery({ queryKey: ["experiment-links"], queryFn: experimentLinks });
+  useEffect(() => {
+    const t = window.setTimeout(() => setMinFacts(minDraft), 350);
+    return () => window.clearTimeout(t);
+  }, [minDraft]);
+  useEffect(() => {
+    setSelected(null);
+    setNote("");
+  }, [kb]);
 
-  const elements = useMemo<ElementDefinition[]>(() => {
-    if (!net.data) return [];
+  // Сколько сущностей проходит фильтр и сколько из них показано (раскладка сотен узлов —
+  // секунды, тысяч — зависание вкладки)
+  const [elements, shownOf] = useMemo<[ElementDefinition[], number]>(() => {
+    if (!net.data) return [[], 0];
     const facts = net.data.edges.filter((e) => e.type === "факт" && rels.has(groupOf(e.label ?? "").key));
     const degree = new Map<string, number>();
     for (const e of facts) {
       degree.set(e.source, (degree.get(e.source) ?? 0) + (e.weight ?? 1));
       degree.set(e.target, (degree.get(e.target) ?? 0) + (e.weight ?? 1));
     }
-    const keep = new Set([...degree].filter(([, d]) => d >= minFacts).map(([id]) => id));
+    const passing = [...degree].filter(([, d]) => d >= minFacts).sort((a, b) => b[1] - a[1]);
+    const keep = new Set(passing.slice(0, MAX_NODES).map(([id]) => id));
     const out: ElementDefinition[] = [];
     for (const n of net.data.nodes) {
       if (n.kind === "сущность" && keep.has(n.id)) {
@@ -132,15 +146,19 @@ export function Graph() {
       for (const n of net.data.nodes.filter((x) => articles.has(x.id))) {
         out.push({ data: { id: n.id, label: (n.name ?? n.id).slice(0, 40), kind: "article", size: 14 } });
       }
+      const exps = new Set<string>();
       for (const l of links.data ?? []) {
         const art = `статья:${l.kbrag_id}`;
         if (!articles.has(art)) continue;
         const id = `exp:${l.experiment}`;
-        if (!out.some((x) => x.data.id === id)) out.push({ data: { id, label: l.experiment, kind: "experiment", size: 26 } });
+        if (!exps.has(id)) {
+          exps.add(id);
+          out.push({ data: { id, label: l.experiment, kind: "experiment", size: 26 } });
+        }
         out.push({ data: { id: `${id}>${art}`, source: id, target: art, label: l.relation, color: "#14231c" } });
       }
     }
-    return out;
+    return [out, passing.length];
   }, [net.data, rels, minFacts, withArticles, links.data]);
 
   useEffect(() => {
@@ -159,7 +177,7 @@ export function Graph() {
         { selector: ".faded", style: { opacity: 0.12 } },
         { selector: "node:selected", style: { "border-color": "#b5651d", "border-width": 3 } },
       ],
-      layout: { name: "cose", animate: false, nodeRepulsion: () => 9000, idealEdgeLength: () => 90, padding: 20 },
+      layout: { name: "cose", animate: false, numIter: 600, nodeRepulsion: () => 9000, idealEdgeLength: () => 90, padding: 20 },
     });
     instance.on("tap", "node", (ev) => {
       const n = ev.target;
@@ -181,9 +199,21 @@ export function Graph() {
 
   const focus = () => {
     const c = cy.current;
-    if (!c || !query.trim()) return;
-    const found = c.nodes().filter((n) => String(n.data("label")).toLowerCase().includes(query.trim().toLowerCase()));
-    if (found.length === 0) return;
+    const needle = query.trim().toLowerCase();
+    if (!c || !needle) return;
+    setNote("");
+    const found = c.nodes().filter((n) => String(n.data("label")).toLowerCase().includes(needle));
+    if (found.length === 0) {
+      // на графе не видно — ищем по всей ветке: сущность могла не пройти фильтр
+      const hidden = net.data?.nodes.find((n) => n.kind === "сущность" && (n.name ?? "").toLowerCase().includes(needle));
+      if (hidden?.name) {
+        setSelected(hidden.name);
+        setNote(`«${hidden.name}» на графе не видно — её скрывают фильтры. Факты о ней — справа.`);
+      } else {
+        setNote(`В ветке нет сущности, похожей на «${query.trim()}».`);
+      }
+      return;
+    }
     c.elements().addClass("faded");
     found.closedNeighborhood().removeClass("faded");
     c.fit(found.closedNeighborhood(), 60);
@@ -233,8 +263,8 @@ export function Graph() {
           ))}
         </div>
         <label className="field inline">
-          Мин. фактов у сущности: {minFacts}
-          <input type="range" min={1} max={10} value={minFacts} onChange={(e) => setMinFacts(Number(e.target.value))} />
+          Мин. фактов у сущности: {minDraft}
+          <input type="range" min={1} max={10} value={minDraft} onChange={(e) => setMinDraft(Number(e.target.value))} />
         </label>
         <label className="check">
           <input type="checkbox" checked={withArticles} onChange={(e) => setWithArticles(e.target.checked)} /> статьи и эксперименты
@@ -269,7 +299,14 @@ export function Graph() {
       )}
       <p className="muted">
         На графе {entities} сущностей и {edges} связей · всего фактов в ветке {total}
+        {shownOf > MAX_NODES &&
+          ` · фильтр проходят ${shownOf} сущностей, показаны ${MAX_NODES} самых связанных — поднимите порог или найдите сущность`}
       </p>
+      {note && (
+        <p className="muted" role="status">
+          {note}
+        </p>
+      )}
       <div className={selected ? "graph-layout with-panel" : "graph-layout"}>
         <div ref={box} className="card graph-canvas" role="img" aria-label="Граф фактов: сущности и связи между ними" />
         {selected && <FactsPanel name={selected} kb={kb} onClose={() => setSelected(null)} />}

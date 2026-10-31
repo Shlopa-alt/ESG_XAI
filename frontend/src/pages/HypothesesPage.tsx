@@ -142,7 +142,12 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
         <ul className="list muted">
           {h.refs.map((r) => (
             <li key={r.kbrag_id}>
-              {r.title || r.kbrag_id} {r.doi && <span className="mono">· DOI {r.doi}</span>}
+              {r.kind === "article" ? (
+                <Link to={`/knowledge/article/${encodeURIComponent(r.kbrag_id)}`}>{r.title || r.kbrag_id}</Link>
+              ) : (
+                r.title || r.kbrag_id
+              )}{" "}
+              {r.doi && <span className="mono">· DOI {r.doi}</span>}
               {r.quote && <q> {r.quote}</q>}
             </li>
           ))}
@@ -164,10 +169,10 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
             Комментарий (обязателен при отклонении)
             <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
-          <button type="button" className="btn-primary" onClick={() => decide.mutate("accepted")}>
+          <button type="button" className="btn-primary" disabled={decide.isPending} onClick={() => decide.mutate("accepted")}>
             Принять к проверке
           </button>
-          <button type="button" className="btn-ghost" onClick={() => decide.mutate("rejected")}>
+          <button type="button" className="btn-ghost" disabled={decide.isPending} onClick={() => decide.mutate("rejected")}>
             Отклонить
           </button>
         </div>
@@ -193,6 +198,7 @@ const FILTERS: Array<{ key: HStatus | "all"; label: string }> = [
   { key: "proposed", label: "Ждут решения" },
   { key: "accepted", label: "Приняты" },
   { key: "testing", label: "Проверяются" },
+  { key: "tested", label: "Проверены" },
   { key: "rejected", label: "Отклонены" },
 ];
 
@@ -250,7 +256,9 @@ export function Hypotheses() {
         {shown.map((h) => (
           <HypothesisCard key={h.code} h={h} role={me.data?.role} />
         ))}
-        {q.isSuccess && shown.length === 0 && <p className="muted">Гипотез пока нет — предложите первую.</p>}
+        {q.isSuccess && shown.length === 0 && (
+          <p className="muted">{all.length === 0 ? "Гипотез пока нет — предложите первую." : "С таким статусом гипотез нет."}</p>
+        )}
       </div>
     </>
   );

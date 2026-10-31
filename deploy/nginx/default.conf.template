@@ -22,6 +22,15 @@ server {
   allow ${ALLOWED_SUBNET};
   deny all;
 
+  # Сжатие: граф базы знаний — ~2 МБ JSON, сборка фронтенда — ~0,7 МБ; в gzip — в 8–10 раз меньше.
+  # Потоки (text/event-stream запусков, application/x-ndjson чата) не сжимаются — иначе буферизуются
+  gzip on;
+  gzip_proxied any;
+  gzip_comp_level 5;
+  gzip_min_length 1024;
+  gzip_vary on;
+  gzip_types application/json application/javascript text/css text/plain image/svg+xml;
+
   location /api/ {
     # PDF статей загружаются через сайт (KB_IMPORT_MAX_MB на бэкенде)
     client_max_body_size 64m;

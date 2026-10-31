@@ -213,6 +213,7 @@ export function ExperimentEditor({ e, onClose }: { e: ExperimentDetail; onClose:
     onSuccess: (data) => {
       qc.setQueryData(["experiment", e.code], data);
       void qc.invalidateQueries({ queryKey: ["experiments"] });
+      void qc.invalidateQueries({ queryKey: ["hypotheses"] }); // «завершён» закрывает проверку гипотезы
       onClose();
     },
   });

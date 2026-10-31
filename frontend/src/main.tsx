@@ -6,7 +6,14 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import "./styles.css";
 
-const queryClient = new QueryClient();
+// Данные платформы меняются редко: 30 с данные считаются свежими (переход между страницами не
+// перезапрашивает их), при возврате на вкладку — без перезапроса, ошибка — один повтор, не три
+// с нарастающей паузой (ошибка базы знаний показывалась через ~7 с крутилки)
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 },
+  },
+});
 
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Не найден #root");

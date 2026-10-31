@@ -342,7 +342,7 @@ export function Experiment() {
             <dt>Коммит runner</dt>
             <dd className="mono">{e.runner_commit || "—"}</dd>
             <dt>Срез данных</dt>
-            <dd className="mono">{e.dataset_snapshot_id ?? "—"}</dd>
+            <dd className="mono">{e.dataset_snapshot || "—"}</dd>
             <dt>Seed</dt>
             <dd className="mono">{e.seed ?? "—"}</dd>
             <dt>Окружение</dt>
@@ -365,7 +365,13 @@ export function Experiment() {
           <ul className="list">
             {e.links.map((l) => (
               <li key={`${l.relation}-${l.kbrag_id}`}>
-                {l.relation}: {l.title || l.kbrag_id} {l.doi && <span className="muted">· DOI {l.doi}</span>}
+                {l.relation}:{" "}
+                {l.kind === "article" ? (
+                  <Link to={`/knowledge/article/${encodeURIComponent(l.kbrag_id)}`}>{l.title || l.kbrag_id}</Link>
+                ) : (
+                  l.title || l.kbrag_id
+                )}{" "}
+                {l.doi && <span className="muted">· DOI {l.doi}</span>}
               </li>
             ))}
           </ul>

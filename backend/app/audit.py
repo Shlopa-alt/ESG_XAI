@@ -8,6 +8,7 @@ from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
@@ -17,6 +18,9 @@ from app.db import Base, SessionLocal
 from app.services.auth import read_session_token
 
 WRITE_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})
+# Служебные обработчики (импорт статей, исполнитель запусков) опрашивают очередь раз в
+# 30 с — это не действия людей: в журнал не пишутся, иначе в нём тонет всё остальное
+SERVICE_PREFIXES = ("/api/kb-imports/worker/", "/api/runs/worker/")
 
 
 class AuditLog(Base):
@@ -40,9 +44,12 @@ def _client(request: Request) -> str:
 class AuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         response = await call_next(request)
-        if request.method in WRITE_METHODS and request.url.path.startswith("/api/"):
+        path = request.url.path
+        if (request.method in WRITE_METHODS and path.startswith("/api/")
+                and not path.startswith(SERVICE_PREFIXES)):
             try:
-                record(request, response.status_code)
+                # запись в базу — не в цикле событий: иначе каждый POST задерживает всех
+                await run_in_threadpool(record, request, response.status_code)
             except Exception:  # noqa: BLE001 — сбой журнала не должен ронять запрос
                 pass
         return response
