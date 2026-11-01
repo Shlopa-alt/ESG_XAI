@@ -1,7 +1,32 @@
-# Дополнение к deploy/docker-compose.yml для сервера в Yandex Cloud:
+# Сервер в Yandex Cloud: только сайт (nginx, frontend, backend, Postgres, Redis).
+# Вычисления (runner-cpu, MLflow, KBRAG, Qwen) — на компьютере лаборатории, связь через WireGuard:
+# сервер 10.8.0.1, компьютер 10.8.0.2.
+#
 #   docker compose -f deploy/docker-compose.yml -f deploy/yandex/docker-compose.yandex.yml up -d --build
+#
 # Пути здесь считаются от папки deploy/ (папка первого файла).
 services:
+  # Исполнитель и MLflow работают на компьютере (deploy/yandex/docker-compose.pc.yml)
+  runner-cpu:
+    profiles: ["compute-on-server"]
+  mlflow:
+    profiles: ["compute-on-server"]
+
+  # Очередь запусков: исполнитель на компьютере подключается к ней через туннель
+  redis:
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?задайте REDIS_PASSWORD в deploy/.env}"]
+    ports:
+      - "10.8.0.1:6379:6379"
+
+  backend:
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    volumes:
+      # Папка данных синхронизируется с компьютером (Syncthing). ESG_DATA_HOST в .env — путь этой
+      # папки на компьютере: срезы записываются путями компьютера, их же читает исполнитель
+      - ${SERVER_DATA_DIR:-/opt/esg_data}:/data/esg
+      - ${SERVER_DATA_DIR:-/opt/esg_data}/kb_inbox:/data/kb_inbox
+
   nginx:
     ports:
       # HTTP_PORT=443 в .env даёт "443:443"; порт 80 — для Let's Encrypt и перенаправления на HTTPS

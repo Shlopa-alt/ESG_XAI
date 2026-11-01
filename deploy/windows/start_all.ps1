@@ -21,7 +21,16 @@ for ($i = 0; $i -lt 60; $i++) {                       # до 10 минут жд�
 if ($LASTEXITCODE -ne 0) { Say "Docker так и не ответил — выхожу"; exit 1 }
 Say "Docker готов"
 
-& $Docker compose -f (Join-Path $Platform "deploy\docker-compose.yml") up -d *>> $Log
+# Сайт на сервере (PLATFORM_URL в deploy\.env) — здесь только исполнитель и MLflow;
+# иначе — вся платформа на этой машине
+$EnvFile = Join-Path $Platform "deploy\.env"
+$Remote = (Test-Path $EnvFile) -and (Select-String -Path $EnvFile -Pattern '^\s*PLATFORM_URL\s*=\s*\S' -Quiet)
+if ($Remote) {
+    & $Docker compose -f (Join-Path $Platform "deploy\yandex\docker-compose.pc.yml") --env-file $EnvFile up -d *>> $Log
+    Say "сайт на сервере: подняты исполнитель и MLflow"
+} else {
+    & $Docker compose -f (Join-Path $Platform "deploy\docker-compose.yml") up -d *>> $Log
+}
 Push-Location $Kbrag
 & $Docker compose up -d db *>> $Log                    # только база; модель — по команде
 Pop-Location

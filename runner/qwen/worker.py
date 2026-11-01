@@ -70,7 +70,10 @@ class Platform:
     def __init__(self, url: str, token: str, ca: Path) -> None:
         self.url = url.rstrip("/")
         self.token = token
-        self.ctx = ssl.create_default_context(cafile=str(ca)) if ca.is_file() else None
+        # Системные корневые сертификаты (Let's Encrypt на сервере) + корневой лаборатории, если есть
+        self.ctx = ssl.create_default_context()
+        if ca.is_file():
+            self.ctx.load_verify_locations(cafile=str(ca))
 
     def post(self, path: str, body: dict[str, Any] | None = None) -> tuple[int, Any]:
         req = Request(f"{self.url}/api/qwen/worker/{path}", data=json.dumps(body or {}).encode(),
@@ -675,7 +678,7 @@ def describe(kind: str, result: dict[str, Any]) -> str:
 def main() -> int:
     env = read_env(DEPLOY / ".env")
     ap = argparse.ArgumentParser(description="Обработчик очереди задач Qwen")
-    ap.add_argument("--platform", default=f"https://127.0.0.1:{env.get('HTTP_PORT', '8080')}")
+    ap.add_argument("--platform", default=env.get("PLATFORM_URL") or f"https://127.0.0.1:{env.get('HTTP_PORT', '8080')}")
     ap.add_argument("--ca", type=Path, default=DEPLOY / "certs" / "lab-root-ca.crt")
     ap.add_argument("--kbrag", type=Path, default=Path(os.environ.get("KBRAG_HOME", r"C:\Users\Grisha\KBRAG")))
     ap.add_argument("--idle-min", type=float, default=10)

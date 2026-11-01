@@ -49,7 +49,10 @@ class Platform:
     def __init__(self, url: str, token: str, ca: Path) -> None:
         self.url = url.rstrip("/")
         self.token = token
-        self.ctx = ssl.create_default_context(cafile=str(ca)) if ca.is_file() else None
+        # Системные корневые сертификаты (Let's Encrypt на сервере) + корневой лаборатории, если есть
+        self.ctx = ssl.create_default_context()
+        if ca.is_file():
+            self.ctx.load_verify_locations(cafile=str(ca))
 
     def post(self, path: str, body: dict[str, Any] | None = None) -> tuple[int, Any]:
         req = Request(
@@ -108,7 +111,7 @@ def process(job: dict[str, Any], inbox: Path, device: str, dsn: str | None) -> d
 def main() -> int:
     env = read_env(DEPLOY / ".env")
     p = argparse.ArgumentParser(description="Очередь импорта статей с сайта → KBRAG")
-    p.add_argument("--platform", default=f"https://127.0.0.1:{env.get('HTTP_PORT', '8080')}")
+    p.add_argument("--platform", default=env.get("PLATFORM_URL") or f"https://127.0.0.1:{env.get('HTTP_PORT', '8080')}")
     p.add_argument("--inbox", type=Path, default=Path(env.get("KB_INBOX_DIR", DEPLOY.parent / ".local" / "kb_inbox")))
     p.add_argument("--ca", type=Path, default=DEPLOY / "certs" / "lab-root-ca.crt")
     p.add_argument("--kbrag", type=Path, default=Path(os.environ.get("KBRAG_HOME", r"C:\Users\Grisha\KBRAG")))

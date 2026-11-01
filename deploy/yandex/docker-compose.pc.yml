@@ -1,0 +1,40 @@
+# Компьютер лаборатории, когда сайт работает на сервере в Yandex Cloud: только вычисления —
+# исполнитель запусков (очередь cpu) и MLflow. Поднимает deploy/windows/start_all.ps1, если в
+# deploy/.env задан PLATFORM_URL; вручную:
+#
+#   docker compose -f deploy/yandex/docker-compose.pc.yml --env-file deploy/.env up -d --build
+#
+# Имя проекта то же, что у полного стека: MLflow продолжает писать в прежний том mlflowdata.
+# Пути здесь считаются от папки deploy/yandex/.
+name: esg-open-research
+
+services:
+  mlflow:
+    restart: unless-stopped
+    build: ../mlflow
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - mlflowdata:/mlflow
+
+  runner-cpu:
+    restart: unless-stopped
+    build: ../../runner
+    environment:
+      # Очередь — Redis на сервере, через туннель WireGuard
+      REDIS_URL: redis://:${REDIS_PASSWORD:?задайте REDIS_PASSWORD в deploy/.env}@10.8.0.1:6379/0
+      PLATFORM_URL: ${PLATFORM_URL:?задайте PLATFORM_URL в deploy/.env}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?задайте RUNNER_TOKEN в deploy/.env}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      ESG_DATA_HOST: ${ESG_DATA_HOST:?задайте ESG_DATA_HOST в deploy/.env}
+      ESG_DATA_DIR: /data/esg
+      RUNNER_QUEUE: cpu
+    volumes:
+      - ../..:/repo:ro
+      - ${ESG_DATA_HOST}:/data/esg
+      - mlflowdata:/mlflow
+    depends_on:
+      - mlflow
+
+volumes:
+  mlflowdata:
