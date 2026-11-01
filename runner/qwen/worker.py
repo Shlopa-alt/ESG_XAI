@@ -481,8 +481,12 @@ def _exp_prompt(c: dict[str, Any]) -> str:
             for p in m["params"]) for m in c["methods"])
     snaps = "\n".join(
         f"- срез {s['id']}: {s['dataset']} «{s['title']}», версия {s['version']}, строк {s['rows'] or '?'}. "
-        f"{s['description'][:300]} Числовые столбцы: "
-        + (", ".join(s["numeric_columns"]) if s["table"] else "файл не таблица CSV — общие методы его не читают")
+        f"{s['description'][:300]} "
+        + (("Книга Excel — в params укажи sheet (лист), столбцы — с этого листа. Листы: " + "; ".join(
+            f"«{sh['name']}» — числовые столбцы: {', '.join(sh['numeric_columns']) or 'нет'}" for sh in s["sheets"]))
+           if s.get("sheets") else
+           "Числовые столбцы: " + ", ".join(s["numeric_columns"]) if s["table"]
+           else "файл не таблица (CSV или Excel) — общие методы его не читают")
         for s in c["snapshots"])
     return (f"ГИПОТЕЗА {h['code']}: {h['title']}\n{h['statement']}\nОбоснование: {h['rationale'][:800]}\n"
             f"Qwen ранее предлагала проверить: {json.dumps(h['suggested'], ensure_ascii=False)}\n\n"

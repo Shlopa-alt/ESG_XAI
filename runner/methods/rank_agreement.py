@@ -40,7 +40,7 @@ def main() -> int:
     seed, n_boot, n_perm = int(p.get("seed", 42)), int(p.get("n_boot", 10_000)), int(p.get("n_perm", 10_000))
     t0, started = time.time(), datetime.now(UTC).isoformat()
     out = results_dir(args.results_root)
-    df = load_table(args.data)
+    df = load_table(args.data, p.get("sheet", ""))
     data = pd.DataFrame({c: numeric(df, c) * (-1 if c in invert else 1) for c in cols}).dropna()
     if len(data) < 5:
         raise SystemExit(f"Строк со всеми выбранными столбцами — {len(data)}, нужно хотя бы 5")

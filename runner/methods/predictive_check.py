@@ -60,7 +60,7 @@ def main() -> int:
     seed, splits = int(p.get("seed", 42)), int(p.get("splits", 30))
     t0, started = time.time(), datetime.now(UTC).isoformat()
     out = results_dir(args.results_root)
-    df = load_table(args.data)
+    df = load_table(args.data, p.get("sheet", ""))
     data = pd.DataFrame({c: numeric(df, c) for c in [target, *features]}).dropna()
     if len(data) < 30:
         raise SystemExit(f"Строк без пропусков — {len(data)}, для 30 разбиений нужно хотя бы 30")

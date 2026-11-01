@@ -18,7 +18,7 @@ from app.db import get_db
 from app.models import Dataset, DatasetSnapshot, Experiment, Run, User
 from app.services import run_queue
 from app.services.report import Report, merge_run_report
-from app.services.data_files import table_columns, to_container
+from app.services.data_files import Table, is_table, table_columns, to_container
 from app.services.run_templates import TEMPLATES, ParamError, check_params, script_args
 
 router = APIRouter(tags=["runs"])
@@ -105,6 +105,8 @@ class LaunchIn(BaseModel):
 class ColumnsOut(BaseModel):
     columns: list[str]
     numeric: list[str]
+    sheets: list[str]  # листы-таблицы книги Excel; у CSV — пусто
+    sheet: str  # какой лист прочитан
 
 
 class WorkerReport(BaseModel):
@@ -233,8 +235,8 @@ def experiment_runs(code: str, db: Annotated[Session, Depends(get_db)]) -> list[
 
 
 def snapshot_table(db: Session, settings: Settings, snap: DatasetSnapshot,
-                   user: User | None) -> tuple[list[str], set[str]]:
-    """Столбцы среза из его файла (NDA — только тем, кому видны файлы)."""
+                   user: User | None, sheet: str = "") -> Table:
+    """Столбцы среза из его файла, у книги — с листа sheet (NDA — только тем, кому видны файлы)."""
     ds = db.get(Dataset, snap.dataset_id)
     if ds is not None and ds.access_level == "nda" and (user is None or user.role != "owner"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Файлы датасета под NDA — только для допущенных")
@@ -242,21 +244,21 @@ def snapshot_table(db: Session, settings: Settings, snap: DatasetSnapshot,
     if path is None or not path.is_file():
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Файл среза на сервере не найден")
     try:
-        return table_columns(path)
+        return table_columns(path, sheet)
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
 
 @router.get("/run-templates", response_model=list[TemplateOut], dependencies=[Depends(current_user)])
 def list_templates(db: Annotated[Session, Depends(get_db)]) -> list[TemplateOut]:
-    """Библиотека методов: общие — со всеми срезами в CSV, повторы — со срезами своего датасета."""
+    """Библиотека методов: общие — со срезами-таблицами (CSV, Excel), повторы — со срезами своего датасета."""
     rows = db.execute(select(DatasetSnapshot, Dataset.code).join(Dataset)
                       .order_by(Dataset.code, DatasetSnapshot.id.desc())).all()
     out = []
     for t in TEMPLATES.values():
         snaps = [(s, code) for s, code in rows
                  if (code == t.dataset if t.scope == "replication"
-                     else s.storage_path.lower().endswith((".csv", ".tsv", ".txt")))]
+                     else is_table(s.storage_path))]
         out.append(TemplateOut(
             key=t.key, title=t.title, description=t.description, scope=t.scope, experiment=t.experiment,
             dataset=t.dataset, resource=t.resource, limit_min=t.limit_min,
@@ -272,18 +274,19 @@ def list_templates(db: Annotated[Session, Depends(get_db)]) -> list[TemplateOut]
 @router.get("/snapshots/{snapshot_id}/columns", response_model=ColumnsOut)
 def snapshot_columns(snapshot_id: int, db: Annotated[Session, Depends(get_db)],
                      settings: Annotated[Settings, Depends(get_settings)],
-                     user: Annotated[User, Depends(current_user)]) -> ColumnsOut:
+                     user: Annotated[User, Depends(current_user)], sheet: str = "") -> ColumnsOut:
     snap = db.get(DatasetSnapshot, snapshot_id)
     if snap is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет среза №{snapshot_id}")
-    columns, numeric = snapshot_table(db, settings, snap, user)
-    return ColumnsOut(columns=columns, numeric=[c for c in columns if c in numeric])
+    t = snapshot_table(db, settings, snap, user, sheet)
+    return ColumnsOut(columns=t.columns, numeric=[c for c in t.columns if c in t.numeric], sheets=t.sheets,
+                      sheet=t.sheet)
 
 
 def start_run(db: Session, settings: Settings, user: User, template: str, snapshot_id: int,
               params: dict[str, Any], experiment: str = "") -> Run:
     """Запуск метода библиотеки: метод, срез, эксперимент и параметры проверены — задача в очередь
-    исполнителя. Общий метод — на любом срезе CSV и в указанном эксперименте; повтор — на срезе
+    исполнителя. Общий метод — на любом срезе-таблице и в указанном эксперименте; повтор — на срезе
     своего датасета и в своём эксперименте."""
     t = TEMPLATES.get(template)
     if t is None:
@@ -307,12 +310,13 @@ def start_run(db: Session, settings: Settings, user: User, template: str, snapsh
     exp = db.scalar(select(Experiment).where(Experiment.code == code))
     if exp is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет эксперимента {code}")
-    columns: list[str] | None = None
-    numeric: set[str] | None = None
+    table: Table | None = None
     if any(p.kind != "int" for p in t.params):
-        columns, numeric = snapshot_table(db, settings, snap, user)
+        sheet = params.get("sheet", "")
+        table = snapshot_table(db, settings, snap, user, sheet if isinstance(sheet, str) else "")
     try:
-        checked = check_params(t, params, columns, numeric)
+        checked = (check_params(t, params, table.columns, table.numeric, table.sheets, table.sheet) if table
+                   else check_params(t, params))
     except ParamError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     if t.resource == "gpu":

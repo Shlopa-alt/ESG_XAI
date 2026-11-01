@@ -27,18 +27,28 @@ from app.models import (
     QwenJob,
 )
 from app.services.codes import next_code
-from app.services.data_files import table_columns, to_container
+from app.services.data_files import Table, table_columns, to_container
 from app.services.run_templates import TEMPLATES, ParamError, check_params
 
 
-def _columns(settings: Settings, snap: DatasetSnapshot) -> tuple[list[str], set[str]] | None:
+def _columns(settings: Settings, snap: DatasetSnapshot, sheet: str = "") -> Table | None:
     path = to_container(settings, snap.storage_path) if snap.storage_path else None
     if path is None or not path.is_file():
         return None
     try:
-        return table_columns(path)
+        return table_columns(path, sheet)
     except ValueError:
         return None
+
+
+def _sheets(settings: Settings, snap: DatasetSnapshot, table: Table) -> list[dict[str, Any]]:
+    """Листы книги с числовыми столбцами — чтобы Qwen выбрал лист; у CSV — пусто."""
+    out = []
+    for name in table.sheets:
+        t = table if name == table.sheet else _columns(settings, snap, name)
+        if t is not None:
+            out.append({"name": name, "numeric_columns": [c for c in t.columns if c in t.numeric][:40]})
+    return out
 
 
 def context(db: Session, settings: Settings, code: str) -> dict[str, Any]:
@@ -64,7 +74,8 @@ def context(db: Session, settings: Settings, code: str) -> dict[str, Any]:
         snapshots.append({
             "id": snap.id, "dataset": ds.code, "title": ds.title, "description": ds.description[:500],
             "version": snap.version, "rows": snap.row_count,
-            "numeric_columns": [c for c in table[0] if c in table[1]][:80] if table else [],
+            "numeric_columns": [c for c in table.columns if c in table.numeric][:80] if table else [],
+            "sheets": _sheets(settings, snap, table) if table else [],
             "table": table is not None,
         })
     methods = [{"key": t.key, "title": t.title, "description": t.description, "scope": t.scope,
@@ -91,11 +102,14 @@ def problems(db: Session, settings: Settings, p: ExperimentProposal) -> str:
     ds = db.get(Dataset, snap.dataset_id)
     if t.scope == "replication" and (ds is None or ds.code != t.dataset):
         return f"Метод «{t.title}» считается только на {t.dataset}"
-    table = _columns(settings, snap) if any(x.kind != "int" for x in t.params) else None
+    sheet = (p.params or {}).get("sheet", "")
+    table = (_columns(settings, snap, sheet if isinstance(sheet, str) else "")
+             if any(x.kind != "int" for x in t.params) else None)
     if any(x.kind != "int" for x in t.params) and table is None:
-        return "Метод читает таблицу CSV, а файл среза — не таблица или не найден"
+        return "Метод читает таблицу (CSV или лист Excel), а файл среза — не таблица, не найден или нет такого листа"
     try:
-        check_params(t, dict(p.params or {}), table[0] if table else None, table[1] if table else None)
+        check_params(t, dict(p.params or {}), table.columns if table else None, table.numeric if table else None,
+                     table.sheets if table else None, table.sheet if table else "")
     except ParamError as exc:
         return str(exc)
     return ""

@@ -1,8 +1,8 @@
 """Библиотека методов: какие расчёты из runner/ можно запустить из формы и с какими параметрами.
 
 Два вида:
-- общий метод (scope="generic") — считается на любом подходящем срезе (CSV) и в любом
-  эксперименте: параметры — столбцы среза (их платформа сверяет с заголовком файла) и числа;
+- общий метод (scope="generic") — считается на любом подходящем срезе (CSV или лист книги Excel)
+  и в любом эксперименте: параметры — лист книги, столбцы (их платформа сверяет с заголовком) и числа;
 - повтор (scope="replication") — расчёт конкретного эксперимента на своём датасете (EXP-001,
   EXP-007): тот же код, что дал опубликованный результат.
 
@@ -17,7 +17,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-ParamKind = Literal["int", "column", "columns"]
+ParamKind = Literal["int", "column", "columns", "sheet"]
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,8 @@ class Template:
 
 
 SEED = Param("seed", "Seed", 42, 0, 2**31 - 1)
+# у книги Excel — какой лист считать (пусто — первый лист-таблица); у CSV параметра не видно
+SHEET = Param("sheet", "Лист книги", "", kind="sheet", required=False, hint="для срезов Excel")
 
 TEMPLATES: dict[str, Template] = {
     t.key: t
@@ -62,7 +64,8 @@ TEMPLATES: dict[str, Template] = {
                         "перестановочный тест. Подходит для сравнения рейтингов провайдеров, оценок, "
                         "показателей. У столбцов «больше — хуже» (шкала риска) знак обращается.",
             workdir="methods", script="rank_agreement.py", resource="cpu", limit_min=30,
-            params=(Param("columns", "Столбцы для сравнения", [], kind="columns", hint="не меньше двух"),
+            params=(SHEET,
+                    Param("columns", "Столбцы для сравнения", [], kind="columns", hint="не меньше двух"),
                     Param("invert", "Столбцы, где больше — хуже", [], kind="columns", required=False),
                     SEED,
                     Param("n_boot", "Повторных выборок (бутстреп)", 10_000, 100, 100_000),
@@ -75,7 +78,8 @@ TEMPLATES: dict[str, Template] = {
                         "градиентный бустинг без подбора по тесту, 30 случайных разбиений 80/20, плацебо на "
                         "перемешанной цели. Итог — R² на отложенной выборке со средним и разбросом.",
             workdir="methods", script="predictive_check.py", resource="cpu", limit_min=60,
-            params=(Param("target", "Целевой показатель", "", kind="column"),
+            params=(SHEET,
+                    Param("target", "Целевой показатель", "", kind="column"),
                     Param("features", "Признаки", [], kind="columns", hint="ESG-признаки и контрольные"),
                     SEED,
                     Param("splits", "Случайных разбиений", 30, 5, 200)),
@@ -109,15 +113,28 @@ class ParamError(ValueError):
 
 
 def check_params(t: Template, given: dict[str, Any], columns: list[str] | None = None,
-                 numeric: set[str] | None = None) -> dict[str, Any]:
+                 numeric: set[str] | None = None, sheets: list[str] | None = None,
+                 sheet: str = "") -> dict[str, Any]:
     """Параметры запуска: значения по умолчанию, поверх — заданные. Числа — целые в границах,
-    столбцы — из заголовка среза (columns), для числовых параметров — числовые (numeric)."""
+    столбцы — из заголовка среза (columns), для числовых параметров — числовые (numeric).
+    Лист — из листов-таблиц книги (sheets; у CSV — пусто); sheet — какой прочитан для columns."""
     unknown = set(given) - {p.name for p in t.params}
     if unknown:
         raise ParamError(f"У метода нет параметров: {', '.join(sorted(unknown))}")
     out: dict[str, Any] = {}
     for p in t.params:
         value = given.get(p.name, p.default)
+        if p.kind == "sheet":
+            if not isinstance(value, str):
+                raise ParamError(f"«{p.label}» — имя листа")
+            if sheets is not None:
+                if not sheets and value:
+                    raise ParamError("Лист выбирают только у книги Excel, а срез — CSV")
+                if sheets and (value or sheet) not in sheets:
+                    raise ParamError(f"В книге нет листа-таблицы «{value}»; есть: {', '.join(sheets)}")
+                value = value or sheet  # пусто — лист, который прочитан (первый лист-таблица)
+            out[p.name] = value
+            continue
         if p.kind == "int":
             if isinstance(value, bool) or not isinstance(value, int):
                 raise ParamError(f"«{p.label}» — целое число")
