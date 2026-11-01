@@ -23,7 +23,7 @@ server {
   deny all;
 
   # Сжатие: граф базы знаний — ~2 МБ JSON, сборка фронтенда — ~0,7 МБ; в gzip — в 8–10 раз меньше.
-  # Потоки (text/event-stream запусков, application/x-ndjson чата) не сжимаются — иначе буферизуются
+  # Поток запусков (text/event-stream) не сжимается — иначе буферизуется
   gzip on;
   gzip_proxied any;
   gzip_comp_level 5;

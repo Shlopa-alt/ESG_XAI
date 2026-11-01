@@ -4,7 +4,6 @@ import { Route, Routes } from "react-router-dom";
 import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
 import { Article } from "./pages/ArticlePage";
-import { Chat } from "./pages/ChatPage";
 import { DatasetPage } from "./pages/DatasetPage";
 import { Experiment, Experiments } from "./pages/ExperimentPages";
 import { Hypotheses } from "./pages/HypothesesPage";
@@ -36,7 +35,6 @@ export function App() {
         <Route path="knowledge" element={<Knowledge />} />
         <Route path="knowledge/graph" element={<Suspense fallback={<p className="muted">Загрузка графа…</p>}><Graph /></Suspense>} />
         <Route path="knowledge/import" element={<Import />} />
-        <Route path="knowledge/chat" element={<Chat />} />
         <Route path="datasets/:code" element={<DatasetPage />} />
         <Route path="knowledge/article/:docId" element={<Article />} />
         <Route path="hypotheses" element={<Hypotheses />} />
