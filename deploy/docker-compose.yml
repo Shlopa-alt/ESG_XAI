@@ -2,6 +2,7 @@ name: esg-open-research
 
 services:
   postgres:
+    restart: unless-stopped
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: esg
@@ -16,42 +17,92 @@ services:
       retries: 10
 
   redis:
+    restart: unless-stopped
     image: redis:7-alpine
     volumes:
       - redisdata:/data
 
   mlflow:
+    restart: unless-stopped
     build: ./mlflow
     volumes:
       - mlflowdata:/mlflow
 
   backend:
+    restart: unless-stopped
     build: ../backend
     environment:
       DATABASE_URL: postgresql+psycopg://esg:${POSTGRES_PASSWORD}@postgres:5432/esg
       SECRET_KEY: ${SECRET_KEY:?задайте SECRET_KEY в deploy/.env}
       AUTH_BACKEND: ${AUTH_BACKEND:-ldap}
-      LOCAL_DEV_PASSWORD: ${LOCAL_DEV_PASSWORD:-dev}
+      LOCAL_DEV_PASSWORD: ${LOCAL_DEV_PASSWORD:-}
       LOCAL_DEV_ROLE: ${LOCAL_DEV_ROLE:-researcher}
       LDAP_SERVER: ${LDAP_SERVER:-ldap://ldap.example.local}
       LDAP_USER_DN_TEMPLATE: ${LDAP_USER_DN_TEMPLATE:-uid={login},ou=people,dc=example,dc=local}
       LDAP_USE_SSL: ${LDAP_USE_SSL:-false}
       INITIAL_OWNER_LOGINS: ${INITIAL_OWNER_LOGINS:-[]}
+      # База знаний KBRAG на этой же машине (python kbrag.py web), токен — kbrag.py access add
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      KBRAG_URL: ${KBRAG_URL:-http://host.docker.internal:8000}
+      KBRAG_TOKEN: ${KBRAG_TOKEN:-}
+      # Импорт статей через сайт: PDF кладутся в папку приёма, её же читает обработчик
+      # deploy/windows/kb_import_worker.py на машине KBRAG (токен — KB_IMPORT_TOKEN)
+      KB_IMPORT_TOKEN: ${KB_IMPORT_TOKEN:-}
+      KB_IMPORT_MAX_MB: ${KB_IMPORT_MAX_MB:-60}
+      # Запуск экспериментов из формы: очередь Celery в Redis, исполнитель runner-cpu
+      REDIS_URL: redis://redis:6379/0
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      # Qwen по требованию: обработчик очереди runner/qwen/worker.py на машине с видеокартой
+      QWEN_TOKEN: ${QWEN_TOKEN:-}
+      # Датасеты: срезы загружаются и регистрируются в папке данных сервера
+      ESG_DATA_HOST: ${ESG_DATA_HOST:-}
+    volumes:
+      - ${KB_INBOX_DIR:-../.local/kb_inbox}:/data/kb_inbox
+      - ${ESG_DATA_HOST:-../.local/esg_data}:/data/esg
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
 
+  # Исполнитель запусков (очередь cpu): скрипты runner/ из рабочей копии репозитория,
+  # данные и результаты — папка ESG_DATA_HOST, метрики и артефакты — MLflow
+  runner-cpu:
+    restart: unless-stopped
+    build: ../runner
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      PLATFORM_URL: http://backend:8000
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      ESG_DATA_HOST: ${ESG_DATA_HOST:-}
+      ESG_DATA_DIR: /data/esg
+      RUNNER_QUEUE: cpu
+    volumes:
+      - ..:/repo:ro
+      - ${ESG_DATA_HOST:-../.local/esg_data}:/data/esg
+      - mlflowdata:/mlflow
+    depends_on:
+      - redis
+      - backend
+      - mlflow
+
   frontend:
+    restart: unless-stopped
     build: ../frontend
 
   nginx:
+    restart: unless-stopped
     image: nginx:1.27-alpine
     environment:
       ALLOWED_SUBNET: ${ALLOWED_SUBNET:-0.0.0.0/0}
+      HTTP_PORT: ${HTTP_PORT:-8080}
     volumes:
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      # server.crt и server.key: deploy/certs (см. deploy/certs/README в .env.example)
+      - ./certs:/etc/nginx/certs:ro
     ports:
-      - "${HTTP_PORT:-8080}:80"
+      - "${HTTP_PORT:-8080}:443"
     depends_on:
       - backend
       - frontend

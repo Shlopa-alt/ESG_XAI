@@ -1,24 +1,57 @@
-# Доступ только из подсети центра (переменная ALLOWED_SUBNET).
-# TLS внутренним сертификатом подключается на этапе 7.
+# Доступ только из подсети центра (переменная ALLOWED_SUBNET), только по HTTPS.
+# Сертификат — deploy/certs/server.crt, подписан корневым сертификатом лаборатории
+# deploy/certs/lab-root-ca.crt (его ставят в доверенные на компьютерах сотрудников).
+# HTTPS слушает тот же порт, что раньше HTTP: обычный http:// на него перенаправляется (497).
 server {
-  listen 80;
+  listen 443 ssl;
+  http2 on;
+
+  ssl_certificate /etc/nginx/certs/server.crt;
+  ssl_certificate_key /etc/nginx/certs/server.key;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_session_cache shared:SSL:10m;
+
+  # http:// на HTTPS-порт — сразу на https:// того же адреса и порта
+  error_page 497 =301 https://$host:${HTTP_PORT}$request_uri;
+
+  add_header Strict-Transport-Security "max-age=31536000" always;
+  add_header X-Content-Type-Options nosniff always;
+  add_header X-Frame-Options SAMEORIGIN always;
+  add_header Referrer-Policy same-origin always;
 
   allow ${ALLOWED_SUBNET};
   deny all;
 
+  # Адреса backend и frontend — через DNS Docker при каждом запросе (кэш 10 с): после пересборки
+  # контейнер получает новый адрес, а без этого nginx до перезапуска отвечал 502
+  resolver 127.0.0.11 valid=10s ipv6=off;
+  set $backend http://backend:8000;
+  set $frontend http://frontend:80;
+
+  # Сжатие: граф базы знаний — ~2 МБ JSON, сборка фронтенда — ~0,7 МБ; в gzip — в 8–10 раз меньше.
+  # Поток запусков (text/event-stream) не сжимается — иначе буферизуется
+  gzip on;
+  gzip_proxied any;
+  gzip_comp_level 5;
+  gzip_min_length 1024;
+  gzip_vary on;
+  gzip_types application/json application/javascript text/css text/plain image/svg+xml;
+
   location /api/ {
-    proxy_pass http://backend:8000;
+    # PDF статей загружаются через сайт (KB_IMPORT_MAX_MB на бэкенде)
+    client_max_body_size 64m;
+    proxy_pass $backend;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Proto https;
     # SSE (/api/runs/{id}/stream) не должен буферизоваться
     proxy_buffering off;
     proxy_read_timeout 1h;
   }
 
   location / {
-    proxy_pass http://frontend:80;
+    proxy_pass $frontend;
     proxy_set_header Host $host;
   }
 }

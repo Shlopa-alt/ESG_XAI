@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     session_ttl_s: int = 8 * 3600
     cookie_secure: bool = False
 
-    # local — заглушка для разработки, ldap — вход через LDAP университета
-    auth_backend: Literal["local", "ldap"] = "ldap"
+    # password — личные пароли (пользователей заводит owner), ldap — вход через LDAP
+    # университета, local — заглушка для разработки (общий пароль)
+    auth_backend: Literal["password", "ldap", "local"] = "ldap"
     local_dev_password: str = "dev"
     local_dev_role: Role = "researcher"
 
@@ -28,6 +29,44 @@ class Settings(BaseSettings):
     ldap_use_ssl: bool = False
     # Логины, которые становятся owner при первом входе (через запятую)
     initial_owner_logins: list[str] = Field(default_factory=list)
+
+    # База знаний KBRAG: веб-сервер (kbrag.py web) и служебный токен платформы
+    # (kbrag.py access add platform --kb esg)
+    kbrag_url: str = "http://host.docker.internal:8000"
+    kbrag_token: str = ""
+    kbrag_timeout_s: float = 30.0
+
+    # Импорт статей через сайт: папка приёма PDF (общая с обработчиком на машине KBRAG),
+    # предел размера файла и токен обработчика (deploy/windows/kb_import_worker.py)
+    kb_inbox_dir: str = "/data/kb_inbox"
+    kb_import_max_mb: int = 60
+    kb_import_token: str = ""
+
+    # Запуск экспериментов из формы: очередь Celery в Redis, исполнитель runner/ (контейнер
+    # runner-cpu) сообщает ход и итог по токену RUNNER_TOKEN
+    redis_url: str = "redis://redis:6379/0"
+    runner_token: str = ""
+    gpu_runs_per_user: int = 1
+
+    # Датасеты: папка данных сервера (в контейнере и на хосте) — срезы хранятся путями хоста
+    esg_data_dir: str = "/data/esg"
+    esg_data_host: str = ""
+    dataset_upload_max_mb: int = 60
+
+    # Qwen по требованию: обработчик очереди на машине с видеокартой (runner/qwen/worker.py)
+    qwen_token: str = ""
+
+
+WEAK_LOCAL_PASSWORDS = frozenset({"", "dev", "change-me"})
+
+
+def check_settings(settings: Settings) -> None:
+    """Отказ стартовать с настройками, при которых войти может кто угодно из сети."""
+    if settings.auth_backend == "local" and settings.local_dev_password in WEAK_LOCAL_PASSWORDS:
+        raise RuntimeError(
+            "AUTH_BACKEND=local с паролем по умолчанию: войти сможет любой, кто видит порт. "
+            "Задайте свой LOCAL_DEV_PASSWORD в deploy/.env или включите AUTH_BACKEND=ldap."
+        )
 
 
 @lru_cache

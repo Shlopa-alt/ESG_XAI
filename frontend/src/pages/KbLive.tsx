@@ -1,0 +1,156 @@
+import { useQuery } from "@tanstack/react-query";
+import { type FormEvent, useEffect, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+
+import type { KbRefIn } from "../api/hypotheses";
+import { type KbHit, kbDocuments, kbSearch, kbStats, kbTree } from "../api/kb";
+
+/** Ссылка на найденный фрагмент — опора гипотезы, эксперимента или CR. */
+export function refFromHit(h: KbHit, kb: string): KbRefIn {
+  const doi = h.url?.match(/10\.\d{4,9}\/\S+/)?.[0] ?? "";
+  return { kind: "article", kbrag_id: h.doc_id, kb_path: kb, title: h.title, doi, quote: h.text.slice(0, 400), page: h.pages[0] ?? null };
+}
+
+const ROOT = "esg";
+const fmt = (n: number) => n.toLocaleString("ru-RU");
+
+/** Выбор ветки дерева esg.* базы знаний. */
+function BranchSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const tree = useQuery({ queryKey: ["kb", "kbs"], queryFn: () => kbTree(ROOT) });
+  const nodes = (tree.data?.nodes ?? []).filter((n) => n.path === ROOT || n.path.startsWith(`${ROOT}.`));
+  return (
+    <label className="field inline">
+      Ветка базы знаний
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {nodes.length === 0 && <option value={ROOT}>ESG</option>}
+        {nodes.map((n) => (
+          <option key={n.path} value={n.path}>
+            {"  ".repeat(n.depth)}
+            {n.title} ({n.subtree ?? 0})
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** Поиск, статьи и сводка базы знаний KBRAG — живые данные через /api/kb/*. */
+export function KbLive() {
+  const [kb, setKb] = useState(ROOT);
+  // Запрос живёт в адресе (?q=): сюда ведёт и поиск из шапки
+  const [params, setParams] = useSearchParams();
+  const q = params.get("q") ?? "";
+  const [draft, setDraft] = useState(q);
+  useEffect(() => setDraft(q), [q]);
+  const navigate = useNavigate();
+  const stats = useQuery({ queryKey: ["kb", "stats", kb], queryFn: () => kbStats(kb) });
+  const docs = useQuery({ queryKey: ["kb", "docs", kb], queryFn: () => kbDocuments(kb) });
+  const hits = useQuery({ queryKey: ["kb", "search", kb, q], queryFn: () => kbSearch(q, kb), enabled: q !== "" });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const next = draft.trim();
+    setParams(next ? { q: next } : {});
+  };
+
+  if (stats.isError) {
+    return (
+      <section className="card">
+        <h2 className="h2">База знаний KBRAG</h2>
+        <p className="error" role="alert">
+          {stats.error.message}
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card kb-live">
+      <div className="kb-live-head">
+        <div>
+          <h2 className="h2">База знаний KBRAG</h2>
+          <p className="muted">
+            {stats.data
+              ? `${stats.data.kb_title}: ${fmt(stats.data.documents)} статей, ${fmt(stats.data.chunks)} фрагментов` +
+                (stats.data.year_from ? `, ${stats.data.year_from}–${stats.data.year_to}` : "")
+              : "Загрузка…"}
+          </p>
+        </div>
+        <BranchSelect value={kb} onChange={setKb} />
+      </div>
+
+      <form className="search-row" onSubmit={submit} role="search">
+        <label htmlFor="kb-q" className="sr-only">
+          Поиск по статьям базы знаний
+        </label>
+        <input
+          id="kb-q"
+          type="search"
+          className="search"
+          placeholder="Например: ESG и ROA, расхождение ESG-рейтингов, SHAP…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <button type="submit" className="btn-primary">
+          Найти
+        </button>
+      </form>
+
+      {q !== "" && (
+        <div className="hits">
+          {hits.isPending && <p className="muted">Ищу…</p>}
+          {hits.isError && (
+            <p className="error" role="alert">
+              {hits.error.message}
+            </p>
+          )}
+          {hits.data?.length === 0 && <p className="muted">Ничего не найдено.</p>}
+          {hits.data?.map((h) => (
+            <article key={h.chunk_id} className="hit">
+              <div className="kb-meta">
+                <span className="mono">{h.year ?? "—"}</span> ·{" "}
+                <Link to={`/knowledge/article/${encodeURIComponent(h.doc_id)}`}>{h.title}</Link>
+                {h.pages.length > 0 && <span> · с. {h.pages.join(", ")}</span>}
+              </div>
+              {h.headings.length > 0 && <div className="muted">{h.headings.join(" › ")}</div>}
+              <p className="hit-text">{h.text.length > 600 ? `${h.text.slice(0, 600)}…` : h.text}</p>
+              <div>
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => navigate("/hypotheses", { state: { ref: refFromHit(h, kb) } })}
+                >
+                  Предложить гипотезу по этой статье
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      <details className="docs">
+        <summary>Статьи ветки ({docs.data?.length ?? "…"})</summary>
+        <table className="table">
+          <thead>
+            <tr>
+              <th scope="col">Год</th>
+              <th scope="col">Статья</th>
+              <th scope="col" className="num">Фрагментов</th>
+            </tr>
+          </thead>
+          <tbody>
+            {docs.data?.map((d) => (
+              <tr key={d.doc_id}>
+                <td className="mono">{d.year ?? "—"}</td>
+                <td>
+                  <Link to={`/knowledge/article/${encodeURIComponent(d.doc_id)}`}>{d.title || d.doc_id}</Link>
+                </td>
+                <td className="num mono">{d.chunks}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+    </section>
+  );
+}

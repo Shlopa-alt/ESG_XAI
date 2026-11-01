@@ -17,3 +17,7 @@ class User(Base):
         Enum(*ROLES, name="user_role", native_enum=False, length=16), default="reader"
     )
     nda_access: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Режим AUTH_BACKEND=password: хеш личного пароля и требование сменить временный
+    password_hash: Mapped[str] = mapped_column(String(256), default="")
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)

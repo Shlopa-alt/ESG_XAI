@@ -1,5 +1,6 @@
 from sqlalchemy import create_engine
 
+import app.audit  # noqa: F401  (таблица журнала аудита)
 import app.models  # noqa: F401  (регистрирует модели в metadata)
 from alembic import context
 from app.config import get_settings
