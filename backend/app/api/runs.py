@@ -298,7 +298,9 @@ def start_run(db: Session, settings: Settings, user: User, template: str, snapsh
     if not snap.storage_path:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "У среза не записан путь к файлу — запустить нельзя")
-    code = t.experiment if t.scope == "replication" else experiment
+    # повтор по умолчанию — в реестр своего эксперимента; указанный эксперимент (одобренное
+    # предложение Qwen) — в его реестр
+    code = experiment or (t.experiment if t.scope == "replication" else "")
     if not code:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "Укажите эксперимент, в реестр которого идёт запуск")

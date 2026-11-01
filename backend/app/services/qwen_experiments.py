@@ -108,11 +108,16 @@ def create_from_result(db: Session, settings: Settings, job: QwenJob, result: di
         return None  # гипотезу уже проверяют или отклонили — предлагать поздно
     proposal = result.get("proposal") or {}
     snapshot_id = proposal.get("snapshot_id")
+    method = str(proposal.get("method") or "")[:64]
+    template = TEMPLATES.get(method)
+    raw = proposal.get("params") if isinstance(proposal.get("params"), dict) else {}
+    # модель иногда добавляет параметры другого метода — оставляем только параметры выбранного
+    params = {k: v for k, v in raw.items() if template is not None and k in {x.name for x in template.params}}
     p = ExperimentProposal(
         hypothesis_id=h.id, qwen_job_id=job.id, status="proposed",
-        title=str(proposal.get("title") or h.title)[:512], method=str(proposal.get("method") or "")[:64],
+        title=str(proposal.get("title") or h.title)[:512], method=method,
         snapshot_id=snapshot_id if isinstance(snapshot_id, int) and db.get(DatasetSnapshot, snapshot_id) else None,
-        params=proposal.get("params") if isinstance(proposal.get("params"), dict) else {},
+        params=params,
         setup=[str(x)[:500] for x in proposal.get("setup") or [] if str(x).strip()][:10],
         expected=str(proposal.get("expected") or "")[:2000], rationale=str(proposal.get("rationale") or "")[:3000],
     )
