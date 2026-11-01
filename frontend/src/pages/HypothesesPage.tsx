@@ -145,7 +145,7 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
         <span className={`badge ${H_BADGE[h.status]}`}>{H_STATUS_LABEL[h.status]}</span>
         {h.source === "qwen" && <span className="badge st-running">предложила Qwen</span>}
         <span className="muted">
-          {h.source === "qwen" ? "по статьям и графу базы знаний" : `предложил ${h.author || "—"}`},{" "}
+          {h.source === "qwen" ? "по статьям и графу базы знаний" : h.author ? `предложил ${h.author}` : "автор не записан"},{" "}
           {new Date(h.created_at).toLocaleDateString("ru-RU")}
         </span>
       </div>
@@ -182,7 +182,7 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
       )}
       {h.decision_note && (
         <p className="muted">
-          Решение ({h.decided_by}): {h.decision_note}
+          Решение{h.decided_by ? ` (${h.decided_by})` : ""}: {h.decision_note}
         </p>
       )}
       {h.experiment && (
