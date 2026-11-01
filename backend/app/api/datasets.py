@@ -27,6 +27,7 @@ from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import Dataset, DatasetSnapshot, Experiment, Run, User
 from app.services.codes import next_code
+from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -155,6 +156,8 @@ def _add_snapshot(db: Session, settings: Settings, ds: Dataset, path: Path, vers
     snap = DatasetSnapshot(dataset_id=ds.id, version=version, sha256=sha,
                            storage_path=_host_path(settings, path), row_count=rows)
     db.add(snap)
+    # новые данные — Qwen посмотрит, какие гипотезы теперь можно проверить
+    enqueue(db, "hypotheses", {}, trigger="snapshot")
     db.commit()
     return snap
 

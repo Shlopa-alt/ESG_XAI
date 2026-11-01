@@ -1,6 +1,7 @@
 """Очередь задач Qwen: модель работает по требованию (app/models/qwen_job.py).
 
-Список задач и состояние модели видят все вошедшие; ставит и снимает задачи researcher+.
+Очередь, состояние модели и видеокарты видит и ведёт только owner: это служебная кухня, а результат
+(гипотезы, отчёты) остальные видят на своих страницах.
 Обработчик на машине с видеокартой (runner/qwen/worker.py) забирает задачи и сообщает итог и
 своё состояние (модель выключена / запускается / работает) по токену X-Qwen-Token.
 """
@@ -18,19 +19,20 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_user, require_role
+from app.api.deps import require_role
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import QwenJob, User
 from app.models.qwen_job import QWEN_KINDS
+from app.services import qwen_hypotheses
 from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/qwen", tags=["qwen"])
 
-Researcher = Depends(require_role("researcher"))
+Owner = Depends(require_role())  # только owner
 HEARTBEAT = "qwen:heartbeat"
 HEARTBEAT_TTL_S = 120  # обработчик отмечается раз в 30 с; дольше молчит — считается остановленным
-MANUAL_KINDS = ("graph", "ping")  # что можно поставить кнопкой; остальное ставит сама платформа
+MANUAL_KINDS = ("graph", "ping", "hypotheses")  # что owner может поставить кнопкой
 
 
 class JobOut(BaseModel):
@@ -59,7 +61,7 @@ class StatusOut(BaseModel):
 
 
 class JobIn(BaseModel):
-    kind: Literal["graph", "ping"]
+    kind: str = Field(min_length=1, max_length=32)
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -98,7 +100,7 @@ def _worker(settings: Annotated[Settings, Depends(get_settings)],
 Worker = Depends(_worker)
 
 
-@router.get("/status", response_model=StatusOut, dependencies=[Depends(current_user)])
+@router.get("/status", response_model=StatusOut, dependencies=[Owner])
 def qwen_status(db: Annotated[Session, Depends(get_db)],
                 settings: Annotated[Settings, Depends(get_settings)]) -> StatusOut:
     try:
@@ -112,14 +114,14 @@ def qwen_status(db: Annotated[Session, Depends(get_db)],
                      seen_at=beat.get("at"), queued=count("queued"), running=count("running"))
 
 
-@router.get("/jobs", response_model=list[JobOut], dependencies=[Depends(current_user)])
+@router.get("/jobs", response_model=list[JobOut], dependencies=[Owner])
 def list_jobs(db: Annotated[Session, Depends(get_db)]) -> list[JobOut]:
     return [_out(db, j) for j in db.scalars(select(QwenJob).order_by(QwenJob.id.desc()).limit(100))]
 
 
 @router.post("/jobs", response_model=JobOut, status_code=status.HTTP_201_CREATED)
 def add_job(body: JobIn, db: Annotated[Session, Depends(get_db)],
-            user: Annotated[User, Researcher]) -> JobOut:
+            user: Annotated[User, Owner]) -> JobOut:
     if body.kind not in MANUAL_KINDS or body.kind not in QWEN_KINDS:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Задачу «{body.kind}» кнопкой не ставят")
     job = enqueue(db, body.kind, body.payload, trigger="manual", user_id=user.id)
@@ -129,7 +131,7 @@ def add_job(body: JobIn, db: Annotated[Session, Depends(get_db)],
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobOut)
 def cancel_job(job_id: int, db: Annotated[Session, Depends(get_db)],
-               _user: Annotated[User, Researcher]) -> JobOut:
+               _user: Annotated[User, Owner]) -> JobOut:
     job = db.get(QwenJob, job_id)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет задачи №{job_id}")
@@ -164,6 +166,12 @@ def peek(db: Annotated[Session, Depends(get_db)]) -> dict[str, int]:
     return {"queued": len(list(db.scalars(select(QwenJob.id).where(QwenJob.status == "queued"))))}
 
 
+@router.post("/worker/context", dependencies=[Worker])
+def worker_context(db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
+    """Что нужно Qwen для гипотез: задания методики с разделами, датасеты, методы, прежние гипотезы."""
+    return qwen_hypotheses.context(db)
+
+
 @router.post("/worker/next", response_model=JobOut, dependencies=[Worker],
              responses={204: {"description": "очередь пуста"}})
 def next_job(db: Annotated[Session, Depends(get_db)]) -> JobOut | Response:
@@ -185,5 +193,12 @@ def job_result(job_id: int, body: JobResult, db: Annotated[Session, Depends(get_
         raise HTTPException(status.HTTP_409_CONFLICT, f"Задача №{job_id} уже {job.status}")
     job.status, job.result, job.message = body.status, body.result, body.message[:4000]
     job.finished_at = datetime.now(UTC)
+    if job.kind == "hypotheses" and body.status == "done":
+        # предложения модели проверяются здесь: опоры, повторы, предел нерассмотренных на задание
+        created = qwen_hypotheses.create_from_result(db, job, body.result)
+        job.result = {**{k: v for k, v in body.result.items() if k != "hypotheses"},
+                      "proposed": len(body.result.get("hypotheses") or []), "created": created}
+        job.message = (f"Предложено гипотез: {len(created)} — {', '.join(created)}" if created
+                       else "Новых гипотез нет: опор не нашлось или по заданиям уже ждут рецензии")
     db.commit()
     return _out(db, job)

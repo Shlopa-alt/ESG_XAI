@@ -142,13 +142,28 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
           </Link>
         )}
         <span className={`badge ${H_BADGE[h.status]}`}>{H_STATUS_LABEL[h.status]}</span>
+        {h.source === "qwen" && <span className="badge st-running">предложила Qwen</span>}
         <span className="muted">
-          предложил {h.author || "—"}, {new Date(h.created_at).toLocaleDateString("ru-RU")}
+          {h.source === "qwen" ? "по статьям и графу базы знаний" : `предложил ${h.author || "—"}`},{" "}
+          {new Date(h.created_at).toLocaleDateString("ru-RU")}
         </span>
       </div>
       <h3 className="h3">{h.title}</h3>
       <p>{h.statement}</p>
       {h.rationale && <p className="muted">Обоснование: {h.rationale}</p>}
+      {h.source === "qwen" && (h.suggested.dataset || h.suggested.method || h.suggested.data_needed) && (
+        <p className="muted">
+          Проверить:{" "}
+          {h.suggested.dataset && (
+            <>
+              на <Link to={`/datasets/${h.suggested.dataset}`} className="mono">{h.suggested.dataset}</Link>
+              {h.suggested.method ? ", " : ""}
+            </>
+          )}
+          {h.suggested.method && <>метод: {h.suggested.method}</>}
+          {h.suggested.data_needed && <> · нужны данные: {h.suggested.data_needed}</>}
+        </p>
+      )}
       {h.refs.length > 0 && (
         <ul className="list muted">
           {h.refs.map((r) => (
@@ -204,8 +219,9 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
   );
 }
 
-const FILTERS: Array<{ key: HStatus | "all"; label: string }> = [
+const FILTERS: Array<{ key: HStatus | "all" | "qwen"; label: string }> = [
   { key: "all", label: "Все" },
+  { key: "qwen", label: "От Qwen" },
   { key: "proposed", label: "Ждут решения" },
   { key: "accepted", label: "Приняты" },
   { key: "testing", label: "Проверяются" },
@@ -219,10 +235,11 @@ export function Hypotheses() {
   const navigate = useNavigate();
   const initialRef = (location.state as ProposeState | null)?.ref;
   const [proposing, setProposing] = useState(Boolean(initialRef));
-  const [filter, setFilter] = useState<HStatus | "all">("all");
+  const [filter, setFilter] = useState<HStatus | "all" | "qwen">("all");
   const q = useQuery({ queryKey: ["hypotheses"], queryFn: listHypotheses });
   const all = Array.isArray(q.data) ? q.data : [];
-  const shown = all.filter((h) => filter === "all" || h.status === filter);
+  const match = (h: Hypothesis, f: HStatus | "all" | "qwen") => f === "all" || (f === "qwen" ? h.source === "qwen" : h.status === f);
+  const shown = all.filter((h) => match(h, filter));
   const close = () => {
     setProposing(false);
     navigate(location.pathname, { replace: true, state: null });
@@ -254,7 +271,7 @@ export function Hypotheses() {
             aria-pressed={filter === f.key}
             onClick={() => setFilter(f.key)}
           >
-            {f.label} ({f.key === "all" ? all.length : all.filter((h) => h.status === f.key).length})
+            {f.label} ({all.filter((h) => match(h, f.key)).length})
           </button>
         ))}
       </div>

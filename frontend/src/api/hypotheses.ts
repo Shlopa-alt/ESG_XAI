@@ -22,6 +22,8 @@ export interface Hypothesis {
   decided_by: string;
   experiment: string;
   methodology_node: string;
+  source: "human" | "qwen";
+  suggested: { dataset?: string; method?: string; data_needed?: string };
   created_at: string;
   refs: Array<{ kind: string; kbrag_id: string; title: string; doi: string; quote: string }>;
 }

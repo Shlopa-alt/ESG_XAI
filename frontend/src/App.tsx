@@ -36,7 +36,6 @@ export function App() {
         <Route path="knowledge" element={<Knowledge />} />
         <Route path="knowledge/graph" element={<Suspense fallback={<p className="muted">Загрузка графа…</p>}><Graph /></Suspense>} />
         <Route path="knowledge/import" element={<Import />} />
-        <Route path="qwen" element={<Qwen />} />
         <Route path="datasets/:code" element={<DatasetPage />} />
         <Route path="knowledge/article/:docId" element={<Article />} />
         <Route path="hypotheses" element={<Hypotheses />} />
@@ -47,6 +46,7 @@ export function App() {
         <Route path="methodology" element={<Methodology />} />
         <Route path="password" element={<ChangePassword />} />
         {user.role === "owner" && <Route path="users" element={<Users />} />}
+        {user.role === "owner" && <Route path="qwen" element={<Qwen />} />}
         <Route path="*" element={<Overview />} />
       </Route>
     </Routes>

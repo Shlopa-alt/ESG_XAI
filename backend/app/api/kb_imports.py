@@ -278,7 +278,8 @@ def job_result(import_id: int, body: ResultIn,
     imp.status, imp.doc_id, imp.message = body.status, body.doc_id, body.message[:4000]
     imp.finished_at = datetime.now(UTC)
     if body.status == "done":
-        # новая статья в базе — Qwen достроит по ней граф фактов (одна задача на все импорты подряд)
+        # новая статья в базе — Qwen достроит граф и предложит гипотезы (одна задача на все импорты подряд)
         enqueue(db, "graph", {"kb": "esg"}, trigger="import")
+        enqueue(db, "hypotheses", {}, trigger="import")  # после графа: очередь идёт по порядку
     db.commit()
     return _out(db, imp)

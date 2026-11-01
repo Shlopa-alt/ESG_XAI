@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -26,6 +26,10 @@ class Hypothesis(Base):
     decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     experiment_id: Mapped[int | None] = mapped_column(ForeignKey("experiments.id"), nullable=True)
     author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    source: Mapped[str] = mapped_column(String(8), default="human")  # human | qwen — кто предложил
+    # что Qwen предлагает для проверки: {"dataset": "DS-04", "method": "…"} — исходные данные шага «эксперимент»
+    suggested: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    qwen_job_id: Mapped[int | None] = mapped_column(ForeignKey("qwen_jobs.id"), nullable=True)
     # узел методики (задание, вариант или направление), к которому относится
     methodology_node_id: Mapped[int | None] = mapped_column(ForeignKey("methodology_sections.id"),
                                                             nullable=True)

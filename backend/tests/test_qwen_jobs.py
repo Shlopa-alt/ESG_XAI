@@ -13,12 +13,16 @@ def settings() -> Settings:
                     kb_import_token="imp")
 
 
-def test_reader_cannot_add(make_client) -> None:  # type: ignore[no-untyped-def]
-    assert make_client("r", "reader").post("/api/qwen/jobs", json={"kind": "ping"}).status_code == 403
+def test_only_owner_sees_and_adds(make_client) -> None:  # type: ignore[no-untyped-def]
+    for role in ("reader", "researcher", "reviewer"):
+        c = make_client(f"u-{role}", role)
+        assert c.post("/api/qwen/jobs", json={"kind": "ping"}).status_code == 403
+        assert c.get("/api/qwen/jobs").status_code == 403
+        assert c.get("/api/qwen/status").status_code == 403
 
 
 def test_add_dedupes_and_refuses_internal_kinds(make_client) -> None:  # type: ignore[no-untyped-def]
-    c = make_client("res", "researcher")
+    c = make_client("boss", "owner")
     first = c.post("/api/qwen/jobs", json={"kind": "graph", "payload": {"kb": "esg"}}).json()
     again = c.post("/api/qwen/jobs", json={"kind": "graph", "payload": {"kb": "esg"}}).json()
     assert first["id"] == again["id"] and first["status"] == "queued"
@@ -26,7 +30,7 @@ def test_add_dedupes_and_refuses_internal_kinds(make_client) -> None:  # type: i
 
 
 def test_worker_cycle(make_client) -> None:  # type: ignore[no-untyped-def]
-    c = make_client("res", "researcher")
+    c = make_client("boss", "owner")
     job = c.post("/api/qwen/jobs", json={"kind": "ping"}).json()
     assert c.post("/api/qwen/worker/peek").status_code == 403
     assert c.post("/api/qwen/worker/peek", headers=TOKEN).json() == {"queued": 1}
@@ -42,14 +46,14 @@ def test_worker_cycle(make_client) -> None:  # type: ignore[no-untyped-def]
 
 
 def test_cancel_only_queued(make_client) -> None:  # type: ignore[no-untyped-def]
-    c = make_client("res", "researcher")
+    c = make_client("boss", "owner")
     job = c.post("/api/qwen/jobs", json={"kind": "ping"}).json()
     assert c.post(f"/api/qwen/jobs/{job['id']}/cancel").json()["status"] == "cancelled"
     assert c.post(f"/api/qwen/jobs/{job['id']}/cancel").status_code == 409
 
 
 def test_imported_article_queues_graph(make_client, db_session: Session) -> None:  # type: ignore[no-untyped-def]
-    c = make_client("res", "researcher")
+    c = make_client("boss", "owner")
     imp = KbImport(kb_path="esg", source="file", filename="a.pdf", sha256="0" * 64, status="processing")
     db_session.add(imp)
     db_session.commit()
@@ -57,4 +61,4 @@ def test_imported_article_queues_graph(make_client, db_session: Session) -> None
                json={"status": "done", "doc_id": "10.1_x"})
     assert r.status_code == 200, r.text
     jobs = c.get("/api/qwen/jobs").json()
-    assert [(j["kind"], j["trigger"], j["payload"]) for j in jobs] == [("graph", "import", {"kb": "esg"})]
+    assert sorted((j["kind"], j["trigger"]) for j in jobs) == [("graph", "import"), ("hypotheses", "import")]

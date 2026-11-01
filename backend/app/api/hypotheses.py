@@ -2,7 +2,7 @@
 проверить экспериментом — researcher/owner."""
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -60,6 +60,8 @@ class HypothesisOut(BaseModel):
     decided_by: str
     experiment: str
     methodology_node: str
+    source: str  # human | qwen
+    suggested: dict[str, Any]  # от Qwen: датасет, метод, каких данных не хватает
     created_at: datetime
     refs: list[RefOut]
 
@@ -93,6 +95,7 @@ def _out(db: Session, h: Hypothesis) -> HypothesisOut:
         author=_login(db, h.author_id), decided_by=_login(db, h.decided_by),
         experiment=exp.code if exp else "", created_at=h.created_at,
         methodology_node=node_number(db, h.methodology_node_id),
+        source=h.source, suggested=h.suggested or {},
         refs=[RefOut(kind=r.kind, kbrag_id=r.kbrag_id, title=r.title, doi=r.doi, quote=r.quote)
               for r in refs],
     )
