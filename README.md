@@ -1,7 +1,7 @@
 # ESG_XAI
 
 Материалы по ESG (`docs/ESG.md`) и платформа **ESG Open Research** — внутренний сервис лаборатории НИЦ ИИ.
-ТЗ: `docs/SPEC.md`, правила разработки: `CLAUDE.md`, макеты: `design/`.
+Инструкция пользователя: `docs/USER_GUIDE.md`. ТЗ: `docs/SPEC.md`, правила разработки: `CLAUDE.md`, макеты: `design/`.
 
 ## Запуск одной командой
 
