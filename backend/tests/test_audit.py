@@ -4,12 +4,15 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app import audit
 from app.audit import AuditLog
+from app.config import Settings
 
 
 @pytest.fixture(autouse=True)
-def audit_to_test_db(db_session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Журнал пишет своей сессией — в тестах направляем её в тестовую базу
+def audit_to_test_db(db_session: Session, settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Журнал пишет прослойкой — мимо подмен зависимостей FastAPI: направляем его сессию в тестовую
+    # базу, а настройки (секрет сессии) — тестовые, иначе cookie тестового входа не читается
     monkeypatch.setattr(audit, "SessionLocal", sessionmaker(bind=db_session.get_bind()))
+    monkeypatch.setattr(audit, "get_settings", lambda: settings)
 
 
 def test_write_requests_are_logged(make_client, db_session: Session) -> None:  # type: ignore[no-untyped-def]

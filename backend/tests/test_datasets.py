@@ -44,7 +44,7 @@ def test_upload_snapshot_counts_rows_and_refuses_duplicate(make_client, settings
     assert r.status_code == 201, r.text
     snap = r.json()["snapshots"][0]
     assert snap["version"] == "v1" and snap["row_count"] == 2
-    assert snap["storage_path"] == f"C:\data\{code}\snapshots\v1\data.csv"
+    assert snap["storage_path"] == rf"C:\data\{code}\snapshots\v1\data.csv"
     assert (Path(settings.esg_data_dir) / code / "snapshots" / "v1" / "data.csv").read_bytes() == CSV
     again = c.post(f"/api/datasets/{code}/snapshots", files={"file": ("other.csv", CSV)})
     assert again.status_code == 409
