@@ -31,6 +31,25 @@ if ($Remote) {
 } else {
     & $Docker compose -f (Join-Path $Platform "deploy\docker-compose.yml") up -d *>> $Log
 }
+if ($Remote) {
+    # Синхронизация папки данных с сервером (Syncthing; ставится winget install Syncthing.Syncthing)
+    $st = Get-Command syncthing -ErrorAction SilentlyContinue
+    if (-not $st) {
+        $st = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Recurse -Filter syncthing.exe `
+            -ErrorAction SilentlyContinue | Select-Object -First 1
+    }
+    $stPath = if ($st.Source) { $st.Source } else { $st.FullName }
+    if (-not $stPath) {
+        Say "Syncthing не установлен — папка данных не синхронизируется с сервером"
+    } elseif (-not (Get-Process syncthing -ErrorAction SilentlyContinue)) {
+        Start-Process -FilePath $stPath -ArgumentList "serve", "--no-browser", "--no-restart" -WindowStyle Hidden `
+            -RedirectStandardOutput (Join-Path $PSScriptRoot "logs\syncthing.log") `
+            -RedirectStandardError (Join-Path $PSScriptRoot "logs\syncthing.err.log")
+        Say "Syncthing запущен"
+    } else {
+        Say "Syncthing уже работает"
+    }
+}
 Push-Location $Kbrag
 & $Docker compose up -d db *>> $Log                    # только база; модель — по команде
 Pop-Location
