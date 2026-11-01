@@ -24,7 +24,7 @@ from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import ExperimentReport, QwenJob, User
 from app.models.qwen_job import QWEN_KINDS
-from app.services import qwen_experiments, qwen_hypotheses, qwen_reports
+from app.services import qwen_cr, qwen_experiments, qwen_hypotheses, qwen_reports
 from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/qwen", tags=["qwen"])
@@ -199,6 +199,15 @@ def worker_report_context(body: ReportContextIn, db: Annotated[Session, Depends(
     return qwen_reports.context(db, r)
 
 
+@router.post("/worker/cr-context", dependencies=[Worker])
+def worker_cr_context(body: ReportContextIn, db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
+    """Что нужно Qwen для CR: одобренный отчёт, задание методики и разделы, что можно менять."""
+    r = db.get(ExperimentReport, body.report)
+    if r is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет отчёта №{body.report}")
+    return qwen_cr.context(db, r)
+
+
 @router.post("/worker/next", response_model=JobOut, dependencies=[Worker],
              responses={204: {"description": "очередь пуста"}})
 def next_job(db: Annotated[Session, Depends(get_db)]) -> JobOut | Response:
@@ -232,6 +241,10 @@ def job_result(job_id: int, body: JobResult, db: Annotated[Session, Depends(get_
         r = qwen_reports.apply_result(db, job, body.result)
         job.message = (f"Отчёт v{r.version} написан" + (f" — {r.problems}" if r.problems else "") if r is not None
                        else "Отчёт уже рассмотрен — текст не нужен")
+    if job.kind == "cr" and body.status == "done":
+        cr, why = qwen_cr.create_from_result(db, job, body.result)
+        job.message = (f"Предложен {cr.code}: «{cr.title}»" + (f" — проверить: {cr.problems}" if cr.problems else "")
+                       if cr is not None else why)
     if job.kind == "experiment" and body.status == "done":
         p = qwen_experiments.create_from_result(db, settings, job, body.result)
         job.message = (f"Предложен эксперимент для {job.payload.get('hypothesis')}: «{p.title}»"

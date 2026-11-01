@@ -63,6 +63,11 @@ class ChangeRequest(Base):
     )
     target_version: Mapped[str] = mapped_column(String(16), default="")
     author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # "" — предложили люди; "qwen" — черновик Qwen по одобренному отчёту об эксперименте (report_id)
+    source: Mapped[str] = mapped_column(String(16), default="")
+    report_id: Mapped[int | None] = mapped_column(ForeignKey("experiment_reports.id"), nullable=True)
+    qwen_job_id: Mapped[int | None] = mapped_column(ForeignKey("qwen_jobs.id"), nullable=True)
+    problems: Mapped[str] = mapped_column(Text, default="")  # что поправить в черновике Qwen
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -26,6 +26,9 @@ interface Report {
   writing: boolean;
   kb_status: string;
   kb_doc_id: string;
+  cr: string;
+  cr_writing: boolean;
+  cr_note: string;
   created_at: string;
 }
 
@@ -141,6 +144,10 @@ function ReportCard({ r, role }: { r: Report; role: string | undefined }) {
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState("");
   const refresh = () => void qc.invalidateQueries({ queryKey: ["reports", r.experiment] });
+  const askCr = useMutation({
+    mutationFn: () => call<Report>(`/reports/${r.id}/cr`, { method: "POST" }),
+    onSuccess: refresh,
+  });
   const act = useMutation({
     mutationFn: (a: "submit" | "approve" | "reject") =>
       call<Report>(`/reports/${r.id}/${a}`, { method: "POST", ...(a === "reject" ? { body: JSON.stringify({ note }) } : {}) }),
@@ -221,6 +228,34 @@ function ReportCard({ r, role }: { r: Report; role: string | undefined }) {
           )}
         </div>
       )}
+      {r.status === "approved" && (
+        <div className="review-form">
+          {r.cr ? (
+            <span>
+              По отчёту предложено изменение методики:{" "}
+              <Link to={`/methodology#cr-${r.cr}`} className="mono">
+                {r.cr}
+              </Link>
+            </span>
+          ) : r.cr_writing ? (
+            <span className="muted">Qwen готовит черновик изменения методики (CR) — несколько минут.</span>
+          ) : (
+            <>
+              {r.cr_note && <span className="muted">{r.cr_note}</span>}
+              {(role === "researcher" || role === "owner") && (
+                <button type="button" className="btn-ghost" disabled={askCr.isPending} onClick={() => askCr.mutate()}>
+                  {r.cr_note ? "Попросить CR ещё раз" : "Предложить CR по отчёту"}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      {askCr.isError && (
+        <p className="error" role="alert">
+          {askCr.error.message}
+        </p>
+      )}
       {canReview && !editing && (
         <div className="review-form">
           <label className="field inline grow">
@@ -248,7 +283,9 @@ export function ReportPanel({ code, role }: { code: string; role: string | undef
     queryKey: ["reports", code],
     queryFn: () => call<Report[]>(`/experiments/${code}/reports`),
     refetchInterval: (query) =>
-      (query.state.data ?? []).some((r) => r.writing || r.kb_status === "queued" || r.kb_status === "processing") ? 15_000 : false,
+      (query.state.data ?? []).some(
+        (r) => r.writing || r.cr_writing || r.kb_status === "queued" || r.kb_status === "processing",
+      ) ? 15_000 : false,
   });
   const make = useMutation({
     mutationFn: () => call<Report>(`/experiments/${code}/reports`, { method: "POST" }),

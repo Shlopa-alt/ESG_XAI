@@ -14,6 +14,7 @@ from app.models import (
     ChangeRequest,
     CrBasis,
     Experiment,
+    ExperimentReport,
     KbRef,
     MethodologySection,
     MethodologyVersion,
@@ -21,6 +22,7 @@ from app.models import (
     User,
 )
 from app.services import methodology as svc
+from app.services import qwen_cr
 from app.services.codes import next_code
 from app.services.experiments import DomainError
 
@@ -79,6 +81,12 @@ class CrOut(BaseModel):
     bases: list[BasisOut]
     reviews: list[CrReviewOut]
     blockers: list[str]
+    source: str  # "" — люди, "qwen" — черновик Qwen по отчёту
+    report: str  # отчёт-источник: «EXP-001 v1»
+    report_experiment: str
+    problems: str  # что проверить в черновике Qwen
+    author: str
+    editable: bool  # текст ещё можно править: CR открыт и одобряющей рецензии нет
 
 
 class CrIn(BaseModel):
@@ -93,7 +101,12 @@ class CrIn(BaseModel):
 
 
 class CrPatch(BaseModel):
-    status: Literal["review", "accepted", "rejected"]
+    status: Literal["review", "accepted", "rejected"] | None = None
+    # правка текста (researcher+), пока CR открыт и одобряющей рецензии нет — иначе одобряли бы не то
+    title: str | None = Field(default=None, min_length=3, max_length=512)
+    description: str | None = None
+    proposed_content: str | None = None
+    new_title: str | None = Field(default=None, min_length=3, max_length=512)
 
 
 class BasisIn(BaseModel):
@@ -145,6 +158,9 @@ def _cr_out(db: Session, cr: ChangeRequest) -> CrOut:
         select(Review, User.login).join(User, User.id == Review.reviewer_id)
         .where(Review.target_type == "cr", Review.target_id == cr.id).order_by(Review.created_at)
     ).all()
+    report = db.get(ExperimentReport, cr.report_id) if cr.report_id else None
+    rep_exp = db.get(Experiment, report.experiment_id) if report else None
+    author = db.get(User, cr.author_id) if cr.author_id else None
     return CrOut(
         code=cr.code,
         section=section.number if section else "",
@@ -161,6 +177,12 @@ def _cr_out(db: Session, cr: ChangeRequest) -> CrOut:
         reviews=[CrReviewOut(reviewer=login, verdict=r.verdict, text=r.text,
                              created_at=r.created_at) for r, login in reviews],
         blockers=[] if cr.status in ("accepted", "rejected") else svc.why_not_acceptable(db, cr),
+        source=cr.source,
+        report=f"{rep_exp.code} v{report.version}" if report and rep_exp else "",
+        report_experiment=rep_exp.code if rep_exp else "",
+        problems=cr.problems if cr.status in ("proposed", "review") else "",
+        author=author.login if author else ("Qwen" if cr.source == "qwen" else ""),
+        editable=cr.status in ("proposed", "review") and not svc.has_approval(db, cr),
     )
 
 
@@ -325,6 +347,22 @@ def patch_cr(
     cr = _cr(db, code)
     if cr.status in ("accepted", "rejected"):
         raise HTTPException(status.HTTP_409_CONFLICT, f"{cr.code} уже закрыт")
+    text = body.model_dump(exclude_unset=True, exclude={"status"})
+    if text:
+        if user.role not in ("researcher", "owner"):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Править текст CR может researcher")
+        if svc.has_approval(db, cr):
+            raise HTTPException(status.HTTP_409_CONFLICT, "CR уже одобрен рецензентом — текст не меняется")
+        if "new_title" in text and cr.action != "add":
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Заголовок нового узла — только у CR «добавить»")
+        if cr.action == "add" and not (text.get("proposed_content", cr.proposed_content) or "").strip():
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Текст нового узла — proposed_content")
+        for k, v in text.items():
+            setattr(cr, k, (v or "").strip())
+        cr.problems = qwen_cr.problems(db, cr)
+    if body.status is None:
+        db.commit()
+        return _cr_out(db, cr)
     if body.status in ("accepted", "rejected") and user.role != "owner":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Принимает и отклоняет CR только owner")
     if body.status == "review" and user.role not in ("researcher", "reviewer", "owner"):

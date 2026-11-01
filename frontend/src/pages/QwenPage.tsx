@@ -49,6 +49,9 @@ export const QWEN_KIND: Record<string, string> = {
   graph: "граф фактов по новым статьям",
   ping: "проверка модели",
   hypotheses: "гипотезы по заданиям методики",
+  experiment: "эксперимент для принятой гипотезы",
+  report: "текст отчёта об эксперименте",
+  cr: "CR по одобренному отчёту",
 };
 const STATUS: Record<QwenJob["status"], string> = {
   queued: "в очереди",

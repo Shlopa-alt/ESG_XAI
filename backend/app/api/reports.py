@@ -21,7 +21,7 @@ from app.api.kb_imports import _store
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import Experiment, ExperimentReport, KbImport, QwenJob, Run, User
-from app.services import qwen_reports, report_render
+from app.services import qwen_cr, qwen_reports, report_render
 from app.services.qwen_queue import enqueue
 
 router = APIRouter(tags=["reports"])
@@ -45,6 +45,9 @@ class ReportOut(BaseModel):
     writing: bool  # Qwen ещё пишет текст
     kb_status: str  # статус импорта в базу знаний
     kb_doc_id: str
+    cr: str  # код CR, который Qwen предложил по отчёту
+    cr_writing: bool  # Qwen готовит CR
+    cr_note: str  # почему CR нет (Qwen решил не менять методику, черновик отброшен)
     created_at: datetime
 
 
@@ -62,10 +65,15 @@ def _out(db: Session, r: ExperimentReport) -> ReportOut:
     imp = db.get(KbImport, r.kb_import_id) if r.kb_import_id else None
     job = db.scalar(select(QwenJob).where(QwenJob.kind == "report", QwenJob.status.in_(("queued", "running")))
                     .where(QwenJob.payload["report"].as_integer() == r.id)) if not r.sections else None
+    cr = qwen_cr.for_report(db, r.id) if r.status == "approved" else None
+    cr_job = qwen_cr.last_job(db, r.id) if r.status == "approved" and cr is None else None
     return ReportOut(id=r.id, experiment=exp.code if exp else "", run_id=r.run_id, version=r.version,
                      status=r.status, facts=r.facts or {}, sections=r.sections or {}, problems=r.problems,
                      note=r.note, reviewer=user.login if user else "", writing=job is not None,
                      kb_status=imp.status if imp else "", kb_doc_id=imp.doc_id if imp else "",
+                     cr=cr.code if cr else "",
+                     cr_writing=cr_job is not None and cr_job.status in ("queued", "running"),
+                     cr_note=cr_job.message if cr_job is not None and cr_job.status in ("done", "failed") else "",
                      created_at=r.created_at)
 
 
@@ -157,6 +165,24 @@ def approve(rid: int, db: Annotated[Session, Depends(get_db)], settings: Annotat
     _store(db, settings, imp, pdf, {"title": imp.title, "year": imp.year, "authors": imp.authors,
                                     "journal": "Отчёты экспериментов ESG Open Research"})
     r.kb_import_id = imp.id
+    if str((r.sections or {}).get("methodology") or "").strip():
+        # в отчёте есть предложение для методики — Qwen готовит черновик CR
+        enqueue(db, "cr", {"report": r.id}, trigger="report", user_id=user.id)
+    db.commit()
+    return _out(db, r)
+
+
+@router.post("/reports/{rid}/cr", response_model=ReportOut)
+def request_cr(rid: int, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Researcher]) -> ReportOut:
+    """Попросить Qwen предложить CR по одобренному отчёту (если сам не предложил или решил не менять)."""
+    r = _get(db, rid)
+    if r.status != "approved":
+        raise HTTPException(status.HTTP_409_CONFLICT, "CR предлагается по одобренному отчёту")
+    if (cr := qwen_cr.for_report(db, r.id)) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"По отчёту уже есть {cr.code}")
+    if qwen_cr.pending_job(db, r.id) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Qwen уже готовит CR")
+    enqueue(db, "cr", {"report": r.id}, trigger="manual", user_id=user.id, dedupe=False)
     db.commit()
     return _out(db, r)
 

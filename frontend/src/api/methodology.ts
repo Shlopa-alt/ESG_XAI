@@ -45,6 +45,12 @@ export interface ChangeRequest {
   bases: Array<{ basis_type: string; ref: string; valid: boolean }>;
   reviews: Array<{ reviewer: string; verdict: "approve" | "changes" | "reject"; text: string; created_at: string }>;
   blockers: string[];
+  source: "" | "qwen"; // "qwen" — черновик Qwen по одобренному отчёту
+  report: string; // «EXP-001 v1»
+  report_experiment: string;
+  problems: string; // что проверить в черновике Qwen
+  author: string;
+  editable: boolean; // текст можно править: CR открыт и одобряющей рецензии нет
 }
 
 export interface Version {
@@ -72,6 +78,10 @@ export const listVersions = () => call<Version[]>("/methodology/versions");
 export const listCrs = () => call<ChangeRequest[]>("/change-requests");
 export const reviewCr = (code: string, verdict: string, text: string) =>
   call<ChangeRequest>(`/change-requests/${code}/reviews`, { method: "POST", body: JSON.stringify({ verdict, text }) });
+export const editCr = (
+  code: string,
+  text: { title: string; description: string; proposed_content: string; new_title?: string },
+) => call<ChangeRequest>(`/change-requests/${code}`, { method: "PATCH", body: JSON.stringify(text) });
 export const setCrStatus = (code: string, status: "review" | "accepted" | "rejected") =>
   call<ChangeRequest>(`/change-requests/${code}`, { method: "PATCH", body: JSON.stringify({ status }) });
 

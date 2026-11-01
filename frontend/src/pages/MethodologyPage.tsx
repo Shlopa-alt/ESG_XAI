@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { listExperiments } from "../api/experiments";
@@ -10,6 +10,7 @@ import {
   CHILD_KINDS,
   createCr,
   CR_STATUS_LABEL,
+  editCr,
   getMethodology,
   KIND_LABEL,
   listCrs,
@@ -25,9 +26,66 @@ import { useMe } from "../auth/useAuth";
 const VERDICTS = { approve: "одобрено", changes: "нужны правки", reject: "отклонено" } as const;
 const CR_BADGE = { proposed: "st-planned", review: "st-review", accepted: "st-done", rejected: "st-planned" } as const;
 
+function CrTextEditor({ cr, onDone }: { cr: ChangeRequest; onDone: () => void }) {
+  const qc = useQueryClient();
+  const [title, setTitle] = useState(cr.title);
+  const [newTitle, setNewTitle] = useState(cr.new_title);
+  const [description, setDescription] = useState(cr.description);
+  const [content, setContent] = useState(cr.proposed_content);
+  const m = useMutation({
+    mutationFn: () =>
+      editCr(cr.code, {
+        title,
+        description,
+        proposed_content: content,
+        ...(cr.action === "add" ? { new_title: newTitle } : {}),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["crs"] });
+      onDone();
+    },
+  });
+  return (
+    <div className="report-editor">
+      <label className="field">
+        Что меняется
+        <input value={title} onChange={(e) => setTitle(e.target.value)} />
+      </label>
+      {cr.action === "add" && (
+        <label className="field">
+          Заголовок нового узла
+          <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
+        </label>
+      )}
+      <label className="field">
+        Почему
+        <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </label>
+      <label className="field">
+        {cr.action === "add" ? "Текст нового узла" : "Новый текст узла — целиком"}
+        <textarea rows={8} value={content} onChange={(e) => setContent(e.target.value)} />
+      </label>
+      {m.isError && (
+        <p className="error" role="alert">
+          {m.error.message}
+        </p>
+      )}
+      <div className="review-form">
+        <button type="button" className="btn-primary" disabled={m.isPending || title.trim().length < 3} onClick={() => m.mutate()}>
+          Сохранить
+        </button>
+        <button type="button" className="btn-ghost" onClick={onDone}>
+          Отмена
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
   const qc = useQueryClient();
   const [text, setText] = useState("");
+  const [editing, setEditing] = useState(false);
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["crs"] });
     void qc.invalidateQueries({ queryKey: ["methodology"] });
@@ -62,11 +120,32 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
         )}
         <span className={`badge ${CR_BADGE[cr.status]}`}>{CR_STATUS_LABEL[cr.status]}</span>
         {cr.target_version && <span className="muted">→ версия {cr.target_version}</span>}
+        {cr.source === "qwen" && (
+          <span className="muted">
+            · черновик Qwen по отчёту{" "}
+            {cr.report_experiment ? <Link to={`/experiments/${cr.report_experiment}`}>{cr.report}</Link> : cr.report}
+          </span>
+        )}
+        {cr.source !== "qwen" && cr.author && <span className="muted">· {cr.author}</span>}
       </div>
-      <h3 className="h3">{cr.title}</h3>
-      {cr.action === "add" && cr.new_title && <p>Новый узел: «{cr.new_title}»</p>}
-      {cr.description && <p className="muted">{cr.description}</p>}
-      {cr.proposed_content && (
+      {editing ? (
+        <CrTextEditor cr={cr} onDone={() => setEditing(false)} />
+      ) : (
+        <>
+          <h3 className="h3">{cr.title}</h3>
+          {cr.action === "add" && cr.new_title && <p>Новый узел: «{cr.new_title}»</p>}
+          {cr.description && <p className="muted pre-line">{cr.description}</p>}
+        </>
+      )}
+      {open && cr.problems && <p className="blockers">Проверить: {cr.problems}.</p>}
+      {cr.editable && !editing && (role === "researcher" || role === "owner") && (
+        <div className="review-form">
+          <button type="button" className="btn-ghost" onClick={() => setEditing(true)}>
+            Править текст
+          </button>
+        </div>
+      )}
+      {!editing && cr.proposed_content && (
         <details>
           <summary>{cr.action === "add" ? "Текст нового узла" : "Предлагаемый текст"}</summary>
           <p className="pre-line">{cr.proposed_content}</p>
@@ -377,6 +456,13 @@ export function Methodology() {
   const nodes = Array.isArray(m.data?.sections) ? m.data.sections : [];
   const crList = Array.isArray(crs.data) ? crs.data : [];
   const versionList = Array.isArray(versions.data) ? versions.data : [];
+  // ссылка вида /methodology#cr-CR-02 (из отчёта): прокрутить к CR, когда список загрузился
+  const crsLoaded = crs.isSuccess;
+  useEffect(() => {
+    if (crsLoaded && window.location.hash.startsWith("#cr-")) {
+      document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: "start" });
+    }
+  }, [crsLoaded]);
   const canPropose = me.data?.role === "researcher" || me.data?.role === "owner";
   // что относится к узлу: гипотезы, эксперименты, открытые CR
   const work = new Map<string, { exps: string[]; hyps: string[] }>();
