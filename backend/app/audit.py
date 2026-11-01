@@ -20,7 +20,7 @@ from app.services.auth import read_session_token
 WRITE_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})
 # Служебные обработчики (импорт статей, исполнитель запусков) опрашивают очередь раз в
 # 30 с — это не действия людей: в журнал не пишутся, иначе в нём тонет всё остальное
-SERVICE_PREFIXES = ("/api/kb-imports/worker/", "/api/runs/worker/")
+SERVICE_PREFIXES = ("/api/kb-imports/worker/", "/api/runs/worker/", "/api/qwen/worker/")
 
 
 class AuditLog(Base):

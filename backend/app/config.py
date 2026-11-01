@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     esg_data_host: str = ""
     dataset_upload_max_mb: int = 60
 
+    # Qwen по требованию: обработчик очереди на машине с видеокартой (runner/qwen/worker.py)
+    qwen_token: str = ""
+
 
 WEAK_LOCAL_PASSWORDS = frozenset({"", "dev", "change-me"})
 

@@ -10,6 +10,7 @@ import { Hypotheses } from "./pages/HypothesesPage";
 import { Import } from "./pages/ImportPage";
 import { Login } from "./pages/Login";
 import { Methodology } from "./pages/MethodologyPage";
+import { Qwen } from "./pages/QwenPage";
 import { Run, RunDetail } from "./pages/RunPage";
 import { ChangePassword, Users } from "./pages/UsersPage";
 import {
@@ -35,6 +36,7 @@ export function App() {
         <Route path="knowledge" element={<Knowledge />} />
         <Route path="knowledge/graph" element={<Suspense fallback={<p className="muted">Загрузка графа…</p>}><Graph /></Suspense>} />
         <Route path="knowledge/import" element={<Import />} />
+        <Route path="qwen" element={<Qwen />} />
         <Route path="datasets/:code" element={<DatasetPage />} />
         <Route path="knowledge/article/:docId" element={<Article />} />
         <Route path="hypotheses" element={<Hypotheses />} />

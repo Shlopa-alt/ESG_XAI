@@ -59,3 +59,18 @@ if (-not $worker) {
 } else {
     Say "обработчик импорта статей уже работает"
 }
+
+# Обработчик задач Qwen: поднимает модель, когда в очереди есть работа, и выключает после простоя
+$qwen = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -like "*qwen*worker.py*" }
+if (-not $qwen) {
+    $env:KBRAG_HOME = $Kbrag
+    $env:PYTHONIOENCODING = "utf-8"
+    Start-Process -FilePath "py" -ArgumentList "-3.12", (Join-Path $Platform "runner\qwen\worker.py") `
+        -WorkingDirectory $Platform -WindowStyle Hidden `
+        -RedirectStandardOutput (Join-Path $PSScriptRoot "logs\qwen_worker.log") `
+        -RedirectStandardError (Join-Path $PSScriptRoot "logs\qwen_worker.err.log")
+    Say "обработчик Qwen запущен"
+} else {
+    Say "обработчик Qwen уже работает"
+}

@@ -22,6 +22,12 @@ server {
   allow ${ALLOWED_SUBNET};
   deny all;
 
+  # Адреса backend и frontend — через DNS Docker при каждом запросе (кэш 10 с): после пересборки
+  # контейнер получает новый адрес, а без этого nginx до перезапуска отвечал 502
+  resolver 127.0.0.11 valid=10s ipv6=off;
+  set $backend http://backend:8000;
+  set $frontend http://frontend:80;
+
   # Сжатие: граф базы знаний — ~2 МБ JSON, сборка фронтенда — ~0,7 МБ; в gzip — в 8–10 раз меньше.
   # Поток запусков (text/event-stream) не сжимается — иначе буферизуется
   gzip on;
@@ -34,7 +40,7 @@ server {
   location /api/ {
     # PDF статей загружаются через сайт (KB_IMPORT_MAX_MB на бэкенде)
     client_max_body_size 64m;
-    proxy_pass http://backend:8000;
+    proxy_pass $backend;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -45,7 +51,7 @@ server {
   }
 
   location / {
-    proxy_pass http://frontend:80;
+    proxy_pass $frontend;
     proxy_set_header Host $host;
   }
 }

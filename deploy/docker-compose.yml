@@ -52,6 +52,8 @@ services:
       # Запуск экспериментов из формы: очередь Celery в Redis, исполнитель runner-cpu
       REDIS_URL: redis://redis:6379/0
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      # Qwen по требованию: обработчик очереди runner/qwen/worker.py на машине с видеокартой
+      QWEN_TOKEN: ${QWEN_TOKEN:-}
       # Датасеты: срезы загружаются и регистрируются в папке данных сервера
       ESG_DATA_HOST: ${ESG_DATA_HOST:-}
     volumes:

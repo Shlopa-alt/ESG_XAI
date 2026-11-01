@@ -12,6 +12,7 @@ from app.api import (
     kb,
     kb_imports,
     methodology,
+    qwen,
     runs,
     users,
 )
@@ -52,4 +53,5 @@ api.include_router(methodology.router)
 api.include_router(hypotheses.router)
 api.include_router(audit.router)
 api.include_router(runs.router)
+api.include_router(qwen.router)
 app.include_router(api)

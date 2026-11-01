@@ -9,6 +9,7 @@ from app.models.research import (
     KbRef,
     Review,
 )
+from app.models.qwen_job import QwenJob
 from app.models.run import Run
 from app.models.user import User
 
@@ -26,6 +27,7 @@ __all__ = [
     "MethodologySection",
     "MethodologyVersion",
     "Review",
+    "QwenJob",
     "Run",
     "User",
 ]

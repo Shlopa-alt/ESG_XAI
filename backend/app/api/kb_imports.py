@@ -32,6 +32,7 @@ from app.services.article_fetch import (
     normalize_doi,
     openalex_work,
 )
+from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/kb-imports", tags=["kb-imports"])
 
@@ -276,5 +277,8 @@ def job_result(import_id: int, body: ResultIn,
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет импорта №{import_id}")
     imp.status, imp.doc_id, imp.message = body.status, body.doc_id, body.message[:4000]
     imp.finished_at = datetime.now(UTC)
+    if body.status == "done":
+        # новая статья в базе — Qwen достроит по ней граф фактов (одна задача на все импорты подряд)
+        enqueue(db, "graph", {"kb": "esg"}, trigger="import")
     db.commit()
     return _out(db, imp)
