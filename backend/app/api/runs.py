@@ -436,6 +436,12 @@ def worker_report(run_id: int, body: WorkerReport,
     elif body.status == "done" and body.run is not None and exp is not None:
         _apply(db, run, exp, body.run)  # статус — по кодам выхода частей
         run.message = body.message
+        if run.status == "done":
+            # расчёт удался — Qwen напишет отчёт по его фактам (шаг «отчёт» цикла)
+            from app.api.reports import request_report
+
+            db.flush()
+            request_report(db, exp, run, run.created_by, "run")
     else:
         # остановлен или упал: воспроизводимость эксперимента такой запуск не трогает
         run.status = "failed" if body.status == "done" else body.status

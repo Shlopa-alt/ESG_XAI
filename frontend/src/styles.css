@@ -655,3 +655,7 @@ a.btn-ghost.active { border-color: var(--accent); }
 .columns-pick legend { padding: 0 4px; }
 .columns-list { display: flex; flex-wrap: wrap; gap: 4px 14px; max-height: 180px; overflow-y: auto; font-size: 14px; }
 .params-editor { display: flex; flex-direction: column; gap: 8px; }
+
+/* --- отчёт по эксперименту --- */
+.report { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.report-editor { display: flex; flex-direction: column; gap: 10px; }

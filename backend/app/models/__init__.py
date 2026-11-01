@@ -11,6 +11,7 @@ from app.models.research import (
 )
 from app.models.proposal import ExperimentProposal
 from app.models.qwen_job import QwenJob
+from app.models.report_doc import ExperimentReport
 from app.models.run import Run
 from app.models.user import User
 
@@ -22,6 +23,7 @@ __all__ = [
     "Experiment",
     "ExperimentLink",
     "ExperimentProposal",
+    "ExperimentReport",
     "Hypothesis",
     "HypothesisRef",
     "KbImport",

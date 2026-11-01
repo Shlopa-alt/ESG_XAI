@@ -18,6 +18,9 @@ vLLM (`docker compose --profile llm up -d llm` в KBRAG) и дождаться �
                платформа проверяет опоры и ставит гипотезы на рецензию
   experiment — по принятой гипотезе: метод из библиотеки, срез, параметры (столбцы), протокол и что
                подтвердит или опровергнет гипотезу; платформа проверяет и показывает человеку
+  report     — текст отчёта по завершённому эксперименту: резюме, вердикт по гипотезе, интерпретация,
+               что это значит для задания методики, ограничения, что дальше; цифры и графики — из
+               run.json, числа текста платформа сверяет с расчётом
 
 Только стандартная библиотека. Настройки — deploy/.env (QWEN_TOKEN, HTTP_PORT, KBRAG_TOKEN),
 KBRAG_HOME, KBRAG_DSN, KBRAG_WEB (веб-сервер KBRAG, по умолчанию http://127.0.0.1:8000).
@@ -499,11 +502,74 @@ def job_experiment(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     return {"proposal": proposal}
 
 
+REPORT_SYSTEM = """Ты — исследователь лаборатории ИИ в ESG-управлении. Эксперимент посчитан; напиши текст
+отчёта по фактам расчёта ниже.
+
+Правила:
+1. Только факты ниже. НЕ придумывай чисел: любое число в тексте должно быть в ключевых цифрах, графиках
+   или итогах расчёта. Можно округлять до двух знаков.
+2. "verdict": confirmed — гипотеза подтверждена, rejected — отклонена, inconclusive — неоднозначно. Если
+   есть критерий, заданный до расчёта, — суди по нему; интервал, задевающий ноль, и R² не выше плацебо —
+   не подтверждение. Отрицательный результат — нормальный исход, его не смягчай.
+3. "interpretation" — 3–5 пунктов: что показали цифры и почему так могло получиться (со ссылкой на
+   опоры гипотезы, если они объясняют).
+4. "meaning" — что результат значит для задания методики (вход, выход, горизонт задания).
+5. "methodology" — предложение изменить методику, только если результат это оправдывает; иначе "".
+6. "limitations" — 2–4 пункта: выборка, данные, метод. "next" — 2–4 следующих шага.
+7. Пиши по-русски, коротко и точно; названия показателей — как в данных.
+Ответ — только JSON по схеме."""
+
+REPORT_SCHEMA = {"type": "object", "required": ["summary", "verdict", "verdict_reason", "interpretation", "meaning",
+                                                "methodology", "limitations", "next"], "properties": {
+    "summary": _S, "verdict": {"type": "string", "enum": ["confirmed", "rejected", "inconclusive"]},
+    "verdict_reason": _S, "interpretation": {"type": "array", "items": _S, "maxItems": 6}, "meaning": _S,
+    "methodology": _S, "limitations": {"type": "array", "items": _S, "maxItems": 5},
+    "next": {"type": "array", "items": _S, "maxItems": 5}}}
+
+
+def _report_prompt(c: dict[str, Any]) -> str:
+    f = c["facts"]
+    e, run, h = f.get("experiment", {}), f.get("run", {}), f.get("hypothesis") or {}
+    kpis = "\n".join(f"- {k.get('label')}: {k.get('value')} ({k.get('note', '')}{'; было ' + k['was'] if k.get('was') else ''})"
+                     for k in f.get("kpis") or []) or "- нет"
+    charts = []
+    for ch in f.get("charts") or []:
+        if ch.get("kind") == "ranges":
+            data = "; ".join(f"{r['name']}: среднее {r['mean']}, от {r['min']} до {r['max']}" for r in ch.get("rows") or [])
+        else:
+            data = "; ".join(f"{s['name']}: " + ", ".join(f"{c}={v}" for c, v in zip(ch.get("categories") or [], s["values"]))
+                             for s in ch.get("series") or [])
+        charts.append(f"- «{ch.get('title')}» ({ch.get('subtitle', '')}): {data}. Подпись: {ch.get('interpretation', '')}")
+    task = "\n".join(f"- {t['number']} {t['title']}: {t['content'][:600]}" for t in c["task"]) or "- не указано"
+    sections = "\n".join(f"- {s['number']} {s['title']}: {s['content'][:400]}" for s in c["sections"]) or "- нет"
+    refs = "\n".join(f"- «{r['quote'][:300]}» («{r['title']}»)" for r in c["refs"]) or "- нет"
+    return (f"ЭКСПЕРИМЕНТ {e.get('code')}: {e.get('title')}\nГипотеза: {h.get('statement') or e.get('hypothesis')}\n"
+            f"Критерий до расчёта: {f.get('expected') or 'не задан'}\n"
+            f"Метод: {run.get('template_title') or e.get('method')}; параметры: {json.dumps(run.get('params') or {}, ensure_ascii=False)}\n"
+            f"Данные: {run.get('dataset')} срез {run.get('snapshot_version')}, строк {run.get('rows')}\n"
+            f"Протокол: {'; '.join(e.get('setup') or []) or '—'}\n"
+            f"Ограничения, записанные в эксперименте: {'; '.join(e.get('limitations') or []) or '—'}\n\n"
+            f"КЛЮЧЕВЫЕ ЦИФРЫ:\n{kpis}\n\nГРАФИКИ (значения):\n" + ("\n".join(charts) or "- нет") +
+            f"\n\nИТОГИ РАСЧЁТА: {json.dumps(run.get('summary') or {}, ensure_ascii=False)[:1500]}\n\n"
+            f"ЗАДАНИЕ МЕТОДИКИ (от направления к заданию):\n{task}\n\nРАЗДЕЛЫ МЕТОДИКИ:\n{sections}\n\n"
+            f"ОПОРЫ ГИПОТЕЗЫ:\n{refs}\n\nНапиши отчёт по правилам.")
+
+
+def job_report(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Текст отчёта по фактам расчёта; цифры и графики платформа берёт из run.json сама."""
+    rid = int(job["payload"].get("report") or 0)
+    c = ctx["platform"].post("report-context", {"report": rid})[1]
+    sections = ask_json(_report_prompt(c), 2200, REPORT_SYSTEM, REPORT_SCHEMA)
+    log(f"  отчёт №{rid}: вердикт {sections.get('verdict')}, пунктов интерпретации {len(sections.get('interpretation') or [])}")
+    return {"sections": sections}
+
+
 HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]] = {
     "ping": job_ping,
     "graph": job_graph,
     "hypotheses": job_hypotheses,
     "experiment": job_experiment,
+    "report": job_report,
 }
 
 
@@ -517,6 +583,8 @@ def describe(kind: str, result: dict[str, Any]) -> str:
         return f"Модель ответила за {result.get('seconds')} с: {result.get('answer')}"
     if kind == "experiment":
         return "Предложение эксперимента передано платформе"
+    if kind == "report":
+        return "Текст отчёта передан платформе"
     if kind == "hypotheses":
         return f"Qwen предложила {len(result.get('hypotheses') or [])} (платформа проверит опоры)"
     return ""

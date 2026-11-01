@@ -14,6 +14,7 @@ from app.api import (
     methodology,
     proposals,
     qwen,
+    reports,
     runs,
     users,
 )
@@ -56,4 +57,5 @@ api.include_router(audit.router)
 api.include_router(runs.router)
 api.include_router(qwen.router)
 api.include_router(proposals.router)
+api.include_router(reports.router)
 app.include_router(api)

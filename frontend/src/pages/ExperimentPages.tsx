@@ -15,6 +15,7 @@ import {
 import { useMe } from "../auth/useAuth";
 import { experimentRuns, RunsTable } from "./RunPage";
 import { Chart } from "../components/Charts";
+import { ReportPanel } from "../components/ReportPanel";
 import { ExperimentEditor, toReport } from "./ExperimentEditor";
 
 /** Пустой раздел: что в нём должно быть и откуда это возьмётся. */
@@ -359,6 +360,7 @@ export function Experiment() {
           </ul>
         </section>
       </div>
+      <ReportPanel code={e.code} role={me.data?.role} />
       <section className="card">
         <h2 className="h2">Запуски</h2>
         <RunsTable runs={Array.isArray(runs.data) ? runs.data : []} />
