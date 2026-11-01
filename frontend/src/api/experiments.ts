@@ -2,6 +2,7 @@ export type ExpStatus = "draft" | "planned" | "running" | "review" | "done" | "f
 export type Outcome = "confirmed" | "rejected" | "inconclusive";
 
 export interface Experiment {
+  methodology_node: string;
   code: string;
   title: string;
   hypothesis: string;

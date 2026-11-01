@@ -90,6 +90,9 @@ class Experiment(Base):
     # Отчёт для страницы: ключевые цифры, графики с интерпретацией, разбор результата
     report: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # узел методики (задание, вариант или направление), к которому относится
+    methodology_node_id: Mapped[int | None] = mapped_column(ForeignKey("methodology_sections.id"),
+                                                            nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

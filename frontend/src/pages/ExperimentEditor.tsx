@@ -3,6 +3,7 @@ import { type FormEvent, useState } from "react";
 
 import type { ExperimentDetail } from "../api/experiments";
 import { Chart, type ChartSpec } from "../components/Charts";
+import { NodeSelect } from "../components/NodeSelect";
 
 export interface Kpi {
   label: string;
@@ -176,6 +177,7 @@ export function ExperimentEditor({ e, onClose }: { e: ExperimentDetail; onClose:
   const base = toReport(e.report);
   const [tab, setTab] = useState<Tab>("about");
   const [title, setTitle] = useState(e.title);
+  const [node, setNode] = useState(e.methodology_node);
   const [hypothesis, setHypothesis] = useState(e.hypothesis);
   const [method, setMethod] = useState(e.method);
   const [dataSummary, setDataSummary] = useState(e.data_summary);
@@ -196,6 +198,7 @@ export function ExperimentEditor({ e, onClose }: { e: ExperimentDetail; onClose:
     mutationFn: () =>
       patch(e.code, {
         title,
+        methodology_node: node,
         hypothesis,
         method,
         data_summary: dataSummary,
@@ -247,6 +250,10 @@ export function ExperimentEditor({ e, onClose }: { e: ExperimentDetail; onClose:
           <label className="field span-2">
             Название
             <input value={title} onChange={(ev) => setTitle(ev.target.value)} required minLength={3} />
+          </label>
+          <label className="field span-2" htmlFor="exp-node">
+            Задание методики
+            <NodeSelect id="exp-node" value={node} onChange={setNode} />
           </label>
           <label className="field span-2">
             Гипотеза — что должно подтвердиться

@@ -21,6 +21,7 @@ export interface Hypothesis {
   author: string;
   decided_by: string;
   experiment: string;
+  methodology_node: string;
   created_at: string;
   refs: Array<{ kind: string; kbrag_id: string; title: string; doi: string; quote: string }>;
 }
@@ -45,6 +46,7 @@ export const proposeHypothesis = (h: {
   statement: string;
   rationale: string;
   direction: string;
+  methodology_node?: string;
   refs: KbRefIn[];
 }) => call<Hypothesis>("/hypotheses", { method: "POST", body: JSON.stringify(h) });
 export const decideHypothesis = (code: string, status: "accepted" | "rejected", note: string) =>

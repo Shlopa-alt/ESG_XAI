@@ -35,6 +35,9 @@ class SectionOut(BaseModel):
     title: str
     content: str
     stability: str
+    kind: str  # direction | variant | task | section
+    parent: str  # номер родителя; пусто — корень методики
+    position: int
 
 
 class VersionOut(BaseModel):
@@ -63,8 +66,11 @@ class CrReviewOut(BaseModel):
 
 class CrOut(BaseModel):
     code: str
-    section: str
+    section: str  # edit — изменяемый узел, add — родитель нового (пусто — корень)
     section_title: str
+    action: str
+    new_kind: str
+    new_title: str
     title: str
     description: str
     proposed_content: str
@@ -77,7 +83,10 @@ class CrOut(BaseModel):
 
 class CrIn(BaseModel):
     code: str | None = Field(default=None, pattern=r"^CR-\d{2,3}$")  # нет — следующий свободный
-    section: str
+    section: str = ""  # edit — номер узла; add — номер родителя, пусто — корень методики
+    action: Literal["edit", "add"] = "edit"
+    new_kind: Literal["direction", "variant", "task", "section", ""] = ""
+    new_title: str = Field(default="", max_length=512)
     title: str = Field(min_length=3)
     description: str = ""
     proposed_content: str = ""
@@ -118,7 +127,7 @@ def _cr(db: Session, code: str) -> ChangeRequest:
 
 
 def _cr_out(db: Session, cr: ChangeRequest) -> CrOut:
-    section = db.get(MethodologySection, cr.section_id)
+    section = db.get(MethodologySection, cr.section_id) if cr.section_id else None
     valid = set(svc.valid_bases(db, cr))
     bases = []
     for b in db.scalars(select(CrBasis).where(CrBasis.cr_id == cr.id)):
@@ -139,7 +148,10 @@ def _cr_out(db: Session, cr: ChangeRequest) -> CrOut:
     return CrOut(
         code=cr.code,
         section=section.number if section else "",
-        section_title=section.title if section else "",
+        section_title=section.title if section else "корень методики",
+        action=cr.action,
+        new_kind=cr.new_kind,
+        new_title=cr.new_title,
         title=cr.title,
         description=cr.description,
         proposed_content=cr.proposed_content,
@@ -155,12 +167,28 @@ def _cr_out(db: Session, cr: ChangeRequest) -> CrOut:
 @router.get("/methodology", response_model=MethodologyOut, dependencies=[Depends(current_user)])
 def methodology(db: Annotated[Session, Depends(get_db)]) -> MethodologyOut:
     cur = svc.current_version(db)
-    sections = db.scalars(select(MethodologySection).order_by(MethodologySection.number))
-    return MethodologyOut(
-        version=cur.version if cur else None,
-        sections=[SectionOut(number=s.number, title=s.title, content=s.content,
-                             stability=s.stability) for s in sections],
-    )
+    return MethodologyOut(version=cur.version if cur else None, sections=_tree(db))
+
+
+def _tree(db: Session) -> list[SectionOut]:
+    """Узлы в порядке обхода дерева: родитель, затем его разделы, затем дочерние узлы."""
+    nodes = list(db.scalars(select(MethodologySection)))
+    number = {n.id: n.number for n in nodes}
+    children: dict[int | None, list[MethodologySection]] = {}
+    for n in nodes:
+        children.setdefault(n.parent_id, []).append(n)
+    order = {"section": 0, "direction": 1, "variant": 1, "task": 1}
+    out: list[SectionOut] = []
+
+    def walk(pid: int | None) -> None:
+        for n in sorted(children.get(pid, []), key=lambda x: (order.get(x.kind, 1), x.position, x.number)):
+            out.append(SectionOut(number=n.number, title=n.title, content=n.content, stability=n.stability,
+                                  kind=n.kind, parent=number.get(n.parent_id, "") if n.parent_id else "",
+                                  position=n.position))
+            walk(n.id)
+
+    walk(None)
+    return out
 
 
 @router.get("/methodology/versions", response_model=list[VersionOut],
@@ -200,8 +228,10 @@ def export_docx(db: Annotated[Session, Depends(get_db)]) -> StreamingResponse:
     doc = Document()
     doc.add_heading(f"Методология ESG Open Research, версия {cur.version if cur else '—'}", 0)
     labels = {"stable": "устойчив", "draft": "черновик", "contested": "оспаривается"}
-    for s in db.scalars(select(MethodologySection).order_by(MethodologySection.number)):
-        doc.add_heading(f"{s.number}. {s.title}", level=1)
+    depth = {"": 0}
+    for s in _tree(db):
+        depth[s.number] = depth.get(s.parent, 0) + 1
+        doc.add_heading(f"{s.number}. {s.title}", level=min(depth[s.number], 4))
         doc.add_paragraph(f"Устойчивость: {labels.get(s.stability, s.stability)}")
         doc.add_paragraph(s.content)
     buf = io.BytesIO()
@@ -227,10 +257,25 @@ def create_cr(
     code = body.code or next_code(db, ChangeRequest.code, "CR", 2)
     if db.scalar(select(ChangeRequest).where(ChangeRequest.code == code)):
         raise HTTPException(status.HTTP_409_CONFLICT, f"Код {code} уже занят")
-    section = _section(db, body.section)
-    cr = ChangeRequest(code=code, section_id=section.id, title=body.title,
-                       description=body.description, proposed_content=body.proposed_content,
-                       status="proposed", author_id=user.id)
+    section = _section(db, body.section) if body.section else None
+    if body.action == "edit":
+        if section is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Какой узел меняется — section")
+    else:
+        allowed = svc.CHILD_KINDS[section.kind if section else None]
+        if body.new_kind not in allowed:
+            where = f"под «{section.number}»" if section else "в корень методики"
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                f"Добавить {where} можно: {', '.join(allowed) or 'ничего'}")
+        if len(body.new_title.strip()) < 3:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Заголовок нового узла — new_title")
+        if not body.proposed_content.strip():
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Текст нового узла — proposed_content")
+    cr = ChangeRequest(code=code, section_id=section.id if section else None, action=body.action,
+                       new_kind=body.new_kind if body.action == "add" else "",
+                       new_title=body.new_title.strip() if body.action == "add" else "",
+                       title=body.title, description=body.description,
+                       proposed_content=body.proposed_content, status="proposed", author_id=user.id)
     db.add(cr)
     db.commit()
     return _cr_out(db, cr)

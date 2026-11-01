@@ -629,3 +629,22 @@ a.btn-ghost.active { border-color: var(--accent); }
 .dataset-form { display: flex; flex-direction: column; gap: 12px; }
 .dataset-form .h3 { margin: 8px 0 0; font-size: 16px; }
 .file-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+
+/* --- методика: дерево --- */
+.methodology-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: 16px; align-items: start; }
+@media (max-width: 1023px) { .methodology-layout { grid-template-columns: minmax(0, 1fr); } }
+.tree { display: flex; flex-direction: column; gap: 16px; }
+.node { margin: 0; }
+.node > .node, .node > .node-sections { margin-left: 16px; }
+.node-variant, .node-task { margin-top: 12px; padding-left: 12px; border-left: 3px solid var(--border); }
+.node-task { border-left-color: #b9d3c4; }
+.node-head { cursor: pointer; line-height: 1.5; }
+.node-section > .node-head { cursor: default; }
+.node-kind { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px; }
+.node-num { font-size: 13px; color: var(--text-muted); }
+.node-text { margin: 6px 0; }
+.node-sections { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.node-section { padding: 8px 12px; border-radius: 8px; background: var(--surface-2, #f4f6f4); }
+.node-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0; }
+.node-links { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; }
+.pre-line { white-space: pre-line; }

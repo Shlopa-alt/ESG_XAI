@@ -1,17 +1,42 @@
 export type Stability = "stable" | "draft" | "contested";
 export type CrStatus = "proposed" | "review" | "accepted" | "rejected";
 
+export type NodeKind = "direction" | "variant" | "task" | "section";
+
+/** Узел методики: направление, вариант, задание или раздел (раздел действует на всё ниже узла). */
 export interface Section {
   number: string;
   title: string;
   content: string;
   stability: Stability;
+  kind: NodeKind;
+  parent: string; // номер родителя; пусто — корень методики
+  position: number;
 }
+
+export const KIND_LABEL: Record<NodeKind, string> = {
+  direction: "направление",
+  variant: "вариант",
+  task: "задание",
+  section: "раздел",
+};
+
+/** Что можно добавить под узлом каждого вида ("" — корень методики); как на бэкенде. */
+export const CHILD_KINDS: Record<NodeKind | "", NodeKind[]> = {
+  "": ["direction", "section"],
+  direction: ["variant", "task", "section"],
+  variant: ["task", "section"],
+  task: ["section"],
+  section: [],
+};
 
 export interface ChangeRequest {
   code: string;
   section: string;
   section_title: string;
+  action: "edit" | "add";
+  new_kind: NodeKind | "";
+  new_title: string;
   title: string;
   description: string;
   proposed_content: string;
@@ -62,7 +87,15 @@ export const CR_STATUS_LABEL: Record<CrStatus, string> = {
   accepted: "принято",
   rejected: "отклонено",
 };
-export const createCr = (cr: { section: string; title: string; description: string; proposed_content: string }) =>
+export const createCr = (cr: {
+  section: string;
+  title: string;
+  description: string;
+  proposed_content: string;
+  action?: "edit" | "add";
+  new_kind?: NodeKind | "";
+  new_title?: string;
+}) =>
   call<ChangeRequest>("/change-requests", { method: "POST", body: JSON.stringify(cr) });
 export const addCrBasis = (code: string, experimentCode: string) =>
   call<ChangeRequest>(`/change-requests/${code}/bases`, {

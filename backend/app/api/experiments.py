@@ -15,6 +15,7 @@ from app.models import (
     ExperimentLink,
     Hypothesis,
     KbRef,
+    MethodologySection,
     Review,
     User,
 )
@@ -62,6 +63,7 @@ class ExperimentOut(BaseModel):
     method: str
     data_summary: str
     dataset_snapshot_id: int | None
+    methodology_node: str = ""  # номер узла методики (задание, вариант, направление)
     seed: int | None
     runner_commit: str
     env_lock: str
@@ -86,6 +88,7 @@ class ExperimentDetail(ExperimentOut):
 class ExperimentIn(BaseModel):
     code: str | None = Field(default=None, pattern=r"^EXP-\d{3}$")  # нет — следующий свободный
     title: str = Field(min_length=3)
+    methodology_node: str = ""
     hypothesis: str = ""
     direction: str = ""
     method: str = ""
@@ -95,6 +98,7 @@ class ExperimentIn(BaseModel):
 
 class ExperimentPatch(BaseModel):
     title: str | None = None
+    methodology_node: str | None = None  # "" — отвязать от методики
     hypothesis: str | None = None
     direction: str | None = None
     method: str | None = None
@@ -148,6 +152,27 @@ def _get(db: Session, code: str) -> Experiment:
     return exp
 
 
+def node_id(db: Session, number: str) -> int | None:
+    """Номер узла методики → id; пусто — без узла."""
+    if not number:
+        return None
+    found = db.scalar(select(MethodologySection.id).where(MethodologySection.number == number))
+    if found is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Нет узла методики {number}")
+    return found
+
+
+def node_number(db: Session, nid: int | None) -> str:
+    node = db.get(MethodologySection, nid) if nid else None
+    return node.number if node else ""
+
+
+def _out(db: Session, exp: Experiment) -> ExperimentOut:
+    out = ExperimentOut.model_validate(exp)
+    out.methodology_node = node_number(db, exp.methodology_node_id)
+    return out
+
+
 def _detail(db: Session, exp: Experiment) -> ExperimentDetail:
     reviews = db.execute(
         select(Review, User.login)
@@ -163,7 +188,7 @@ def _detail(db: Session, exp: Experiment) -> ExperimentDetail:
     snap = db.get(DatasetSnapshot, exp.dataset_snapshot_id) if exp.dataset_snapshot_id else None
     ds = db.get(Dataset, snap.dataset_id) if snap else None
     return ExperimentDetail(
-        **ExperimentOut.model_validate(exp).model_dump(),
+        **_out(db, exp).model_dump(),
         dataset_snapshot=f"{ds.code} · {snap.version}" if snap and ds else "",
         reviews=[
             ReviewOut(id=r.id, reviewer=login, verdict=r.verdict, text=r.text, created_at=r.created_at)
@@ -181,13 +206,13 @@ def list_experiments(
     db: Annotated[Session, Depends(get_db)],
     status_: Annotated[Status | None, Query(alias="status")] = None,
     direction: str | None = None,
-) -> list[Experiment]:
+) -> list[ExperimentOut]:
     q = select(Experiment).order_by(Experiment.code)
     if status_:
         q = q.where(Experiment.status == status_)
     if direction:
         q = q.where(Experiment.direction == direction)
-    return list(db.scalars(q))
+    return [_out(db, e) for e in db.scalars(q)]
 
 
 @router.get("/experiments/compare", response_model=list[ExperimentDetail],
@@ -207,17 +232,18 @@ def create_experiment(
     body: ExperimentIn,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Researcher],
-) -> Experiment:
+) -> ExperimentOut:
     code = body.code or next_code(db, Experiment.code, "EXP", 3)
     if db.scalar(select(Experiment).where(Experiment.code == code)):
         raise HTTPException(status.HTTP_409_CONFLICT, f"Код {code} уже занят")
-    exp = Experiment(**body.model_dump(exclude={"code"}), code=code, status="draft",
+    exp = Experiment(**body.model_dump(exclude={"code", "methodology_node"}), code=code, status="draft",
+                     methodology_node_id=node_id(db, body.methodology_node),
                      author_id=user.id, config={}, results=[], limitations=[],
                      reproducibility=[], report={})
     db.add(exp)
     db.commit()
     db.refresh(exp)
-    return exp
+    return _out(db, exp)
 
 
 @router.patch("/experiments/{code}", response_model=ExperimentDetail, dependencies=[Researcher])
@@ -227,6 +253,8 @@ def patch_experiment(
     exp = _get(db, code)
     data = body.model_dump(exclude_unset=True)
     new_status = data.pop("status", None)
+    if "methodology_node" in data:
+        exp.methodology_node_id = node_id(db, data.pop("methodology_node") or "")
     if body.report is not None:
         data["report"] = body.report.model_dump()
     for key, value in data.items():

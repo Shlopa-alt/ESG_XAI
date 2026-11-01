@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user, require_role
+from app.api.experiments import node_id, node_number
 from app.db import get_db
 from app.models import Experiment, ExperimentLink, Hypothesis, HypothesisRef, KbRef, User
 from app.services.codes import next_code
@@ -43,6 +44,7 @@ class HypothesisIn(BaseModel):
     statement: str = Field(min_length=10)
     rationale: str = ""
     direction: Literal["Напр. 1", "Напр. 2", "Методы", ""] = ""
+    methodology_node: str = ""  # задание (или вариант, направление) методики
     refs: list[RefIn] = []
 
 
@@ -57,6 +59,7 @@ class HypothesisOut(BaseModel):
     author: str
     decided_by: str
     experiment: str
+    methodology_node: str
     created_at: datetime
     refs: list[RefOut]
 
@@ -89,6 +92,7 @@ def _out(db: Session, h: Hypothesis) -> HypothesisOut:
         direction=h.direction, status=h.status, decision_note=h.decision_note,
         author=_login(db, h.author_id), decided_by=_login(db, h.decided_by),
         experiment=exp.code if exp else "", created_at=h.created_at,
+        methodology_node=node_number(db, h.methodology_node_id),
         refs=[RefOut(kind=r.kind, kbrag_id=r.kbrag_id, title=r.title, doi=r.doi, quote=r.quote)
               for r in refs],
     )
@@ -119,7 +123,8 @@ def propose(
     """Предложить гипотезу может любой вошедший пользователь, в том числе reader."""
     h = Hypothesis(code=next_code(db, Hypothesis.code, "H", 3), title=body.title,
                    statement=body.statement, rationale=body.rationale, direction=body.direction,
-                   status="proposed", author_id=user.id)
+                   status="proposed", author_id=user.id,
+                   methodology_node_id=node_id(db, body.methodology_node))
     db.add(h)
     db.flush()
     for ref in body.refs:
@@ -169,7 +174,8 @@ def start_experiment(
     exp = Experiment(code=next_code(db, Experiment.code, "EXP", 3), title=h.title,
                      hypothesis=h.statement, direction=h.direction, status="planned",
                      author_id=user.id, config={}, setup=[], results=[], limitations=[],
-                     reproducibility=[], data_summary="", method="")
+                     reproducibility=[], data_summary="", method="",
+                     methodology_node_id=h.methodology_node_id)
     db.add(exp)
     db.flush()
     for (ref_id,) in db.execute(

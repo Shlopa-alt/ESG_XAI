@@ -14,6 +14,7 @@ import {
   proposeHypothesis,
 } from "../api/hypotheses";
 import { useMe } from "../auth/useAuth";
+import { NodeSelect } from "../components/NodeSelect";
 
 /** Опора, переданная со страницы базы знаний («Предложить гипотезу по этой статье»). */
 export interface ProposeState {
@@ -26,9 +27,10 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
   const [statement, setStatement] = useState("");
   const [rationale, setRationale] = useState("");
   const [direction, setDirection] = useState("");
+  const [node, setNode] = useState("");
   const [refs, setRefs] = useState<KbRefIn[]>(initialRef ? [initialRef] : []);
   const m = useMutation({
-    mutationFn: () => proposeHypothesis({ title, statement, rationale, direction, refs }),
+    mutationFn: () => proposeHypothesis({ title, statement, rationale, direction, methodology_node: node, refs }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["hypotheses"] });
       onDone();
@@ -59,6 +61,10 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
         Обоснование
         <textarea value={rationale} onChange={(e) => setRationale(e.target.value)} rows={3}
           placeholder="Почему так думаете: статьи, наблюдения, практика компаний" />
+      </label>
+      <label className="field" htmlFor="h-node">
+        Задание методики
+        <NodeSelect id="h-node" value={node} onChange={setNode} />
       </label>
       <label className="field">
         Направление
@@ -130,6 +136,11 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
       <div className="kb-meta">
         <span className="mono">{h.code}</span>
         {h.direction && <span>· {h.direction}</span>}
+        {h.methodology_node && (
+          <Link to="/methodology" className="mono">
+            · {h.methodology_node}
+          </Link>
+        )}
         <span className={`badge ${H_BADGE[h.status]}`}>{H_STATUS_LABEL[h.status]}</span>
         <span className="muted">
           предложил {h.author || "—"}, {new Date(h.created_at).toLocaleDateString("ru-RU")}

@@ -1,6 +1,7 @@
 """Правило домена 2: изменение методологии — только через CR с основанием и одобрением."""
 
 import difflib
+import re
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -71,10 +72,38 @@ def next_version(version: str) -> str:
 
 
 def snapshot(db: Session) -> dict[str, dict[str, str]]:
+    nodes = list(db.scalars(select(MethodologySection)))
+    number = {n.id: n.number for n in nodes}
     return {
-        s.number: {"title": s.title, "content": s.content, "stability": s.stability}
-        for s in db.scalars(select(MethodologySection).order_by(MethodologySection.number))
+        n.number: {"title": n.title, "content": n.content, "stability": n.stability, "kind": n.kind,
+                   "parent": number.get(n.parent_id, "") if n.parent_id else ""}
+        for n in nodes
     }
+
+
+# Что можно добавить под узлом каждого вида; None — корень методики
+CHILD_KINDS: dict[str | None, tuple[str, ...]] = {
+    None: ("direction", "section"),
+    "direction": ("variant", "task", "section"),
+    "variant": ("task", "section"),
+    "task": ("section",),
+    "section": (),
+}
+PREFIX = {"direction": "Н", "variant": "В", "task": "З", "section": "Р"}
+
+
+def child_number(db: Session, parent: MethodologySection | None, kind: str) -> tuple[str, int]:
+    """Номер и позиция нового узла: следующий по порядку среди соседей того же вида."""
+    prefix = "О" if parent is None and kind == "section" else PREFIX[kind]
+    base = f"{parent.number}." if parent is not None else ""
+    pid = parent.id if parent is not None else None
+    same_parent = (MethodologySection.parent_id.is_(None) if pid is None
+                   else MethodologySection.parent_id == pid)
+    siblings = db.scalars(select(MethodologySection).where(same_parent))
+    nums = [int(m.group(1)) for n in siblings
+            if (m := re.fullmatch(re.escape(base + prefix) + r"(\d+)", n.number))]
+    n = max(nums, default=0) + 1
+    return f"{base}{prefix}{n}", n
 
 
 def accept(db: Session, cr: ChangeRequest, user_id: int) -> MethodologyVersion:
@@ -82,12 +111,20 @@ def accept(db: Session, cr: ChangeRequest, user_id: int) -> MethodologyVersion:
     reasons = why_not_acceptable(db, cr)
     if reasons:
         raise DomainError("CR нельзя принять: " + "; ".join(reasons))
-    section = db.get(MethodologySection, cr.section_id)
-    if section is None:
-        raise DomainError("Раздел CR не найден")
-    if cr.proposed_content.strip():
-        section.content = cr.proposed_content
-    section.stability = "stable"
+    parent = db.get(MethodologySection, cr.section_id) if cr.section_id else None
+    if cr.action == "add":
+        # новый узел — задание, вариант, раздел — под указанным (или в корне методики)
+        number, position = child_number(db, parent, cr.new_kind)
+        db.add(MethodologySection(number=number, title=cr.new_title, content=cr.proposed_content,
+                                  stability="stable", kind=cr.new_kind,
+                                  parent_id=parent.id if parent else None, position=position))
+        db.flush()
+    else:
+        if parent is None:
+            raise DomainError("Узел CR не найден")
+        if cr.proposed_content.strip():
+            parent.content = cr.proposed_content
+        parent.stability = "stable"
     cur = current_version(db)
     version = MethodologyVersion(
         version=next_version(cur.version if cur else "0.0"),

@@ -3,15 +3,20 @@ import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { listExperiments } from "../api/experiments";
+import { listHypotheses } from "../api/hypotheses";
 import {
   addCrBasis,
   type ChangeRequest,
+  CHILD_KINDS,
   createCr,
   CR_STATUS_LABEL,
   getMethodology,
+  KIND_LABEL,
   listCrs,
   listVersions,
+  type NodeKind,
   reviewCr,
+  type Section,
   setCrStatus,
   STABILITY_LABEL,
 } from "../api/methodology";
@@ -42,18 +47,29 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
   const open = cr.status === "proposed" || cr.status === "review";
   const error = review.error ?? decide.error;
   return (
-    <article className="card cr">
+    <article className="card cr" id={`cr-${cr.code}`}>
       <div className="kb-meta">
-        <span className="mono">{cr.code}</span> · раздел {cr.section}
+        <span className="mono">{cr.code}</span> ·{" "}
+        {cr.action === "add" ? (
+          <>
+            добавить {cr.new_kind && KIND_LABEL[cr.new_kind]} в{" "}
+            {cr.section ? <span className="mono">{cr.section}</span> : "корень методики"}
+          </>
+        ) : (
+          <>
+            изменить <span className="mono">{cr.section}</span>
+          </>
+        )}
         <span className={`badge ${CR_BADGE[cr.status]}`}>{CR_STATUS_LABEL[cr.status]}</span>
         {cr.target_version && <span className="muted">→ версия {cr.target_version}</span>}
       </div>
       <h3 className="h3">{cr.title}</h3>
+      {cr.action === "add" && cr.new_title && <p>Новый узел: «{cr.new_title}»</p>}
       {cr.description && <p className="muted">{cr.description}</p>}
       {cr.proposed_content && (
         <details>
-          <summary>Предлагаемый текст раздела</summary>
-          <p>{cr.proposed_content}</p>
+          <summary>{cr.action === "add" ? "Текст нового узла" : "Предлагаемый текст"}</summary>
+          <p className="pre-line">{cr.proposed_content}</p>
         </details>
       )}
       <div className="muted">
@@ -84,9 +100,7 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
           ))}
         </ul>
       )}
-      {open && cr.blockers.length > 0 && (
-        <p className="blockers">Принять нельзя: {cr.blockers.join("; ")}.</p>
-      )}
+      {open && cr.blockers.length > 0 && <p className="blockers">Принять нельзя: {cr.blockers.join("; ")}.</p>}
       {open && (role === "reviewer" || role === "owner") && (
         <div className="review-form">
           <label className="field inline grow">
@@ -128,20 +142,34 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
   );
 }
 
-function NewCr({ sections, onDone }: { sections: Array<{ number: string; title: string; content: string }>; onDone: () => void }) {
+/** Что предлагают: изменить узел или добавить под ним новый (parent null — корень методики). */
+type Draft = { action: "edit"; node: Section } | { action: "add"; parent: Section | null; kind: NodeKind };
+
+function CrForm({ draft, onDone }: { draft: Draft; onDone: () => void }) {
   const qc = useQueryClient();
   const exps = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
-  const [section, setSection] = useState(sections[0]?.number ?? "");
+  const original = draft.action === "edit" ? draft.node.content : "";
   const [title, setTitle] = useState("");
+  const [newTitle, setNewTitle] = useState("");
   const [description, setDescription] = useState("");
-  const textOf = (n: string) => sections.find((s) => s.number === n)?.content ?? "";
-  // Новый текст начинается с текущего: его правят, а не пишут с нуля (пустой CR ничего не меняет)
-  const [proposed, setProposed] = useState(textOf(sections[0]?.number ?? ""));
+  const [proposed, setProposed] = useState(original);
   const [basis, setBasis] = useState("");
   const [created, setCreated] = useState(""); // CR создан, а основание не добавилось — не создавать дубль
   const m = useMutation({
     mutationFn: async () => {
-      const cr = await createCr({ section, title, description, proposed_content: proposed });
+      const cr = await createCr(
+        draft.action === "edit"
+          ? { section: draft.node.number, title, description, proposed_content: proposed }
+          : {
+              section: draft.parent?.number ?? "",
+              action: "add",
+              new_kind: draft.kind,
+              new_title: newTitle,
+              title,
+              description,
+              proposed_content: proposed,
+            },
+      );
       setCreated(cr.code);
       void qc.invalidateQueries({ queryKey: ["crs"] });
       if (basis) {
@@ -162,30 +190,33 @@ function NewCr({ sections, onDone }: { sections: Array<{ number: string; title: 
     ev.preventDefault();
     m.mutate();
   };
-  const expList = Array.isArray(exps.data) ? exps.data : [];
+  const where =
+    draft.action === "edit"
+      ? `${KIND_LABEL[draft.node.kind]} ${draft.node.number} «${draft.node.title}»`
+      : `${KIND_LABEL[draft.kind]} в ${draft.parent ? `${draft.parent.number} «${draft.parent.title}»` : "корень методики"}`;
+  const unchanged = draft.action === "edit" && proposed.trim() === original.trim();
   return (
     <form className="card propose" onSubmit={submit}>
-      <h2 className="h2">Предложить изменение методологии</h2>
+      <h3 className="h3">
+        {draft.action === "edit" ? "Изменить" : "Добавить"}: {where}
+      </h3>
       <p className="muted">
-        CR принимает владелец после одобряющей рецензии — и только если есть основание: завершённый эксперимент, факт
-        или статья базы знаний с источником. Статью можно добавить основанием со страницы статьи.
+        Методика меняется только через CR: его принимает owner после одобряющей рецензии и если есть основание —
+        завершённый эксперимент, факт или статья базы знаний с источником.
       </p>
-      <label className="field">
-        Раздел
-        <select
-          value={section}
-          onChange={(ev) => {
-            if (proposed === textOf(section)) setProposed(textOf(ev.target.value));
-            setSection(ev.target.value);
-          }}
-        >
-          {sections.map((s) => (
-            <option key={s.number} value={s.number}>
-              {s.number}. {s.title}
-            </option>
-          ))}
-        </select>
-      </label>
+      {draft.action === "add" && (
+        <label className="field">
+          Заголовок нового узла
+          <input
+            value={newTitle}
+            onChange={(ev) => setNewTitle(ev.target.value)}
+            required
+            minLength={3}
+            maxLength={512}
+            placeholder={draft.kind === "task" ? "Задание 1. …" : draft.kind === "variant" ? "Вариант 4: …" : "Название раздела"}
+          />
+        </label>
+      )}
       <label className="field">
         Что меняется — коротко
         <input value={title} onChange={(ev) => setTitle(ev.target.value)} required minLength={3} />
@@ -195,14 +226,14 @@ function NewCr({ sections, onDone }: { sections: Array<{ number: string; title: 
         <textarea rows={3} value={description} onChange={(ev) => setDescription(ev.target.value)} />
       </label>
       <label className="field">
-        Новый текст раздела
+        {draft.action === "edit" ? "Новый текст" : "Текст нового узла"}
         <textarea rows={6} value={proposed} onChange={(ev) => setProposed(ev.target.value)} required />
       </label>
       <label className="field">
         Основание — эксперимент (можно добавить позже)
         <select value={basis} onChange={(ev) => setBasis(ev.target.value)}>
           <option value="">— без основания пока —</option>
-          {expList.map((e) => (
+          {(exps.data ?? []).map((e) => (
             <option key={e.code} value={e.code}>
               {e.code} · {e.title.slice(0, 70)}
             </option>
@@ -220,7 +251,7 @@ function NewCr({ sections, onDone }: { sections: Array<{ number: string; title: 
             Закрыть
           </button>
         ) : (
-          <button type="submit" className="btn-primary" disabled={m.isPending || proposed.trim() === textOf(section).trim()}>
+          <button type="submit" className="btn-primary" disabled={m.isPending || unchanged}>
             Отправить на рецензию
           </button>
         )}
@@ -232,25 +263,146 @@ function NewCr({ sections, onDone }: { sections: Array<{ number: string; title: 
   );
 }
 
+interface TreeCtx {
+  nodes: Section[];
+  canPropose: boolean;
+  draft: Draft | null;
+  setDraft: (d: Draft | null) => void;
+  work: Map<string, { exps: string[]; hyps: string[] }>;
+  openCrs: Map<string, string[]>;
+}
+
+function NodeActions({ node, ctx }: { node: Section | null; ctx: TreeCtx }) {
+  if (!ctx.canPropose) return null;
+  const kinds = CHILD_KINDS[node?.kind ?? ""];
+  return (
+    <div className="node-actions">
+      {node && (
+        <button type="button" className="link-btn" onClick={() => ctx.setDraft({ action: "edit", node })}>
+          изменить
+        </button>
+      )}
+      {kinds.map((k) => (
+        <button key={k} type="button" className="link-btn" onClick={() => ctx.setDraft({ action: "add", parent: node, kind: k })}>
+          + {KIND_LABEL[k]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function DraftHere({ node, ctx }: { node: Section | null; ctx: TreeCtx }) {
+  const d = ctx.draft;
+  if (!d) return null;
+  const target = d.action === "edit" ? d.node.number : (d.parent?.number ?? "");
+  if (target !== (node?.number ?? "")) return null;
+  return <CrForm key={`${d.action}-${target}-${d.action === "add" ? d.kind : ""}`} draft={d} onDone={() => ctx.setDraft(null)} />;
+}
+
+function Node({ node, ctx }: { node: Section; ctx: TreeCtx }) {
+  const children = ctx.nodes.filter((n) => n.parent === node.number);
+  const sections = children.filter((n) => n.kind === "section");
+  const nested = children.filter((n) => n.kind !== "section");
+  const work = ctx.work.get(node.number);
+  const crs = ctx.openCrs.get(node.number) ?? [];
+  const hasLinks = Boolean(work?.exps.length || work?.hyps.length || crs.length);
+  const head = (
+    <>
+      <span className="mono node-num">{node.number}</span> <strong>{node.title}</strong>{" "}
+      <span className={`badge stab-${node.stability}`}>{STABILITY_LABEL[node.stability]}</span>
+    </>
+  );
+  const body = (
+    <>
+      <p className="pre-line node-text">{node.content || <span className="muted">Текста нет.</span>}</p>
+      {hasLinks && (
+        <div className="node-links muted">
+          {work?.hyps.map((h) => (
+            <Link key={h} to="/hypotheses" className="mono">
+              {h}
+            </Link>
+          ))}
+          {work?.exps.map((e) => (
+            <Link key={e} to={`/experiments/${e}`} className="mono">
+              {e}
+            </Link>
+          ))}
+          {crs.map((c) => (
+            <a key={c} href={`#cr-${c}`} className="mono">
+              {c} (открыт)
+            </a>
+          ))}
+        </div>
+      )}
+      <NodeActions node={node} ctx={ctx} />
+      <DraftHere node={node} ctx={ctx} />
+      {sections.length > 0 && (
+        <div className="node-sections">
+          {sections.map((s) => (
+            <Node key={s.number} node={s} ctx={ctx} />
+          ))}
+        </div>
+      )}
+      {nested.map((n) => (
+        <Node key={n.number} node={n} ctx={ctx} />
+      ))}
+    </>
+  );
+  if (node.kind === "section") {
+    return (
+      <section className="node node-section" aria-label={`Раздел ${node.number}`}>
+        <div className="node-head">{head}</div>
+        {body}
+      </section>
+    );
+  }
+  return (
+    <details className={`node node-${node.kind}`} open>
+      <summary className="node-head">
+        <span className="muted node-kind">{KIND_LABEL[node.kind]}</span> {head}
+      </summary>
+      {body}
+    </details>
+  );
+}
+
 export function Methodology() {
   const me = useMe();
-  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState<Draft | null>(null);
   const m = useQuery({ queryKey: ["methodology"], queryFn: getMethodology });
   const crs = useQuery({ queryKey: ["crs"], queryFn: listCrs });
   const versions = useQuery({ queryKey: ["versions"], queryFn: listVersions });
-  // Ответ может прийти не тем, что ждём (сервер старой версии), — страница не падает
-  const sections = Array.isArray(m.data?.sections) ? m.data.sections : [];
+  const exps = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
+  const hyps = useQuery({ queryKey: ["hypotheses"], queryFn: listHypotheses });
+  const nodes = Array.isArray(m.data?.sections) ? m.data.sections : [];
   const crList = Array.isArray(crs.data) ? crs.data : [];
   const versionList = Array.isArray(versions.data) ? versions.data : [];
   const canPropose = me.data?.role === "researcher" || me.data?.role === "owner";
+  // что относится к узлу: гипотезы, эксперименты, открытые CR
+  const work = new Map<string, { exps: string[]; hyps: string[] }>();
+  const slot = (n: string) => {
+    const w = work.get(n) ?? { exps: [], hyps: [] };
+    work.set(n, w);
+    return w;
+  };
+  for (const e of exps.data ?? []) if (e.methodology_node) slot(e.methodology_node).exps.push(e.code);
+  for (const h of hyps.data ?? []) if (h.methodology_node) slot(h.methodology_node).hyps.push(h.code);
+  const openCrs = new Map<string, string[]>();
+  for (const c of crList) {
+    if (c.status === "proposed" || c.status === "review") openCrs.set(c.section, [...(openCrs.get(c.section) ?? []), c.code]);
+  }
+  const ctx: TreeCtx = { nodes, canPropose, draft, setDraft, work, openCrs };
+  const common = nodes.filter((n) => !n.parent && n.kind === "section");
+  const directions = nodes.filter((n) => !n.parent && n.kind !== "section");
   return (
     <>
       <section className="page-head">
         <span className="eyebrow">МЕТОДОЛОГИЯ · ВЕРСИЯ {m.data?.version ?? "…"}</span>
         <h1 className="page-title">Методология</h1>
         <p className="lead">
-          Разделы по постановке задачи лаборатории для ИНС. Раздел меняется только через предложение изменения (CR):
-          нужно основание — завершённый эксперимент, факт или статья базы знаний — и одобряющая рецензия.
+          Постановка лаборатории: направления, варианты и задания, у каждого — свои разделы. Общие разделы действуют на
+          всю методику, раздел варианта — на все его задания. Изменение и новый узел проходят через CR: нужно основание
+          (завершённый эксперимент, факт или статья базы знаний) и одобряющая рецензия.
         </p>
         <div>
           <a className="btn-ghost" href="/api/methodology/export.docx">
@@ -263,29 +415,27 @@ export function Methodology() {
           {m.error.message}
         </p>
       )}
-      <div className="grid-2">
-        <section className="card">
-          <h2 className="h2">Разделы</h2>
-          <ol className="list">
-            {sections.map((s) => (
-              <li key={s.number}>
-                <strong>{s.title}</strong>{" "}
-                <span className={`badge stab-${s.stability}`}>{STABILITY_LABEL[s.stability]}</span>
-                <p className="muted">{s.content}</p>
-              </li>
+      <div className="methodology-layout">
+        <div className="tree">
+          <section className="card">
+            <div className="viz-head">
+              <h2 className="h2">Общие разделы</h2>
+              <NodeActions node={null} ctx={ctx} />
+            </div>
+            <DraftHere node={null} ctx={ctx} />
+            {m.isSuccess && common.length === 0 && <p className="muted">Общих разделов нет.</p>}
+            {common.map((s) => (
+              <Node key={s.number} node={s} ctx={ctx} />
             ))}
-          </ol>
-        </section>
+          </section>
+          {directions.map((d) => (
+            <div key={d.number} className="card">
+              <Node node={d} ctx={ctx} />
+            </div>
+          ))}
+        </div>
         <section className="cr-board">
           <h2 className="h2">Предложения изменений</h2>
-          {canPropose && !creating && (
-            <div>
-              <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
-                Предложить изменение
-              </button>
-            </div>
-          )}
-          {creating && <NewCr sections={sections} onDone={() => setCreating(false)} />}
           {crList.map((cr) => (
             <CrCard key={cr.code} cr={cr} role={me.data?.role} />
           ))}

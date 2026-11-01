@@ -149,7 +149,7 @@ export function Experiments() {
             <tr>
               <th scope="col">Код</th>
               <th scope="col">Эксперимент</th>
-              <th scope="col">Направление</th>
+              <th scope="col">Задание методики</th>
               <th scope="col">Статус</th>
               <th scope="col">Данные</th>
               <th scope="col">Итог</th>
@@ -164,7 +164,7 @@ export function Experiments() {
                   </Link>
                 </td>
                 <td>{e.title}</td>
-                <td>{e.direction}</td>
+                <td className="mono">{e.methodology_node || e.direction || "—"}</td>
                 <td>
                   <span className={`badge ${BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>
                 </td>
@@ -263,7 +263,11 @@ export function Experiment() {
       <div className="muted">
         <Link to="/experiments">Эксперименты</Link> / <span className="mono">{e.code}</span>
       </div>
-      <Head eyebrow={`${e.code} · ${e.direction || "направление не указано"}`} title={e.title} lead={e.data_summary} />
+      <Head
+        eyebrow={`${e.code} · ${e.methodology_node ? `методика ${e.methodology_node}` : e.direction || "задание методики не указано"}`}
+        title={e.title}
+        lead={e.data_summary}
+      />
       <div className="exp-actions">
         <span>
           <span className={`badge ${BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>{" "}

@@ -26,6 +26,9 @@ class Hypothesis(Base):
     decided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     experiment_id: Mapped[int | None] = mapped_column(ForeignKey("experiments.id"), nullable=True)
     author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # узел методики (задание, вариант или направление), к которому относится
+    methodology_node_id: Mapped[int | None] = mapped_column(ForeignKey("methodology_sections.id"),
+                                                            nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
