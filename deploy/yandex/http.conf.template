@@ -1,0 +1,12 @@
+# Порт 80: проверка домена Let's Encrypt, всё остальное — на HTTPS
+server {
+  listen 80;
+
+  location /.well-known/acme-challenge/ {
+    root /var/www/acme;
+  }
+
+  location / {
+    return 301 https://$host$request_uri;
+  }
+}

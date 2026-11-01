@@ -1,0 +1,11 @@
+# Дополнение к deploy/docker-compose.yml для сервера в Yandex Cloud:
+#   docker compose -f deploy/docker-compose.yml -f deploy/yandex/docker-compose.yandex.yml up -d --build
+# Пути здесь считаются от папки deploy/ (папка первого файла).
+services:
+  nginx:
+    ports:
+      # HTTP_PORT=443 в .env даёт "443:443"; порт 80 — для Let's Encrypt и перенаправления на HTTPS
+      - "80:80"
+    volumes:
+      - ./yandex/http.conf.template:/etc/nginx/templates/http.conf.template:ro
+      - /var/www/acme:/var/www/acme:ro
