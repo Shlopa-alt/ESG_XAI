@@ -15,6 +15,7 @@ import {
 } from "../api/hypotheses";
 import { useMe } from "../auth/useAuth";
 import { NodeSelect } from "../components/NodeSelect";
+import { ProposalPanel } from "../components/ProposalPanel";
 
 /** Опора, переданная со страницы базы знаний («Предложить гипотезу по этой статье»). */
 export interface ProposeState {
@@ -203,10 +204,11 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
           </button>
         </div>
       )}
+      <ProposalPanel code={h.code} status={h.status} canDecide={canTest} />
       {h.status === "accepted" && canTest && (
         <div className="review-form">
-          <button type="button" className="btn-primary" onClick={() => start.mutate()} disabled={start.isPending}>
-            Создать эксперимент
+          <button type="button" className="btn-ghost" onClick={() => start.mutate()} disabled={start.isPending}>
+            Создать эксперимент вручную
           </button>
         </div>
       )}

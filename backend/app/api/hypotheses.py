@@ -12,8 +12,10 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_user, require_role
 from app.api.experiments import node_id, node_number
 from app.db import get_db
-from app.models import Experiment, ExperimentLink, Hypothesis, HypothesisRef, KbRef, User
+from app.models import Experiment, Hypothesis, HypothesisRef, KbRef, User
 from app.services.codes import next_code
+from app.services.qwen_experiments import experiment_from_hypothesis
+from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/hypotheses", tags=["hypotheses"])
 
@@ -162,6 +164,9 @@ def decide(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "Отклоняя гипотезу, напишите почему — это увидит автор")
     h.status, h.decision_note, h.decided_by = body.status, body.note, user.id
+    if body.status == "accepted":
+        # приняли к проверке — Qwen предложит эксперимент: метод, срез, параметры
+        enqueue(db, "experiment", {"hypothesis": h.code}, trigger="hypothesis", user_id=user.id)
     db.commit()
     return _out(db, h)
 
@@ -174,17 +179,6 @@ def start_experiment(
     h = _get(db, code)
     if h.status != "accepted":
         raise HTTPException(status.HTTP_409_CONFLICT, "Проверять экспериментом можно принятую гипотезу")
-    exp = Experiment(code=next_code(db, Experiment.code, "EXP", 3), title=h.title,
-                     hypothesis=h.statement, direction=h.direction, status="planned",
-                     author_id=user.id, config={}, setup=[], results=[], limitations=[],
-                     reproducibility=[], data_summary="", method="",
-                     methodology_node_id=h.methodology_node_id)
-    db.add(exp)
-    db.flush()
-    for (ref_id,) in db.execute(
-        select(HypothesisRef.kb_ref_id).where(HypothesisRef.hypothesis_id == h.id)
-    ):
-        db.add(ExperimentLink(experiment_id=exp.id, kb_ref_id=ref_id, relation="motivated_by"))
-    h.experiment_id, h.status = exp.id, "testing"
+    experiment_from_hypothesis(db, h, user.id)
     db.commit()
     return _out(db, h)

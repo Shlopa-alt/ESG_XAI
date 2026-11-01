@@ -18,6 +18,7 @@ from app.db import get_db
 from app.models import Dataset, DatasetSnapshot, Experiment, Run, User
 from app.services import run_queue
 from app.services.report import Report, merge_run_report
+from app.services.data_files import table_columns, to_container
 from app.services.run_templates import TEMPLATES, ParamError, check_params, script_args
 
 router = APIRouter(tags=["runs"])
@@ -85,6 +86,7 @@ class TemplateOut(BaseModel):
     key: str
     title: str
     description: str
+    scope: str  # generic — любой подходящий срез и эксперимент; replication — повтор своего эксперимента
     experiment: str
     dataset: str
     resource: str
@@ -97,6 +99,12 @@ class LaunchIn(BaseModel):
     template: str
     snapshot_id: int
     params: dict[str, Any] = {}
+    experiment: str = ""  # общему методу — обязательно: в реестр какого эксперимента запуск
+
+
+class ColumnsOut(BaseModel):
+    columns: list[str]
+    numeric: list[str]
 
 
 class WorkerReport(BaseModel):
@@ -224,21 +232,111 @@ def experiment_runs(code: str, db: Annotated[Session, Depends(get_db)]) -> list[
 # --- запуск из формы ---
 
 
+def snapshot_table(db: Session, settings: Settings, snap: DatasetSnapshot,
+                   user: User | None) -> tuple[list[str], set[str]]:
+    """Столбцы среза из его файла (NDA — только тем, кому видны файлы)."""
+    ds = db.get(Dataset, snap.dataset_id)
+    if ds is not None and ds.access_level == "nda" and (user is None or user.role != "owner"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Файлы датасета под NDA — только для допущенных")
+    path = to_container(settings, snap.storage_path) if snap.storage_path else None
+    if path is None or not path.is_file():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Файл среза на сервере не найден")
+    try:
+        return table_columns(path)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
 @router.get("/run-templates", response_model=list[TemplateOut], dependencies=[Depends(current_user)])
 def list_templates(db: Annotated[Session, Depends(get_db)]) -> list[TemplateOut]:
+    """Библиотека методов: общие — со всеми срезами в CSV, повторы — со срезами своего датасета."""
+    rows = db.execute(select(DatasetSnapshot, Dataset.code).join(Dataset)
+                      .order_by(Dataset.code, DatasetSnapshot.id.desc())).all()
     out = []
     for t in TEMPLATES.values():
-        snaps = db.scalars(select(DatasetSnapshot).join(Dataset)
-                           .where(Dataset.code == t.dataset).order_by(DatasetSnapshot.id.desc()))
+        snaps = [(s, code) for s, code in rows
+                 if (code == t.dataset if t.scope == "replication"
+                     else s.storage_path.lower().endswith((".csv", ".tsv", ".txt")))]
         out.append(TemplateOut(
-            key=t.key, title=t.title, description=t.description, experiment=t.experiment,
+            key=t.key, title=t.title, description=t.description, scope=t.scope, experiment=t.experiment,
             dataset=t.dataset, resource=t.resource, limit_min=t.limit_min,
-            params=[{"name": p.name, "label": p.label, "default": p.default, "min": p.min,
-                     "max": p.max} for p in t.params],
-            snapshots=[{"id": s.id, "version": s.version, "sha256": s.sha256,
-                        "row_count": s.row_count} for s in snaps],
+            params=[{"name": p.name, "label": p.label, "default": p.default, "min": p.min, "max": p.max,
+                     "kind": p.kind, "numeric": p.numeric, "required": p.required, "hint": p.hint}
+                    for p in t.params],
+            snapshots=[{"id": s.id, "dataset": code, "version": s.version, "sha256": s.sha256,
+                        "row_count": s.row_count} for s, code in snaps],
         ))
     return out
+
+
+@router.get("/snapshots/{snapshot_id}/columns", response_model=ColumnsOut)
+def snapshot_columns(snapshot_id: int, db: Annotated[Session, Depends(get_db)],
+                     settings: Annotated[Settings, Depends(get_settings)],
+                     user: Annotated[User, Depends(current_user)]) -> ColumnsOut:
+    snap = db.get(DatasetSnapshot, snapshot_id)
+    if snap is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет среза №{snapshot_id}")
+    columns, numeric = snapshot_table(db, settings, snap, user)
+    return ColumnsOut(columns=columns, numeric=[c for c in columns if c in numeric])
+
+
+def start_run(db: Session, settings: Settings, user: User, template: str, snapshot_id: int,
+              params: dict[str, Any], experiment: str = "") -> Run:
+    """Запуск метода библиотеки: метод, срез, эксперимент и параметры проверены — задача в очередь
+    исполнителя. Общий метод — на любом срезе CSV и в указанном эксперименте; повтор — на срезе
+    своего датасета и в своём эксперименте."""
+    t = TEMPLATES.get(template)
+    if t is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет метода {template}")
+    snap = db.get(DatasetSnapshot, snapshot_id)
+    ds = db.get(Dataset, snap.dataset_id) if snap else None
+    if snap is None or ds is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Нет среза №{snapshot_id}")
+    if t.scope == "replication" and ds.code != t.dataset:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"Срез №{snapshot_id} — не срез датасета {t.dataset}")
+    if not snap.storage_path:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "У среза не записан путь к файлу — запустить нельзя")
+    code = t.experiment if t.scope == "replication" else experiment
+    if not code:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Укажите эксперимент, в реестр которого идёт запуск")
+    exp = db.scalar(select(Experiment).where(Experiment.code == code))
+    if exp is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет эксперимента {code}")
+    columns: list[str] | None = None
+    numeric: set[str] | None = None
+    if any(p.kind != "int" for p in t.params):
+        columns, numeric = snapshot_table(db, settings, snap, user)
+    try:
+        checked = check_params(t, params, columns, numeric)
+    except ParamError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    if t.resource == "gpu":
+        busy = db.scalar(select(func.count()).select_from(Run).where(
+            Run.created_by == user.id, Run.resource == "gpu", Run.status.in_(("queued", "running"))))
+        if (busy or 0) >= settings.gpu_runs_per_user:
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                "На видеокарте уже идёт ваш запуск — дождитесь его или остановите")
+    run = Run(experiment_id=exp.id, status="queued", resource=t.resource, template=t.key,
+              config={"params": checked, "limit_min": t.limit_min}, seeds={},
+              dataset_snapshot_id=snap.id, created_by=user.id)
+    db.add(run)
+    db.flush()
+    job = {
+        "run_id": run.id, "experiment": exp.code, "dataset": ds.code,
+        "workdir": t.workdir, "script": t.script, "args": script_args(t, checked, exp.code, ds.code),
+        "params": checked, "snapshot_path": snap.storage_path, "snapshot_sha256": snap.sha256,
+        "dataset_dir_up": t.dataset_dir_up, "limit_min": t.limit_min, "template": t.key,
+    }
+    try:
+        run.task_id = run_queue.enqueue(settings.redis_url, run.id, job, t.resource)
+    except Exception as exc:  # noqa: BLE001 — брокер недоступен: запуска нет
+        db.rollback()
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            f"Очередь запусков недоступна: {exc}") from exc
+    return run
 
 
 @router.post("/runs", response_model=RunOut, status_code=status.HTTP_201_CREATED)
@@ -248,48 +346,8 @@ def launch(
     settings: Annotated[Settings, Depends(get_settings)],
     user: Annotated[User, Researcher],
 ) -> RunOut:
-    """Запуск по шаблону: проверка параметров и среза, задача в очередь исполнителя."""
-    t = TEMPLATES.get(body.template)
-    if t is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет шаблона {body.template}")
-    try:
-        params = check_params(t, body.params)
-    except ParamError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
-    snap = db.get(DatasetSnapshot, body.snapshot_id)
-    ds = db.get(Dataset, snap.dataset_id) if snap else None
-    if snap is None or ds is None or ds.code != t.dataset:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"Срез №{body.snapshot_id} — не срез датасета {t.dataset}")
-    if not snap.storage_path:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "У среза не записан путь к файлу — запустить нельзя")
-    exp = db.scalar(select(Experiment).where(Experiment.code == t.experiment))
-    if exp is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет эксперимента {t.experiment}")
-    if t.resource == "gpu":
-        busy = db.scalar(select(func.count()).select_from(Run).where(
-            Run.created_by == user.id, Run.resource == "gpu", Run.status.in_(("queued", "running"))))
-        if (busy or 0) >= settings.gpu_runs_per_user:
-            raise HTTPException(status.HTTP_409_CONFLICT,
-                                "На видеокарте уже идёт ваш запуск — дождитесь его или остановите")
-    run = Run(experiment_id=exp.id, status="queued", resource=t.resource, template=t.key,
-              config={"params": params, "limit_min": t.limit_min}, seeds={},
-              dataset_snapshot_id=snap.id, created_by=user.id)
-    db.add(run)
-    db.flush()
-    job = {
-        "run_id": run.id, "experiment": t.experiment, "dataset": t.dataset,
-        "workdir": t.workdir, "script": t.script, "args": script_args(params), "params": params,
-        "snapshot_path": snap.storage_path, "snapshot_sha256": snap.sha256,
-        "dataset_dir_up": t.dataset_dir_up, "limit_min": t.limit_min, "template": t.key,
-    }
-    try:
-        run.task_id = run_queue.enqueue(settings.redis_url, run.id, job, t.resource)
-    except Exception as exc:  # noqa: BLE001 — брокер недоступен: запуска нет
-        db.rollback()
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
-                            f"Очередь запусков недоступна: {exc}") from exc
+    """Запуск из формы: метод библиотеки, срез, параметры (у общего метода — и эксперимент)."""
+    run = start_run(db, settings, user, body.template, body.snapshot_id, body.params, body.experiment)
     db.commit()
     return _out(db, run)
 

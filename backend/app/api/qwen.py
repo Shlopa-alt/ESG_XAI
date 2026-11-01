@@ -24,7 +24,7 @@ from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import QwenJob, User
 from app.models.qwen_job import QWEN_KINDS
-from app.services import qwen_hypotheses
+from app.services import qwen_experiments, qwen_hypotheses
 from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/qwen", tags=["qwen"])
@@ -172,6 +172,20 @@ def worker_context(db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
     return qwen_hypotheses.context(db)
 
 
+class ExperimentContextIn(BaseModel):
+    hypothesis: str
+
+
+@router.post("/worker/experiment-context", dependencies=[Worker])
+def worker_experiment_context(body: ExperimentContextIn, db: Annotated[Session, Depends(get_db)],
+                              settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, Any]:
+    """Что нужно Qwen для предложения эксперимента: гипотеза, задание, методы, срезы со столбцами."""
+    try:
+        return qwen_experiments.context(db, settings, body.hypothesis)
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
 @router.post("/worker/next", response_model=JobOut, dependencies=[Worker],
              responses={204: {"description": "очередь пуста"}})
 def next_job(db: Annotated[Session, Depends(get_db)]) -> JobOut | Response:
@@ -185,7 +199,8 @@ def next_job(db: Annotated[Session, Depends(get_db)]) -> JobOut | Response:
 
 
 @router.post("/worker/{job_id}/result", response_model=JobOut, dependencies=[Worker])
-def job_result(job_id: int, body: JobResult, db: Annotated[Session, Depends(get_db)]) -> JobOut:
+def job_result(job_id: int, body: JobResult, db: Annotated[Session, Depends(get_db)],
+               settings: Annotated[Settings, Depends(get_settings)]) -> JobOut:
     job = db.get(QwenJob, job_id)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет задачи №{job_id}")
@@ -200,5 +215,10 @@ def job_result(job_id: int, body: JobResult, db: Annotated[Session, Depends(get_
                       "proposed": len(body.result.get("hypotheses") or []), "created": created}
         job.message = (f"Предложено гипотез: {len(created)} — {', '.join(created)}" if created
                        else "Новых гипотез нет: опор не нашлось или по заданиям уже ждут рецензии")
+    if job.kind == "experiment" and body.status == "done":
+        p = qwen_experiments.create_from_result(db, settings, job, body.result)
+        job.message = (f"Предложен эксперимент для {job.payload.get('hypothesis')}: «{p.title}»"
+                       + (f" — поправить: {p.problems}" if p.problems else "") if p is not None
+                       else "Гипотезу уже проверяют или отклонили — предложение не нужно")
     db.commit()
     return _out(db, job)

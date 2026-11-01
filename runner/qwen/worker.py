@@ -16,6 +16,8 @@ vLLM (`docker compose --profile llm up -d llm` в KBRAG) и дождаться �
   hypotheses — по каждому заданию методики: фрагменты статей и факты графа из KBRAG + датасеты и
                методы платформы → Qwen предлагает проверяемые гипотезы со ссылками на фрагменты;
                платформа проверяет опоры и ставит гипотезы на рецензию
+  experiment — по принятой гипотезе: метод из библиотеки, срез, параметры (столбцы), протокол и что
+               подтвердит или опровергнет гипотезу; платформа проверяет и показывает человеку
 
 Только стандартная библиотека. Настройки — deploy/.env (QWEN_TOKEN, HTTP_PORT, KBRAG_TOKEN),
 KBRAG_HOME, KBRAG_DSN, KBRAG_WEB (веб-сервер KBRAG, по умолчанию http://127.0.0.1:8000).
@@ -441,10 +443,67 @@ def job_hypotheses(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     return {"hypotheses": out, "skipped": skipped, "rejected": rejected, "targets": len(context["targets"])}
 
 
+EXP_SYSTEM = """Ты — исследователь лаборатории ИИ в ESG-управлении. Гипотезу приняли к проверке; предложи
+эксперимент, который её подтвердит или опровергнет.
+
+Правила:
+1. "method" — ключ метода ТОЛЬКО из библиотеки. Повтор (scope replication) — только на своём датасете.
+   Если ни один метод не проверяет гипотезу, верни "method": "" и в "rationale" опиши, какой метод нужен.
+2. "snapshot_id" — номер среза из списка, на котором есть нужные показатели (смотри числовые столбцы);
+   нет подходящего — 0, и в "rationale" напиши, каких данных не хватает.
+3. "params" — параметры выбранного метода: имена столбцов пиши ТОЧНО как в списке столбцов среза;
+   числа — в границах метода. Целевой показатель не может быть признаком.
+4. "setup" — 3–6 коротких шагов протокола, с учётом раздела методики «Проверка моделей» (отложенная
+   выборка, разбиения, плацебо, сравнение с простым прогнозом, контроль размера и отрасли).
+5. "expected" — какой результат подтвердит гипотезу и какой опровергнет (с числами: знак, порог R² или ρ).
+6. Пиши по-русски; имена столбцов — как в данных.
+Ответ — только JSON по схеме."""
+
+EXP_SCHEMA = {"type": "object", "required": ["title", "method", "snapshot_id", "params", "setup", "expected",
+                                             "rationale"], "properties": {
+    "title": _S, "method": _S, "snapshot_id": _I, "params": {"type": "object"},
+    "setup": {"type": "array", "items": _S, "maxItems": 6}, "expected": _S, "rationale": _S}}
+
+
+def _exp_prompt(c: dict[str, Any]) -> str:
+    h = c["hypothesis"]
+    refs = "\n".join(f"- «{r['quote'][:400]}» («{r['title']}»)" for r in h["refs"]) or "- нет"
+    task = f"{c['task']['number']} {c['task']['title']}: {c['task']['content'][:900]}" if c["task"] else "не указано"
+    sections = "\n".join(f"- {s['number']} {s['title']}: {s['content'][:600]}" for s in c["sections"]) or "- нет"
+    methods = "\n".join(
+        f"- {m['key']} ({m['scope']}{', датасет ' + m['dataset'] if m['dataset'] else ''}): {m['title']}. "
+        f"{m['description']} Параметры: " + "; ".join(
+            f"{p['name']} ({p['kind']}{', ' + str(p['min']) + '…' + str(p['max']) if p['kind'] == 'int' else ''}"
+            f"{', по умолчанию ' + json.dumps(p['default'], ensure_ascii=False) if p['default'] not in (None, '', []) else ''})"
+            for p in m["params"]) for m in c["methods"])
+    snaps = "\n".join(
+        f"- срез {s['id']}: {s['dataset']} «{s['title']}», версия {s['version']}, строк {s['rows'] or '?'}. "
+        f"{s['description'][:300]} Числовые столбцы: "
+        + (", ".join(s["numeric_columns"]) if s["table"] else "файл не таблица CSV — общие методы его не читают")
+        for s in c["snapshots"])
+    return (f"ГИПОТЕЗА {h['code']}: {h['title']}\n{h['statement']}\nОбоснование: {h['rationale'][:800]}\n"
+            f"Qwen ранее предлагала проверить: {json.dumps(h['suggested'], ensure_ascii=False)}\n\n"
+            f"ОПОРЫ ГИПОТЕЗЫ:\n{refs}\n\nЗАДАНИЕ МЕТОДИКИ: {task}\n\nРАЗДЕЛЫ МЕТОДИКИ:\n{sections}\n\n"
+            f"БИБЛИОТЕКА МЕТОДОВ:\n{methods}\n\nСРЕЗЫ ДАННЫХ:\n{snaps}\n\nПредложи эксперимент по правилам.")
+
+
+def job_experiment(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Предложение эксперимента по принятой гипотезе: метод, срез, параметры, протокол."""
+    code = str(job["payload"].get("hypothesis") or "")
+    c = ctx["platform"].post("experiment-context", {"hypothesis": code})[1]
+    proposal = ask_json(_exp_prompt(c), 1500, EXP_SYSTEM, EXP_SCHEMA)
+    if not proposal.get("snapshot_id"):
+        proposal["snapshot_id"] = None
+    log(f"  {code}: {proposal.get('method') or 'без метода'} на срезе {proposal.get('snapshot_id')}, "
+        f"параметры {json.dumps(proposal.get('params'), ensure_ascii=False)[:200]}")
+    return {"proposal": proposal}
+
+
 HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]] = {
     "ping": job_ping,
     "graph": job_graph,
     "hypotheses": job_hypotheses,
+    "experiment": job_experiment,
 }
 
 
@@ -456,6 +515,8 @@ def describe(kind: str, result: dict[str, Any]) -> str:
         return "Новых фрагментов нет — граф уже полный"
     if kind == "ping":
         return f"Модель ответила за {result.get('seconds')} с: {result.get('answer')}"
+    if kind == "experiment":
+        return "Предложение эксперимента передано платформе"
     if kind == "hypotheses":
         return f"Qwen предложила {len(result.get('hypotheses') or [])} (платформа проверит опоры)"
     return ""

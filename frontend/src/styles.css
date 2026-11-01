@@ -648,3 +648,10 @@ a.btn-ghost.active { border-color: var(--accent); }
 .node-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0; }
 .node-links { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; }
 .pre-line { white-space: pre-line; }
+
+/* --- предложение эксперимента, параметры методов --- */
+.proposal { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 8px; border: 1px dashed var(--border); }
+.columns-pick { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.columns-pick legend { padding: 0 4px; }
+.columns-list { display: flex; flex-wrap: wrap; gap: 4px 14px; max-height: 180px; overflow-y: auto; font-size: 14px; }
+.params-editor { display: flex; flex-direction: column; gap: 8px; }

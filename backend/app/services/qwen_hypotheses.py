@@ -65,8 +65,8 @@ def context(db: Session) -> dict[str, Any]:
         snaps = db.scalar(select(func.count()).select_from(DatasetSnapshot).where(DatasetSnapshot.dataset_id == d.id))
         datasets.append({"code": d.code, "title": d.title, "description": d.description[:600],
                          "snapshots": snaps or 0})
-    methods = [{"key": t.key, "title": t.title, "description": t.description, "dataset": t.dataset}
-               for t in TEMPLATES.values()]
+    methods = [{"key": t.key, "title": t.title, "description": t.description,
+                "dataset": t.dataset or "любой подходящий срез (CSV)"} for t in TEMPLATES.values()]
     return {"targets": out_targets, "datasets": datasets, "methods": methods,
             "limits": {"pending": PENDING_LIMIT, "per_run": PER_RUN}}
 
@@ -102,8 +102,8 @@ def create_from_result(db: Session, job: QwenJob, result: dict[str, Any]) -> lis
         dataset = dataset if dataset in datasets else ""
         method = _clean(item.get("method"), 300)
         template = TEMPLATES.get(method)
-        if template is not None and template.dataset != dataset:
-            method = ""  # метод из библиотеки считается только на своём датасете
+        if template is not None and template.scope == "replication" and template.dataset != dataset:
+            method = ""  # повтор считается только на своём датасете
         h = Hypothesis(
             code=next_code(db, Hypothesis.code, "H", 3), title=title, statement=statement,
             rationale=_clean(item.get("rationale"), 3000), direction="Напр. 2" if number.startswith("Н2") else "Напр. 1",

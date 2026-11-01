@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { listExperiments } from "../api/experiments";
 import { useMe } from "../auth/useAuth";
+import { defaults, type MethodParam, ParamsEditor, type ParamValue } from "../components/ParamsEditor";
 
 export type RunStatus = "queued" | "running" | "done" | "failed" | "stopped";
 
@@ -12,7 +14,7 @@ export interface RunRow {
   status: RunStatus;
   resource: string;
   template: string;
-  config: { params?: Record<string, number>; limit_min?: number };
+  config: { params?: Record<string, unknown>; limit_min?: number };
   runner_commit: string;
   dataset: string;
   dataset_sha256: string;
@@ -36,12 +38,13 @@ export interface RunTemplate {
   key: string;
   title: string;
   description: string;
+  scope: "generic" | "replication";
   experiment: string;
   dataset: string;
   resource: string;
   limit_min: number;
-  params: Array<{ name: string; label: string; default: number; min: number; max: number }>;
-  snapshots: Array<{ id: number; version: string; sha256: string; row_count: number | null }>;
+  params: MethodParam[];
+  snapshots: Array<{ id: number; dataset: string; version: string; sha256: string; row_count: number | null }>;
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -58,8 +61,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const listRuns = () => call<RunRow[]>("/runs");
 export const experimentRuns = (code: string) => call<RunRow[]>(`/experiments/${code}/runs`);
 const getRun = (id: number) => call<RunRow>(`/runs/${id}`);
-const listTemplates = () => call<RunTemplate[]>("/run-templates");
-const launch = (body: { template: string; snapshot_id: number; params: Record<string, number> }) =>
+export const listTemplates = () => call<RunTemplate[]>("/run-templates");
+const launch = (body: { template: string; snapshot_id: number; params: Record<string, ParamValue>; experiment?: string }) =>
   call<RunRow>("/runs", { method: "POST", body: JSON.stringify(body) });
 const stopRun = (id: number) => call<RunRow>(`/runs/${id}/stop`, { method: "POST" });
 
@@ -144,14 +147,16 @@ export function RunsTable({ runs }: { runs: RunRow[] }) {
 function LaunchForm({ templates }: { templates: RunTemplate[] }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const exps = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
   const [key, setKey] = useState(templates[0]?.key ?? "");
   const t = templates.find((x) => x.key === key);
   const [snapshot, setSnapshot] = useState<number | "">("");
-  const [params, setParams] = useState<Record<string, string>>({});
+  const [experiment, setExperiment] = useState("");
+  const [params, setParams] = useState<Record<string, ParamValue>>({});
   useEffect(() => {
-    // новый шаблон — его срезы и значения по умолчанию
+    // новый метод — его срезы и значения по умолчанию
     setSnapshot(t?.snapshots[0]?.id ?? "");
-    setParams(Object.fromEntries((t?.params ?? []).map((p) => [p.name, String(p.default)])));
+    setParams(defaults(t?.params ?? []));
   }, [t]);
   const m = useMutation({
     mutationFn: launch,
@@ -163,20 +168,18 @@ function LaunchForm({ templates }: { templates: RunTemplate[] }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (!t || snapshot === "") return;
-    m.mutate({
-      template: t.key,
-      snapshot_id: snapshot,
-      params: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, Number(v)])),
-    });
+    m.mutate({ template: t.key, snapshot_id: snapshot, params, ...(t.scope === "generic" ? { experiment } : {}) });
   };
+  const generic = t?.scope === "generic";
   return (
     <form className="card launch-form" onSubmit={submit}>
       <h2 className="h2">Новый запуск</h2>
       <label className="field">
-        Расчёт
+        Метод из библиотеки
         <select value={key} onChange={(e) => setKey(e.target.value)}>
           {templates.map((x) => (
             <option key={x.key} value={x.key}>
+              {x.scope === "replication" ? "Повтор · " : ""}
               {x.title}
             </option>
           ))}
@@ -185,39 +188,43 @@ function LaunchForm({ templates }: { templates: RunTemplate[] }) {
       {t && (
         <>
           <p className="muted">
-            {t.description} Эксперимент{" "}
-            <Link to={`/experiments/${t.experiment}`} className="mono">
-              {t.experiment}
-            </Link>
-            , ресурс {t.resource === "gpu" ? "видеокарта" : "процессор"}, лимит {t.limit_min} мин.
+            {t.description}{" "}
+            {t.scope === "replication" && (
+              <>
+                Эксперимент{" "}
+                <Link to={`/experiments/${t.experiment}`} className="mono">
+                  {t.experiment}
+                </Link>
+                ,{" "}
+              </>
+            )}
+            ресурс {t.resource === "gpu" ? "видеокарта" : "процессор"}, лимит {t.limit_min} мин.
           </p>
+          {generic && (
+            <label className="field">
+              Эксперимент — в чей реестр запуск
+              <select value={experiment} onChange={(e) => setExperiment(e.target.value)} required>
+                <option value="">— выберите эксперимент —</option>
+                {(exps.data ?? []).map((x) => (
+                  <option key={x.code} value={x.code}>
+                    {x.code} · {x.title.slice(0, 80)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="field">
-            Срез данных {t.dataset}
+            Срез данных{t.scope === "replication" ? ` ${t.dataset}` : ""}
             <select value={snapshot} onChange={(e) => setSnapshot(Number(e.target.value))} required>
               {t.snapshots.length === 0 && <option value="">срезов нет — сначала зафиксируйте срез</option>}
               {t.snapshots.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.version} · sha256 {s.sha256.slice(0, 12)}…{s.row_count ? ` · ${s.row_count} строк` : ""}
+                  {s.dataset} · {s.version} · sha256 {s.sha256.slice(0, 12)}…{s.row_count ? ` · ${s.row_count} строк` : ""}
                 </option>
               ))}
             </select>
           </label>
-          <div className="form-grid">
-            {t.params.map((p) => (
-              <label key={p.name} className="field">
-                {p.label}
-                <input
-                  type="number"
-                  min={p.min}
-                  max={p.max}
-                  step={1}
-                  required
-                  value={params[p.name] ?? ""}
-                  onChange={(e) => setParams({ ...params, [p.name]: e.target.value })}
-                />
-              </label>
-            ))}
-          </div>
+          <ParamsEditor params={t.params} snapshotId={snapshot === "" ? null : snapshot} value={params} onChange={setParams} idPrefix="launch" />
         </>
       )}
       {m.isError && (
@@ -226,7 +233,7 @@ function LaunchForm({ templates }: { templates: RunTemplate[] }) {
         </p>
       )}
       <div>
-        <button type="submit" className="btn-primary" disabled={m.isPending || !t || snapshot === ""}>
+        <button type="submit" className="btn-primary" disabled={m.isPending || !t || snapshot === "" || (generic && !experiment)}>
           {m.isPending ? "Ставлю в очередь…" : "Запустить"}
         </button>
       </div>
@@ -375,7 +382,7 @@ export function RunDetail() {
   const pct = stream.progress ? Math.round((100 * stream.progress.done) / stream.progress.total) : null;
   const facts: Array<[string, ReactNode]> = [
     ["Шаблон", r.template || "запуск вручную (run.json)"],
-    ...Object.entries(params).map(([k, v]): [string, ReactNode] => [k, v]),
+    ...Object.entries(params).map(([k, v]): [string, ReactNode] => [k, Array.isArray(v) ? v.join(", ") : String(v)]),
     ["Срез данных", r.dataset ? `${r.dataset}@${short(r.dataset_sha256, 12)}` : "—"],
     ["Коммит", r.runner_commit || "—"],
     ["Окружение", r.python ? `python ${r.python} · lock ${short(r.env_lock_sha256, 12)}` : "—"],
