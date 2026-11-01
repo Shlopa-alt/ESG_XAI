@@ -7,7 +7,10 @@
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "Запустите через sudo"; exit 1; }
 PC_ID="${1:?укажите ID Syncthing компьютера}"
-CONFIG=$(ls /root/.local/state/syncthing/config.xml /root/.config/syncthing/config.xml 2>/dev/null | head -1)
+CONFIG=""
+for c in /root/.local/state/syncthing/config.xml /root/.config/syncthing/config.xml; do
+  [[ -f "$c" ]] && { CONFIG="$c"; break; }
+done
 [[ -n "$CONFIG" ]] || { echo "Нет config.xml Syncthing — запущен ли syncthing@root?"; exit 1; }
 
 PC_ID="$PC_ID" API_KEY=$(grep -oP '<apikey>\K[^<]+' "$CONFIG") python3 - <<'EOF'
