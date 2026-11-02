@@ -25,7 +25,15 @@ WG_PORT=51820
 [[ $EUID -eq 0 ]] || { echo "Запустите через sudo"; exit 1; }
 # Исполнитель на компьютере проверяет сертификат сайта — нужен домен и сертификат Let's Encrypt.
 # Своего домена нет — подойдёт <публичный IP>.sslip.io (например 51.250.1.2.sslip.io)
+# Повторный запуск (обновление) — домен и email из первого запуска
+SITE_FILE=/root/esg-pc/site.env
+if [[ -z "$DOMAIN" && -f "$SITE_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$SITE_FILE"
+fi
 [[ -n "$DOMAIN" && -n "$EMAIL" ]] || { echo "Укажите DOMAIN и EMAIL (без домена: DOMAIN=<IP>.sslip.io)"; exit 1; }
+mkdir -p /root/esg-pc && chmod 700 /root/esg-pc
+printf 'DOMAIN=%q\nEMAIL=%q\n' "$DOMAIN" "$EMAIL" > "$SITE_FILE" && chmod 600 "$SITE_FILE"
 
 log() { printf '\n==> %s\n' "$*"; }
 rnd() { openssl rand -hex 32; }
