@@ -160,7 +160,7 @@ def approve(rid: int, db: Annotated[Session, Depends(get_db)], settings: Annotat
     imp = KbImport(kb_path=KB_BRANCH, source="report", filename=f"{e.get('code', 'EXP')}-report-v{r.version}.pdf",
                    sha256=hashlib.sha256(pdf).hexdigest(), bytes_len=len(pdf),
                    title=f"Отчёт об эксперименте {e.get('code', '')}: {e.get('title', '')}"[:1024],
-                   year=datetime.now(UTC).year, authors=["Лаборатория ИИ в ESG-управлении (НИЦ ИИ, Университет «Дубна»)"],
+                   year=datetime.now(UTC).year, authors=["НИЦ ИИ, Университет «Дубна»", "Лаборатория технологий ИНС для управления бизнесом в формате ESG"],
                    status="queued", created_by=user.id)
     _store(db, settings, imp, pdf, {"title": imp.title, "year": imp.year, "authors": imp.authors,
                                     "journal": "Отчёты экспериментов ESG Open Research"})

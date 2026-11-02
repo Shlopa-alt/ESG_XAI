@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import type { User } from "../api/auth";
 import { useLogout } from "../auth/useAuth";
+import { ORG, WITH_LAB } from "../org";
 
 const NAV = [
   { to: "/", label: "Обзор", end: true },
@@ -71,7 +72,8 @@ export function Layout({ user }: { user: User }) {
           </svg>
           <div style={{ display: "flex", flexDirection: "column" }}>
             <span className="brand-name">ESG Open Research</span>
-            <span className="brand-sub">НИЦ ИИ · Университет «Дубна»</span>
+            <span className="brand-sub">{ORG}</span>
+            <span className="brand-sub">{WITH_LAB}</span>
           </div>
         </div>
         <div className="nav">

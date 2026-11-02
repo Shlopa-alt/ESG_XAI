@@ -70,6 +70,7 @@ def blocks(r: dict[str, Any]) -> list[tuple[str, Any]]:
     out: list[tuple[str, Any]] = [
         ("title", f"Отчёт об эксперименте {e.get('code', '')} · версия {r['version']}"),
         ("p", e.get("title", "")),
+        ("muted", "НИЦ ИИ · Университет «Дубна» совместно с Лабораторией технологий ИНС для управления бизнесом в формате ESG"),
         ("muted", f"Статус: {STATUS.get(r['status'], r['status'])}"
                   + (f" ({r['reviewer']})" if r.get("reviewer") else "")
                   + f". Текст интерпретации подготовила Qwen3-14B по данным расчёта; цифры, таблицы и графики — "

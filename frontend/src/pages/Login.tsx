@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 
 import { useLogin } from "../auth/useAuth";
+import { ORG, WITH_LAB } from "../org";
 
 export function Login() {
   const [loginName, setLoginName] = useState("");
@@ -16,8 +17,9 @@ export function Login() {
     <div className="login-wrap">
       <form className="card login-card" onSubmit={submit}>
         <div>
-          <span className="eyebrow">НИЦ ИИ · УНИВЕРСИТЕТ «ДУБНА»</span>
+          <span className="eyebrow">{ORG.toUpperCase()}</span>
           <h1 style={{ margin: "6px 0 0", fontSize: 28 }}>ESG Open Research</h1>
+          <p className="muted" style={{ margin: "6px 0 0" }}>{WITH_LAB.charAt(0).toUpperCase() + WITH_LAB.slice(1)}</p>
         </div>
         <label className="field">
           Логин

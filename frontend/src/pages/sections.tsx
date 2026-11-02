@@ -10,6 +10,7 @@ import { CORPUS, CORPUS_TOTAL } from "../content";
 import { useMe } from "../auth/useAuth";
 import { NewDataset } from "./DatasetPage";
 import { KbLive } from "./KbLive";
+import { LAB } from "../org";
 
 function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: string }) {
   return (
@@ -47,7 +48,7 @@ export function Overview() {
   return (
     <>
       <Head
-        eyebrow="ЛАБОРАТОРИЯ · ИНС В ESG-УПРАВЛЕНИИ"
+        eyebrow={`НИЦ ИИ · ${LAB}`.toUpperCase()}
         title="Открытые исследования ESG"
         lead="Методология дорабатывается по циклу: источник в базе знаний порождает гипотезу, гипотеза проверяется экспериментом, а результат становится обоснованием изменения методологии."
       />
