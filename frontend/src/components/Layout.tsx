@@ -89,8 +89,8 @@ export function Layout({ user }: { user: User }) {
           ))}
         </div>
         <div className="sidebar-foot">
-          <span>Внутренняя сеть</span>
-          <small>Доступ только из сети центра, вход по учётной записи</small>
+          <span>Вход по учётной записи</span>
+          <small>Пользователей заводит owner; вычисления — на компьютере лаборатории</small>
         </div>
       </nav>
       <button type="button" className="scrim" aria-label="Закрыть меню" onClick={() => setMenuOpen(false)} />

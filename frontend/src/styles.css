@@ -112,6 +112,8 @@ a:hover {
   gap: 12px;
   padding: 0 8px;
 }
+.brand svg { flex: none; }  /* длинное название рядом не сжимает значок */
+.brand-sub + .brand-sub { margin-top: 4px; }
 
 .brand-name {
   font-weight: 700;
