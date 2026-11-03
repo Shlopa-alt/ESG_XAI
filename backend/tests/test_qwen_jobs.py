@@ -62,3 +62,21 @@ def test_imported_article_queues_graph(make_client, db_session: Session) -> None
     assert r.status_code == 200, r.text
     jobs = c.get("/api/qwen/jobs").json()
     assert sorted((j["kind"], j["trigger"]) for j in jobs) == [("graph", "import"), ("hypotheses", "import")]
+
+
+def test_finished_graph_queues_hypotheses(make_client) -> None:  # type: ignore[no-untyped-def]
+    c = make_client("boss", "owner")
+    graph = c.post("/api/qwen/jobs", json={"kind": "graph", "payload": {"kb": "esg"}}).json()
+    c.post("/api/qwen/worker/next", headers=TOKEN)
+    c.post(f"/api/qwen/worker/{graph['id']}/result", headers=TOKEN,
+           json={"status": "done", "message": "фактов принято 10"})
+    queued = [(j["kind"], j["trigger"]) for j in c.get("/api/qwen/jobs").json() if j["status"] == "queued"]
+    assert queued == [("hypotheses", "graph")]
+
+
+def test_failed_graph_queues_nothing(make_client) -> None:  # type: ignore[no-untyped-def]
+    c = make_client("boss", "owner")
+    graph = c.post("/api/qwen/jobs", json={"kind": "graph", "payload": {"kb": "esg"}}).json()
+    c.post("/api/qwen/worker/next", headers=TOKEN)
+    c.post(f"/api/qwen/worker/{graph['id']}/result", headers=TOKEN, json={"status": "failed", "message": "x"})
+    assert [j for j in c.get("/api/qwen/jobs").json() if j["status"] == "queued"] == []

@@ -67,7 +67,7 @@ const BADGE: Record<QwenJob["status"], string> = {
   failed: "st-failed",
   cancelled: "st-planned",
 };
-const TRIGGER: Record<string, string> = { manual: "вручную", import: "после импорта", snapshot: "новый срез", run: "после запуска" };
+const TRIGGER: Record<string, string> = { manual: "вручную", import: "после импорта", snapshot: "новый срез", run: "после запуска", graph: "после графа" };
 const when = (s: string | null) => (s ? new Date(s).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" }) : "—");
 
 function took(j: QwenJob): string {
