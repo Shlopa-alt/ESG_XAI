@@ -19,6 +19,8 @@ const MAX_NODES = 250;
 // клубок, и раскладка подвешивает вкладку. Между парой сущностей рисуем одну линию (самую
 // весомую связь), а линий — не больше MAX_EDGES, самые весомые.
 const MAX_EDGES = 800;
+// Фактов у сущности от 1 до тысяч: размер по логарифму, иначе все узлы одинаково огромные
+const nodeSize = (facts: number) => Math.min(60, 16 + 5 * Math.log2(Math.max(1, facts)));
 const groupOf = (rel: string): (typeof REL_GROUPS)[number] => REL_GROUPS.find((g) => g.match(rel)) ?? REL_GROUPS[3];
 
 interface DatasetFact {
@@ -146,7 +148,7 @@ export function Graph() {
     const out: ElementDefinition[] = [];
     for (const n of net.data.nodes) {
       if (n.kind === "сущность" && linked.has(n.id)) {
-        out.push({ data: { id: n.id, label: n.name ?? n.id, kind: "entity", size: 18 + Math.min(40, 6 * (n.facts ?? 1)) } });
+        out.push({ data: { id: n.id, label: n.name ?? n.id, kind: "entity", size: nodeSize(n.facts ?? 1) } });
       }
     }
     for (const e of drawn) {
