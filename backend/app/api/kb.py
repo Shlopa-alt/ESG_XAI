@@ -42,13 +42,11 @@ ALLOWED = frozenset(
 
 
 def slim_network(body: bytes) -> bytes:
-    """Граф для экрана: без цитат у рёбер и написаний у узлов. Цитаты страница берёт по
-    щелчку (/kb/dataset), а с ними ответ по всей ветке esg весит ~4 МБ вместо ~2."""
+    """Граф для экрана: без цитат у рёбер — страница берёт их по щелчку (/kb/dataset), а
+    цитаты — больше половины ответа. Написания узлов остаются: по ним ищет поиск на графе."""
     data = json.loads(body)
     for edge in data.get("edges", []):
         edge.pop("quotes", None)
-    for node in data.get("nodes", []):
-        node.pop("spellings", None)
     return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 

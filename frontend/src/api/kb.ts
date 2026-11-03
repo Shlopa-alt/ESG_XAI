@@ -67,7 +67,7 @@ export interface KbArticle {
 }
 
 export interface KbNetwork {
-  nodes: Array<{ id: string; kind: string; name?: string; facts?: number; documents?: number }>;
+  nodes: Array<{ id: string; kind: string; name?: string; facts?: number; documents?: number; spellings?: string[] }>;
   edges: Array<{ source: string; target: string; type: string; label?: string; weight?: number }>;
 }
 

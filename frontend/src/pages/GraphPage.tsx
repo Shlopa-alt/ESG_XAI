@@ -268,6 +268,11 @@ export function Graph() {
           }
         : { name: "cose", animate: false, numIter: 1000, nodeRepulsion: () => 60000, idealEdgeLength: () => 110, nodeOverlap: 30, gravity: 0.2, componentSpacing: 60, padding: 30 },
     });
+    // у окрестности из пары соседей «вписать в окно» даёт огромный масштаб и подписи
+    if (instance.zoom() > 1.4) {
+      instance.zoom(1.4);
+      instance.center();
+    }
     instance.on("tap", "node", (ev) => {
       const n = ev.target;
       instance.elements().addClass("faded");
@@ -294,14 +299,17 @@ export function Graph() {
   const search = () => {
     const needle = query.trim().toLowerCase();
     if (!needle) return;
-    // сначала точное имя, затем вхождение — у кого больше фактов
-    const hits = entityNodes.filter((n) => (n.name ?? "").toLowerCase().includes(needle));
-    const hit = hits.find((n) => (n.name ?? "").toLowerCase() === needle) ?? [...hits].sort((a, b) => (b.facts ?? 0) - (a.facts ?? 0))[0];
+    // имя или написание (синонимы свели «cost of capital» к «стоимость капитала»): сначала
+    // точное совпадение, затем вхождение — у кого больше фактов
+    const names = (n: (typeof entityNodes)[number]) => [n.name ?? "", ...(n.spellings ?? [])].map((x) => x.toLowerCase());
+    const hits = entityNodes.filter((n) => names(n).some((x) => x.includes(needle)));
+    const hit = hits.find((n) => names(n).includes(needle)) ?? [...hits].sort((a, b) => (b.facts ?? 0) - (a.facts ?? 0))[0];
     if (!hit) {
       setNote(`В ветке нет сущности, похожей на «${query.trim()}».`);
       return;
     }
-    setNote(hits.length > 1 ? `Похожих сущностей ${hits.length}; показана «${hit.name ?? hit.id}» — у неё больше всего фактов.` : "");
+    const exact = names(hit).includes(needle);
+    setNote(hits.length > 1 && !exact ? `Похожих сущностей ${hits.length}; показана «${hit.name ?? hit.id}» — у неё больше всего фактов.` : "");
     setCenter(hit.id);
     setSelected(hit.name ?? hit.id);
   };

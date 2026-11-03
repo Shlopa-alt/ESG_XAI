@@ -85,7 +85,7 @@ def test_kb_network_is_slimmed_and_cached(make_client, monkeypatch: pytest.Monke
     first = c.get("/api/kb/network", params={"kb": "esg"}).json()
     second = c.get("/api/kb/network", params={"kb": "esg"}).json()
     assert first == second
-    assert "quotes" not in first["edges"][0] and "spellings" not in first["nodes"][0]
+    assert "quotes" not in first["edges"][0] and first["nodes"][0]["spellings"] == ["a"]
     assert len(seen) == 1  # второй раз — из памяти, без похода в KBRAG
     c.get("/api/kb/network", params={"kb": "esg.finance"})
     assert len(seen) == 2  # у другой ветки свой граф
