@@ -4,7 +4,10 @@
 пользователя уходят в веб-сервер KBRAG со служебным токеном платформы.
 """
 
+import gzip
 import json
+import threading
+import time
 from typing import Annotated
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -49,14 +52,67 @@ def slim_network(body: bytes) -> bytes:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
+def unpack(body: bytes, encoding: str | None) -> bytes:
+    """Тело ответа KBRAG без сжатия: большие ответы он отдаёт в gzip."""
+    return gzip.decompress(body) if (encoding or "").lower() == "gzip" else body
+
+
 def fetch(url: str, token: str, timeout_s: float) -> tuple[int, bytes, str]:
     """GET к KBRAG: (код, тело, тип содержимого). Ошибку KBRAG возвращает как есть."""
-    headers = {"X-KBRAG-Token": token} if token else {}
+    headers = {"Accept-Encoding": "gzip"}
+    if token:
+        headers["X-KBRAG-Token"] = token
     try:
         with urlopen(Request(url, headers=headers), timeout=timeout_s) as r:
-            return r.status, r.read(), r.headers.get("Content-Type", "application/json")
+            body = unpack(r.read(), r.headers.get("Content-Encoding"))
+            return r.status, body, r.headers.get("Content-Type", "application/json")
     except HTTPError as exc:
-        return exc.code, exc.read(), exc.headers.get("Content-Type", "application/json")
+        body = unpack(exc.read(), exc.headers.get("Content-Encoding"))
+        return exc.code, body, exc.headers.get("Content-Type", "application/json")
+
+
+# Граф ветки целиком — десятки МБ с компьютера лаборатории по туннелю (до минуты), а меняется
+# он только после прохода модели. Поэтому граф держим в памяти: свежий отдаём сразу,
+# устаревший — тоже сразу, обновляя его в фоне; ждёт только самый первый запрос.
+NETWORK_FRESH_S = 600.0
+NETWORK_CACHE: dict[str, tuple[float, bytes, str]] = {}
+_network_lock = threading.Lock()
+_network_busy: dict[str, threading.Lock] = {}
+
+
+def _load_network(url: str, settings: Settings) -> tuple[int, bytes, str]:
+    """Забрать граф из KBRAG и положить в кэш; ответ с ошибкой KBRAG не кэшируется."""
+    code, body, kind = fetch(url, settings.kbrag_token, settings.kbrag_timeout_s)
+    if code == 200:
+        body = slim_network(body)
+        NETWORK_CACHE[url] = (time.monotonic(), body, kind)
+    return code, body, kind
+
+
+def _refresh_network(url: str, settings: Settings) -> None:
+    busy = _network_busy[url]
+    try:
+        _load_network(url, settings)
+    except (URLError, TimeoutError, OSError, ValueError):
+        pass  # остаётся прежний граф; следующий запрос попробует снова
+    finally:
+        busy.release()
+
+
+def network(url: str, settings: Settings) -> tuple[int, bytes, str]:
+    with _network_lock:
+        busy = _network_busy.setdefault(url, threading.Lock())
+    cached = NETWORK_CACHE.get(url)
+    if cached is not None:
+        stamp, body, kind = cached
+        if time.monotonic() - stamp > NETWORK_FRESH_S and busy.acquire(blocking=False):
+            threading.Thread(target=_refresh_network, args=(url, settings), daemon=True).start()
+        return 200, body, kind
+    with busy:  # первый запрос: остальные ждут его, а не тянут граф параллельно
+        cached = NETWORK_CACHE.get(url)
+        if cached is not None:
+            return 200, cached[1], cached[2]
+        return _load_network(url, settings)
 
 
 @router.get("/{name}")
@@ -71,11 +127,12 @@ def proxy(
     query = urlencode(list(request.query_params.multi_items()))
     url = f"{settings.kbrag_url.rstrip('/')}/api/{name}" + (f"?{query}" if query else "")
     try:
-        code, body, kind = fetch(url, settings.kbrag_token, settings.kbrag_timeout_s)
+        if name == "network":
+            code, body, kind = network(url, settings)
+        else:
+            code, body, kind = fetch(url, settings.kbrag_token, settings.kbrag_timeout_s)
     except (URLError, TimeoutError, OSError) as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, f"База знаний недоступна: {exc}"
         ) from exc
-    if name == "network" and code == 200:
-        body = slim_network(body)
     return Response(content=body, status_code=code, media_type=kind)

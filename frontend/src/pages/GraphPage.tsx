@@ -15,6 +15,10 @@ const REL_GROUPS = [
 ] as const;
 type RelKey = (typeof REL_GROUPS)[number]["key"];
 const MAX_NODES = 250;
+// После полного прохода модели среди 250 самых связанных сущностей тысячи связей — сплошной
+// клубок, и раскладка подвешивает вкладку. Между парой сущностей рисуем одну линию (самую
+// весомую связь), а линий — не больше MAX_EDGES, самые весомые.
+const MAX_EDGES = 800;
 const groupOf = (rel: string): (typeof REL_GROUPS)[number] => REL_GROUPS.find((g) => g.match(rel)) ?? REL_GROUPS[3];
 
 interface DatasetFact {
@@ -116,8 +120,8 @@ export function Graph() {
 
   // Сколько сущностей проходит фильтр и сколько из них показано (раскладка сотен узлов —
   // секунды, тысяч — зависание вкладки)
-  const [elements, shownOf] = useMemo<[ElementDefinition[], number]>(() => {
-    if (!net.data) return [[], 0];
+  const [elements, shownOf, hiddenEdges] = useMemo<[ElementDefinition[], number, number]>(() => {
+    if (!net.data) return [[], 0, 0];
     const facts = net.data.edges.filter((e) => e.type === "факт" && rels.has(groupOf(e.label ?? "").key));
     const degree = new Map<string, number>();
     for (const e of facts) {
@@ -126,20 +130,31 @@ export function Graph() {
     }
     const passing = [...degree].filter(([, d]) => d >= minFacts).sort((a, b) => b[1] - a[1]);
     const keep = new Set(passing.slice(0, MAX_NODES).map(([id]) => id));
+    const strongest = new Map<string, (typeof facts)[number]>();
+    for (const e of facts) {
+      if (!keep.has(e.source) || !keep.has(e.target)) continue;
+      const pair = e.source < e.target ? `${e.source}|${e.target}` : `${e.target}|${e.source}`;
+      const was = strongest.get(pair);
+      if (!was || (e.weight ?? 1) > (was.weight ?? 1)) strongest.set(pair, e);
+    }
+    const weightOf = (id: string) => degree.get(id) ?? 0;
+    const among = [...strongest.values()].sort(
+      (a, b) => (b.weight ?? 1) - (a.weight ?? 1) || weightOf(b.source) + weightOf(b.target) - weightOf(a.source) - weightOf(a.target),
+    );
+    const drawn = among.slice(0, MAX_EDGES);
+    const linked = new Set(drawn.flatMap((e) => [e.source, e.target]));
     const out: ElementDefinition[] = [];
     for (const n of net.data.nodes) {
-      if (n.kind === "сущность" && keep.has(n.id)) {
+      if (n.kind === "сущность" && linked.has(n.id)) {
         out.push({ data: { id: n.id, label: n.name ?? n.id, kind: "entity", size: 18 + Math.min(40, 6 * (n.facts ?? 1)) } });
       }
     }
-    for (const e of facts) {
-      if (keep.has(e.source) && keep.has(e.target)) {
-        out.push({ data: { id: `${e.source}>${e.target}>${e.label}`, source: e.source, target: e.target, label: e.label, kind: "fact", color: groupOf(e.label ?? "").color } });
-      }
+    for (const e of drawn) {
+      out.push({ data: { id: `${e.source}>${e.target}>${e.label}`, source: e.source, target: e.target, label: e.label, kind: "fact", color: groupOf(e.label ?? "").color } });
     }
     if (withArticles) {
       const articles = new Set<string>();
-      for (const e of net.data.edges.filter((x) => x.type === "из статьи" && keep.has(x.target))) {
+      for (const e of net.data.edges.filter((x) => x.type === "из статьи" && linked.has(x.target))) {
         articles.add(e.source);
         out.push({ data: { id: `${e.source}>${e.target}`, source: e.source, target: e.target, label: "", color: "#c5cdc8" } });
       }
@@ -158,7 +173,7 @@ export function Graph() {
         out.push({ data: { id: `${id}>${art}`, source: id, target: art, label: l.relation, color: "#14231c" } });
       }
     }
-    return [out, passing.length];
+    return [out, passing.length, among.length - drawn.length];
   }, [net.data, rels, minFacts, withArticles, links.data]);
 
   useEffect(() => {
@@ -291,17 +306,25 @@ export function Graph() {
           {net.error.message}
         </p>
       )}
+      {net.isPending && (
+        <p className="muted" role="status">
+          Загружаем граф с компьютера лаборатории — при первом открытии это до минуты…
+        </p>
+      )}
       {net.isSuccess && total === 0 && (
         <div className="card empty-state">
           <h2 className="h2">В этой ветке фактов пока нет</h2>
           <p className="muted">Граф строится моделью по статьям ветки; факты появятся по мере прохода.</p>
         </div>
       )}
-      <p className="muted">
-        На графе {entities} сущностей и {edges} связей · всего фактов в ветке {total}
-        {shownOf > MAX_NODES &&
-          ` · фильтр проходят ${shownOf} сущностей, показаны ${MAX_NODES} самых связанных — поднимите порог или найдите сущность`}
-      </p>
+      {net.isSuccess && (
+        <p className="muted">
+          На графе {entities} сущностей и {edges} связей · всего фактов в ветке {total}
+          {shownOf > MAX_NODES &&
+            ` · фильтр проходят ${shownOf} сущностей, показаны самые связанные — поднимите порог или найдите сущность`}
+          {hiddenEdges > 0 && ` · ещё ${hiddenEdges} более слабых связей скрыто, все факты о сущности — по щелчку`}
+        </p>
+      )}
       {note && (
         <p className="muted" role="status">
           {note}
