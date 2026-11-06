@@ -20,7 +20,7 @@ function BranchSelect({ value, onChange }: { value: string; onChange: (v: string
   const nodes = (tree.data?.nodes ?? []).filter((n) => n.path === ROOT || n.path.startsWith(`${ROOT}.`));
   return (
     <label className="field inline">
-      Ветка базы знаний
+      Тема
       <select value={value} onChange={(e) => onChange(e.target.value)}>
         {nodes.length === 0 && <option value={ROOT}>ESG</option>}
         {nodes.map((n) => (
@@ -56,7 +56,7 @@ export function KbLive() {
   if (stats.isError) {
     return (
       <section className="card">
-        <h2 className="h2">База знаний KBRAG</h2>
+        <h2 className="h2">Банк статей</h2>
         <p className="error" role="alert">
           {stats.error.message}
         </p>
@@ -68,7 +68,7 @@ export function KbLive() {
     <section className="card kb-live">
       <div className="kb-live-head">
         <div>
-          <h2 className="h2">База знаний KBRAG</h2>
+          <h2 className="h2">Банк статей</h2>
           <p className="muted">
             {stats.data
               ? `${stats.data.kb_title}: ${fmt(stats.data.documents)} статей, ${fmt(stats.data.chunks)} фрагментов` +
@@ -81,7 +81,7 @@ export function KbLive() {
 
       <form className="search-row" onSubmit={submit} role="search">
         <label htmlFor="kb-q" className="sr-only">
-          Поиск по статьям базы знаний
+          Поиск по статьям
         </label>
         <input
           id="kb-q"
@@ -120,7 +120,7 @@ export function KbLive() {
                   className="link-btn"
                   onClick={() => navigate("/hypotheses", { state: { ref: refFromHit(h, kb) } })}
                 >
-                  Предложить гипотезу по этой статье
+                  Предложить идею по этой статье
                 </button>
               </div>
             </article>
@@ -129,7 +129,7 @@ export function KbLive() {
       )}
 
       <details className="docs">
-        <summary>Статьи ветки ({docs.data?.length ?? "…"})</summary>
+        <summary>Статьи темы ({docs.data?.length ?? "…"})</summary>
         <table className="table">
           <thead>
             <tr>

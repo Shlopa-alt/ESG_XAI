@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { type KbNetwork, kbNetwork, kbTree } from "../api/kb";
+import { BankTabs } from "../components/SectionTabs";
 
 // Граф фактов KBRAG. Цвет связи — её направление: это три слота проверенной палитры
 // и серый для «прочих»; легенда и текстовая панель фактов дублируют цвет.
@@ -49,7 +50,7 @@ interface DatasetFact {
 
 async function kbDataset(name: string, kb: string): Promise<{ name: string; facts: DatasetFact[] }> {
   const res = await fetch(`/api/kb/dataset?${new URLSearchParams({ name, kb }).toString()}`, { credentials: "same-origin" });
-  if (!res.ok) throw new Error(`База знаний: ошибка ${res.status}`);
+  if (!res.ok) throw new Error(`Банк статей: ошибка ${res.status}`);
   return (await res.json()) as { name: string; facts: DatasetFact[] };
 }
 
@@ -72,13 +73,13 @@ function FactsPanel({ name, kb, onClose, onFocus }: { name: string; kb: string; 
     <aside className="card graph-panel" aria-label={`Факты о ${name}`}>
       <div className="viz-head">
         <div>
-          <span className="eyebrow">СУЩНОСТЬ</span>
+          <span className="eyebrow">ПОНЯТИЕ</span>
           <h2 className="h2">{name}</h2>
         </div>
         <div className="actions">
           {onFocus && (
             <button type="button" className="btn-ghost" onClick={onFocus}>
-              Окрестность на графе
+              Показать соседей на карте
             </button>
           )}
           <button type="button" className="btn-ghost" onClick={onClose}>
@@ -305,11 +306,11 @@ export function Graph() {
     const hits = entityNodes.filter((n) => names(n).some((x) => x.includes(needle)));
     const hit = hits.find((n) => names(n).includes(needle)) ?? [...hits].sort((a, b) => (b.facts ?? 0) - (a.facts ?? 0))[0];
     if (!hit) {
-      setNote(`В ветке нет сущности, похожей на «${query.trim()}».`);
+      setNote(`В этой теме нет понятия, похожего на «${query.trim()}».`);
       return;
     }
     const exact = names(hit).includes(needle);
-    setNote(hits.length > 1 && !exact ? `Похожих сущностей ${hits.length}; показана «${hit.name ?? hit.id}» — у неё больше всего фактов.` : "");
+    setNote(hits.length > 1 && !exact ? `Похожих понятий ${hits.length}; показана «${hit.name ?? hit.id}» — у неё больше всего фактов.` : "");
     setCenter(hit.id);
     setSelected(hit.name ?? hit.id);
   };
@@ -329,16 +330,17 @@ export function Graph() {
   return (
     <>
       <section className="page-head">
-        <span className="eyebrow">БАЗА ЗНАНИЙ · ГРАФ</span>
-        <h1 className="page-title">Граф связей</h1>
+        <span className="eyebrow">БАНК СТАТЕЙ</span>
+        <h1 className="page-title">Банк статей</h1>
         <p className="lead">
-          Факты из статей: «ESG-фактор → связь → показатель», каждый с дословной цитатой. Щёлкните сущность — справа
-          появятся все факты о ней со ссылками на статьи; двойной щелчок или поиск — её окрестность на графе.
+          Карта показывает, что статьи говорят о связях между понятиями. Нажмите на понятие, чтобы увидеть цитаты из статей;
+          двойное нажатие покажет его соседей.
         </p>
       </section>
+      <BankTabs />
       <div className="card graph-controls">
         <label className="field inline">
-          Ветка
+          Тема
           <select value={kb} onChange={(e) => setKb(e.target.value)}>
             {branches.map((b) => (
               <option key={b.path} value={b.path}>
@@ -357,11 +359,11 @@ export function Graph() {
           ))}
         </div>
         <label className="field inline">
-          Сущностей на карте: {sizeDraft}
+          Понятий на карте: {sizeDraft}
           <input type="range" min={20} max={200} step={10} value={sizeDraft} onChange={(e) => setSizeDraft(Number(e.target.value))} />
         </label>
         <label className="check">
-          <input type="checkbox" checked={withArticles} onChange={(e) => setWithArticles(e.target.checked)} /> статьи и эксперименты
+          <input type="checkbox" checked={withArticles} onChange={(e) => setWithArticles(e.target.checked)} /> статьи и проверки
         </label>
         <form
           className="search-row"
@@ -372,7 +374,7 @@ export function Graph() {
           }}
         >
           <label htmlFor="graph-q" className="sr-only">
-            Найти сущность на графе
+            Найти понятие на карте
           </label>
           <input id="graph-q" className="search" placeholder="Найти: ESG disclosure, cost of capital…" value={query} onChange={(e) => setQuery(e.target.value)} />
           <button type="submit" className="btn-ghost">
@@ -387,13 +389,13 @@ export function Graph() {
       )}
       {net.isPending && (
         <p className="muted" role="status">
-          Загружаем граф с компьютера лаборатории — при первом открытии это до минуты…
+          Загружаем карту с компьютера лаборатории — при первом открытии это до минуты…
         </p>
       )}
       {net.isSuccess && total === 0 && (
         <div className="card empty-state">
-          <h2 className="h2">В этой ветке фактов пока нет</h2>
-          <p className="muted">Граф строится моделью по статьям ветки; факты появятся по мере прохода.</p>
+          <h2 className="h2">В этой теме фактов пока нет</h2>
+          <p className="muted">Карта строится ИИ-помощником по статьям темы; факты появятся по мере прохода.</p>
         </div>
       )}
       {net.isSuccess && center && (
@@ -408,9 +410,9 @@ export function Graph() {
       )}
       {net.isSuccess && !center && total > 0 && (
         <p className="muted">
-          На карте {entities} самых связанных сущностей из {view.entitiesTotal} и {edges} самых весомых связей · всего фактов в
-          ветке {total}
-          {view.hidden > 0 && ` · ещё ${view.hidden} связей между ними скрыто`} · найдите сущность или дважды щёлкните её —
+          На карте {entities} самых связанных понятий из {view.entitiesTotal} и {edges} самых весомых связей · всего фактов в
+          теме {total}
+          {view.hidden > 0 && ` · ещё ${view.hidden} связей между ними скрыто`} · найдите понятие или дважды щёлкните её —
           откроется её окрестность
         </p>
       )}
@@ -420,7 +422,7 @@ export function Graph() {
         </p>
       )}
       <div className={selected ? "graph-layout with-panel" : "graph-layout"}>
-        <div ref={box} className="card graph-canvas" role="img" aria-label="Граф фактов: сущности и связи между ними" />
+        <div ref={box} className="card graph-canvas" role="img" aria-label="Карта связей: понятия и связи между ними" />
         {selected && (
           <FactsPanel
             name={selected}

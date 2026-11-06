@@ -85,6 +85,28 @@ TEMPLATES: dict[str, Template] = {
                     Param("splits", "Случайных разбиений", 30, 5, 200)),
         ),
         Template(
+            key="lab-mlp",
+            title="Метод лаборатории: нейросеть R = f(X, Z) с SHAP (протокол CR-01)",
+            description="Модель из постановки задачи лаборатории: однослойная нейросеть (MLP, "
+                        "ReLU или tanh, MSE, Adam/RMSProp) предсказывает результат R по ESG-входам "
+                        "X и параметрам Z (размер, отрасль). Гиперпараметры (Optuna) — только по "
+                        "обучающей части; 30 случайных разбиений 80/20, плацебо на перемешанной "
+                        "цели, сравнение со средним, линейной моделью и прогнозом «как в прошлом "
+                        "году». Вклад факторов — SHAP. Минуты–часы: зависит от строк и испытаний.",
+            workdir="methods", script="lab_mlp.py", resource="cpu", limit_min=240,
+            params=(SHEET,
+                    Param("target", "Результат R (целевой показатель)", "", kind="column"),
+                    Param("features", "Входы X (ESG-показатели, инвестиции по статьям)", [],
+                          kind="columns"),
+                    Param("context", "Параметры Z (размер, отрасль, регион)", [], kind="columns",
+                          numeric=False, required=False, hint="текстовые — по категориям"),
+                    Param("lag", "R прошлого периода", "", kind="column", required=False,
+                          hint="для прогноза «как в прошлом году»"),
+                    SEED,
+                    Param("splits", "Случайных разбиений", 30, 5, 200),
+                    Param("trials", "Испытаний Optuna на разбиение", 10, 3, 100)),
+        ),
+        Template(
             key="exp001-dow30",
             title="Повтор EXP-001 · согласованность ESG-рейтингов Dow30",
             description="Расчёт EXP-001 как есть: ρ Спирмена по парам провайдеров, бутстреп-интервал и "
@@ -165,6 +187,14 @@ def check_params(t: Template, given: dict[str, Any], columns: list[str] | None =
         raise ParamError("Обращать можно только сравниваемые столбцы")
     if t.key == "predictive-check" and out["target"] in out["features"]:
         raise ParamError("Целевой показатель не может быть признаком")
+    if t.key == "lab-mlp":
+        inputs = [*out["features"], *out["context"]]
+        if out["target"] in inputs or (out["lag"] and out["lag"] in inputs):
+            raise ParamError("Результат R и его прошлый период не могут быть входами X или Z")
+        if out["lag"] == out["target"]:
+            raise ParamError("Прошлый период — другой столбец, не сам результат R")
+        if set(out["features"]) & set(out["context"]):
+            raise ParamError("Столбец не может быть и во входах X, и в параметрах Z")
     return out
 
 

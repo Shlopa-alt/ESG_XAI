@@ -5,7 +5,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addReview,
   createExperiment,
+  type Experiment as ExperimentRow,
   type ExpStatus,
+  type Outcome,
   getExperiment,
   listExperiments,
   OUTCOME_LABEL,
@@ -16,6 +18,8 @@ import { useMe } from "../auth/useAuth";
 import { experimentRuns, RunsTable } from "./RunPage";
 import { Chart } from "../components/Charts";
 import { ReportPanel } from "../components/ReportPanel";
+import { ChecksTabs } from "../components/SectionTabs";
+import { experimentNext, NextStep } from "../components/Ux";
 import { ExperimentEditor, toReport } from "./ExperimentEditor";
 
 /** Пустой раздел: что в нём должно быть и откуда это возьмётся. */
@@ -37,6 +41,19 @@ const BADGE: Record<ExpStatus, string> = {
   done: "st-done",
   failed: "st-review",
 };
+
+// отрицательный итог — нормальный исход, поэтому не «красный», а нейтральный
+const OUTCOME_BADGE: Record<Outcome, string> = { confirmed: "st-done", rejected: "st-planned", inconclusive: "st-review" };
+
+type ExpFilter = "all" | "active" | "review" | "confirmed" | "rejected" | "inconclusive";
+const EXP_FILTERS: Array<{ key: ExpFilter; label: string; test: (e: ExperimentRow) => boolean }> = [
+  { key: "all", label: "Все", test: () => true },
+  { key: "active", label: "В работе", test: (e) => ["draft", "planned", "running"].includes(e.status) },
+  { key: "review", label: "На проверке", test: (e) => e.status === "review" },
+  { key: "confirmed", label: "Идея подтвердилась", test: (e) => e.outcome === "confirmed" },
+  { key: "rejected", label: "Идея не подтвердилась", test: (e) => e.outcome === "rejected" },
+  { key: "inconclusive", label: "Неоднозначно", test: (e) => e.outcome === "inconclusive" },
+];
 
 function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: string }) {
   return (
@@ -70,9 +87,9 @@ function NewExperiment({ onDone }: { onDone: () => void }) {
   };
   return (
     <form className="card propose" onSubmit={submit}>
-      <h2 className="h2">Новый эксперимент</h2>
+      <h2 className="h2">Новая проверка</h2>
       <p className="muted">
-        Обычно эксперимент создаётся из принятой гипотезы (раздел «Гипотезы»). Здесь — напрямую, например для
+        Обычно проверка создаётся из принятой идеи (раздел «Идеи для проверки»). Здесь — напрямую, например для
         воспроизведения статьи. Код присвоится автоматически.
       </p>
       <label className="field">
@@ -80,7 +97,7 @@ function NewExperiment({ onDone }: { onDone: () => void }) {
         <input value={title} onChange={(ev) => setTitle(ev.target.value)} required minLength={3} />
       </label>
       <label className="field">
-        Гипотеза — что должно подтвердиться
+        Идея — что должно подтвердиться
         <textarea rows={3} value={hypothesis} onChange={(ev) => setHypothesis(ev.target.value)} />
       </label>
       <div className="form-grid">
@@ -123,22 +140,58 @@ export function Experiments() {
   const q = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
   const me = useMe();
   const [creating, setCreating] = useState(false);
+  const [filter, setFilter] = useState<ExpFilter>("all");
+  const [text, setText] = useState("");
   const canCreate = me.data?.role === "researcher" || me.data?.role === "owner";
+  const all = Array.isArray(q.data) ? q.data : [];
+  const needle = text.trim().toLowerCase();
+  const shown = all.filter(
+    (e) =>
+      (EXP_FILTERS.find((f) => f.key === filter)?.test(e) ?? true) &&
+      (!needle || `${e.code} ${e.title} ${e.hypothesis} ${e.data_summary}`.toLowerCase().includes(needle)),
+  );
   return (
     <>
       <Head
-        eyebrow="ЭКСПЕРИМЕНТЫ"
-        title="Реестр экспериментов"
-        lead="Воспроизводимые запуски: версия данных, код, окружение, метрики. Отрицательные результаты публикуются наравне с положительными."
+        eyebrow="ПРОВЕРКИ"
+        title="Все проверки"
+        lead="Что считали, на каких данных и чем закончилось. Отрицательные результаты публикуются наравне с положительными."
       />
+      <ChecksTabs />
       {canCreate && !creating && (
-        <div>
-          <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
-            Новый эксперимент
+        <div className="exp-actions">
+          <button type="button" className="btn-ghost" onClick={() => setCreating(true)}>
+            Создать карточку без идеи
           </button>
         </div>
       )}
       {creating && <NewExperiment onDone={() => setCreating(false)} />}
+      <div className="toolbar">
+        <div className="filters" role="group" aria-label="Итог проверки">
+          {EXP_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className={filter === f.key ? "chip active" : "chip"}
+              aria-pressed={filter === f.key}
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label} ({all.filter(f.test).length})
+            </button>
+          ))}
+        </div>
+        <label className="sr-only" htmlFor="exp-search">
+          Найти проверку
+        </label>
+        <input
+          id="exp-search"
+          type="search"
+          className="search toolbar-search"
+          placeholder="Найти по коду, названию, данным…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+      </div>
       {q.isError && (
         <p className="error" role="alert">
           {q.error.message}
@@ -149,7 +202,7 @@ export function Experiments() {
           <thead>
             <tr>
               <th scope="col">Код</th>
-              <th scope="col">Эксперимент</th>
+              <th scope="col">Проверка</th>
               <th scope="col">Задание методики</th>
               <th scope="col">Статус</th>
               <th scope="col">Данные</th>
@@ -157,7 +210,7 @@ export function Experiments() {
             </tr>
           </thead>
           <tbody>
-            {q.data?.map((e) => (
+            {shown.map((e) => (
               <tr key={e.code}>
                 <td>
                   <Link to={`/experiments/${e.code}`} className="mono">
@@ -170,12 +223,15 @@ export function Experiments() {
                   <span className={`badge ${BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>
                 </td>
                 <td>{e.data_summary}</td>
-                <td>{e.outcome ? OUTCOME_LABEL[e.outcome] : "—"}</td>
+                <td>
+                  {e.outcome ? <span className={`badge ${OUTCOME_BADGE[e.outcome]}`}>{OUTCOME_LABEL[e.outcome]}</span> : "—"}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
         {q.isPending && <p className="muted">Загрузка…</p>}
+        {q.isSuccess && shown.length === 0 && <p className="muted">Ничего не нашлось — смените фильтр или запрос.</p>}
       </div>
     </>
   );
@@ -262,7 +318,7 @@ export function Experiment() {
   return (
     <>
       <div className="muted">
-        <Link to="/experiments">Эксперименты</Link> / <span className="mono">{e.code}</span>
+        <Link to="/experiments">Проверки</Link> / <span className="mono">{e.code}</span>
       </div>
       <Head
         eyebrow={`${e.code} · ${e.methodology_node ? `методика ${e.methodology_node}` : e.direction || "задание методики не указано"}`}
@@ -280,6 +336,7 @@ export function Experiment() {
           </button>
         )}
       </div>
+      {!runs.isPending && <NextStep>{experimentNext(e.status, runs.data ?? [])}</NextStep>}
       {editing && <ExperimentEditor e={e} onClose={() => setEditing(false)} />}
       {report.kpis.length > 0 ? (
         <div className="kpis">
@@ -297,12 +354,12 @@ export function Experiment() {
       )}
       <section className="card summary-card">
         <h2 className="h2">Вывод</h2>
-        <p>{a.summary || e.conclusion || "Вывода пока нет — он появится, когда эксперимент будет посчитан."}</p>
+        <p>{a.summary || e.conclusion || "Вывода пока нет — он появится, когда проверка будет посчитана."}</p>
         {a.summary && e.conclusion && <p className="muted" style={{ marginTop: 8 }}>{e.conclusion}</p>}
       </section>
       <div className="grid-2">
         <section className="card">
-          <h2 className="h2">Гипотеза</h2>
+          <h2 className="h2">Идея</h2>
           <p>{e.hypothesis || "—"}</p>
           {e.method && <p className="muted">Метод: {e.method}</p>}
         </section>
@@ -324,7 +381,7 @@ export function Experiment() {
       ) : (
         <Empty
           title="Графиков пока нет"
-          text="Они появятся сами, когда зарегистрируется запуск с отчётом, или их можно добавить вручную — вставить таблицу из Excel."
+          text="Они появятся сами, когда зарегистрируется расчёт с отчётом, или их можно добавить вручную — вставить таблицу из Excel."
           canEdit={canEdit}
         />
       )}
@@ -336,17 +393,17 @@ export function Experiment() {
           <Block title="Что дальше" items={a.next} />
         </div>
       ) : (
-        <Empty title="Разбор результата" text="Почему получилось так, что это значит для методологии и что проверить дальше." canEdit={canEdit} />
+        <Empty title="Разбор результата" text="Почему получилось так, что это значит для методики и что проверить дальше." canEdit={canEdit} />
       )}
       {e.report_path && <p className="muted">Полный отчёт в репозитории: <span className="mono">{e.report_path}</span></p>}
       <div className="grid-2">
         <Block title="Ограничения" items={e.limitations} />
         <section className="card">
-          <h2 className="h2">Воспроизводимость</h2>
+          <h2 className="h2">Можно ли повторить расчёт</h2>
           <dl className="dl">
             <dt>Коммит runner</dt>
             <dd className="mono">{e.runner_commit || "—"}</dd>
-            <dt>Срез данных</dt>
+            <dt>Версия данных</dt>
             <dd className="mono">{e.dataset_snapshot || "—"}</dd>
             <dt>Seed</dt>
             <dd className="mono">{e.seed ?? "—"}</dd>
@@ -362,12 +419,12 @@ export function Experiment() {
       </div>
       <ReportPanel code={e.code} role={me.data?.role} />
       <section className="card">
-        <h2 className="h2">Запуски</h2>
+        <h2 className="h2">Расчёты</h2>
         <RunsTable runs={Array.isArray(runs.data) ? runs.data : []} />
       </section>
       {e.links.length > 0 && (
         <section className="card">
-          <h2 className="h2">Связи с базой знаний</h2>
+          <h2 className="h2">Связи с банком статей</h2>
           <ul className="list">
             {e.links.map((l) => (
               <li key={`${l.relation}-${l.kbrag_id}`}>

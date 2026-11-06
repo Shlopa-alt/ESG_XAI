@@ -57,7 +57,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(USER)));
     renderApp();
     const nav = await screen.findByRole("navigation", { name: "Разделы платформы" });
-    for (const name of ["Обзор", "База знаний", "Эксперименты", "Запуск экспериментов", "Методология"]) {
+    for (const name of ["Обзор", "Методика", "Банк статей", "Идеи для проверки", "Проверки", "Данные"]) {
       expect(nav).toContainElement(screen.getByRole("link", { name }));
     }
     expect(screen.getByRole("link", { name: "Обзор" })).toHaveAttribute("aria-current", "page");
@@ -67,6 +67,6 @@ describe("App", () => {
   it("открывает пустую страницу раздела", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(USER)));
     renderApp("/methodology");
-    expect(await screen.findByRole("heading", { level: 1, name: "Методология" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Методика" })).toBeInTheDocument();
   });
 });

@@ -24,7 +24,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 const RELATIONS = [
-  { value: "replicates", label: "воспроизводит статью" },
+  { value: "replicates", label: "повторяет результат статьи" },
   { value: "tests", label: "проверяет утверждение статьи" },
   { value: "uses_method", label: "использует метод статьи" },
   { value: "motivated_by", label: "опирается на статью" },
@@ -53,10 +53,10 @@ function LinkPanel({ refIn }: { refIn: KbRefIn }) {
   const openCrs = (Array.isArray(crs.data) ? crs.data : []).filter((c) => c.status === "proposed" || c.status === "review");
   return (
     <section className="card">
-      <h2 className="h2">Связать с экспериментом или изменением методологии</h2>
+      <h2 className="h2">Связать с проверкой или изменением методики</h2>
       <div className="review-form">
         <label className="field inline grow">
-          Эксперимент
+          Проверка
           <select value={exp} onChange={(e) => setExp(e.target.value)}>
             <option value="">— выберите —</option>
             {expList.map((e) => (
@@ -87,9 +87,9 @@ function LinkPanel({ refIn }: { refIn: KbRefIn }) {
       )}
       <div className="review-form">
         <label className="field inline grow">
-          Основание для CR
+          Основание для изменения методики
           <select value={cr} onChange={(e) => setCr(e.target.value)}>
-            <option value="">— выберите открытый CR —</option>
+            <option value="">— выберите открытое предложение —</option>
             {openCrs.map((c) => (
               <option key={c.code} value={c.code}>
                 {c.code} · {c.title.slice(0, 60)}
@@ -102,7 +102,7 @@ function LinkPanel({ refIn }: { refIn: KbRefIn }) {
         </button>
       </div>
       {!refIn.doi && (
-        <p className="muted">У статьи нет DOI — основанием CR она засчитана не будет («требует источника»).</p>
+        <p className="muted">У статьи нет DOI — основанием изменения методики она засчитана не будет («требует источника»).</p>
       )}
       {basis.isSuccess && (
         <p role="status">
@@ -145,7 +145,7 @@ export function Article() {
   return (
     <>
       <div className="muted">
-        <Link to="/knowledge">База знаний</Link> / статья
+        <Link to="/knowledge">Банк статей</Link> / статья
       </div>
       <section className="page-head">
         <span className="eyebrow">
@@ -178,7 +178,7 @@ export function Article() {
         </p>
         <div className="review-form">
           <button type="button" className="btn-primary" onClick={() => navigate("/hypotheses", { state: { ref: refIn } })}>
-            Предложить гипотезу по этой статье
+            Предложить идею по этой статье
           </button>
         </div>
       </section>

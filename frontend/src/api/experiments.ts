@@ -65,16 +65,16 @@ export const addReview = (code: string, verdict: string, text: string) =>
 
 export const STATUS_LABEL: Record<ExpStatus, string> = {
   draft: "черновик",
-  planned: "запланирован",
+  planned: "запланирована",
   running: "в работе",
-  review: "на проверке",
-  done: "завершён",
+  review: "на рецензии",
+  done: "завершена",
   failed: "сбой",
 };
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
-  confirmed: "гипотеза подтверждена",
-  rejected: "гипотеза отклонена",
+  confirmed: "идея подтвердилась",
+  rejected: "идея не подтвердилась",
   inconclusive: "результат неоднозначен",
 };
 

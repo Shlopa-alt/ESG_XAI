@@ -81,7 +81,7 @@ export function ParamsEditor({
           {cols.error.message}
         </p>
       )}
-      {needColumns && snapshotId === null && <p className="muted">Выберите срез — появятся его столбцы.</p>}
+      {needColumns && snapshotId === null && <p className="muted">Выберите версию данных — появятся его столбцы.</p>}
       <div className="form-grid">
         {params.map((p) => {
           const id = `${idPrefix}-${p.name}`;
@@ -122,6 +122,7 @@ export function ParamsEditor({
             return (
               <label key={p.name} className="field span-2" htmlFor={id}>
                 {p.label}
+                {p.hint && <span className="muted"> — {p.hint}</span>}
                 <select id={id} value={String(value[p.name] ?? "")} onChange={(e) => set(p.name, e.target.value)} required={p.required}>
                   <option value="">— выберите столбец —</option>
                   {options(p).map((c) => (

@@ -1,20 +1,36 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import type { User } from "../api/auth";
 import { useLogout } from "../auth/useAuth";
-import { ORG, WITH_LAB } from "../org";
+import { ORG } from "../org";
+import { ROLE_LABEL } from "./Ux";
 
-const NAV = [
+interface NavItem {
+  to: string;
+  label: string;
+  end?: boolean;
+  also?: string[]; // другие адреса того же раздела
+}
+
+// Шесть пунктов: человек за один взгляд видит всё, связанное живёт вкладками внутри раздела
+const NAV: NavItem[] = [
   { to: "/", label: "Обзор", end: true },
-  { to: "/knowledge", label: "База знаний", end: false },
-  { to: "/knowledge/graph", label: "Граф связей", end: false },
-  { to: "/knowledge/import", label: "Импорт статей", end: false },
-  { to: "/hypotheses", label: "Гипотезы", end: false },
-  { to: "/experiments", label: "Эксперименты", end: false },
-  { to: "/run", label: "Запуск экспериментов", end: false },
-  { to: "/methodology", label: "Методология", end: false },
+  { to: "/methodology", label: "Методика" },
+  { to: "/knowledge", label: "Банк статей" },
+  { to: "/hypotheses", label: "Идеи для проверки" },
+  { to: "/experiments", label: "Проверки", also: ["/run", "/runs"] },
+  { to: "/data", label: "Данные", also: ["/datasets", "/data-drafts"] },
 ];
+const OWNER_NAV: NavItem[] = [
+  { to: "/qwen", label: "Задачи Qwen" },
+  { to: "/users", label: "Пользователи" },
+];
+
+function isActive(item: NavItem, path: string): boolean {
+  const under = (to: string) => path === to || path.startsWith(`${to}/`);
+  return item.end ? path === item.to : under(item.to) || (item.also ?? []).some(under);
+}
 
 function initials(user: User): string {
   const source = user.full_name.trim() || user.login;
@@ -31,11 +47,16 @@ export function Layout({ user }: { user: User }) {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
-  // Служебное — только владельцу: пользователи и очередь Qwen
-  const nav =
-    user.role === "owner"
-      ? [...NAV, { to: "/qwen", label: "Задачи Qwen", end: false }, { to: "/users", label: "Пользователи", end: false }]
-      : NAV;
+  const role = ROLE_LABEL[user.role];
+  const links = (items: NavItem[]) =>
+    items.map((item) => {
+      const active = isActive(item, location.pathname);
+      return (
+        <Link key={item.to} to={item.to} aria-current={active ? "page" : undefined} className={active ? "nav-link active" : "nav-link"}>
+          {item.label}
+        </Link>
+      );
+    });
 
   // На узком экране меню закрывается после перехода и по Escape
   useEffect(() => setMenuOpen(false), [location.pathname]);
@@ -73,24 +94,21 @@ export function Layout({ user }: { user: User }) {
           <div style={{ display: "flex", flexDirection: "column" }}>
             <span className="brand-name">ESG Open Research</span>
             <span className="brand-sub">{ORG}</span>
-            <span className="brand-sub">{WITH_LAB}</span>
           </div>
         </div>
         <div className="nav">
-          {nav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end || item.to === "/knowledge"}
-              className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
-            >
-              {item.label}
-            </NavLink>
-          ))}
+          {links(NAV)}
+          {user.role === "owner" && (
+            <>
+              <span className="nav-low">Служебное</span>
+              {links(OWNER_NAV)}
+            </>
+          )}
         </div>
         <div className="sidebar-foot">
-          <span>Вход по учётной записи</span>
-          <small>Пользователей заводит owner; вычисления — на компьютере лаборатории</small>
+          <span>
+            {user.full_name || user.login} · {role?.name ?? user.role}
+          </span>
         </div>
       </nav>
       <button type="button" className="scrim" aria-label="Закрыть меню" onClick={() => setMenuOpen(false)} />
@@ -108,13 +126,13 @@ export function Layout({ user }: { user: User }) {
           </button>
           <form role="search" onSubmit={search}>
             <label htmlFor="q-main" className="sr-only">
-              Поиск по базе знаний
+              Поиск в банке статей
             </label>
             <input
               id="q-main"
               type="search"
               className="search"
-              placeholder="Поиск по статьям базы знаний…"
+              placeholder="Поиск по статьям…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />

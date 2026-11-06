@@ -13,6 +13,7 @@ import {
   uploadPdf,
 } from "../api/kbImports";
 import { useMe } from "../auth/useAuth";
+import { BankTabs } from "../components/SectionTabs";
 
 const ROOT = "esg";
 const MB = 2 ** 20;
@@ -64,7 +65,7 @@ function ByFile() {
       <h2 className="h2">PDF-файлом</h2>
       <p className="muted">
         Название, авторов, год и DOI разбор возьмёт из самого PDF. Поля ниже нужны, только если там их нет или они
-        неверные. Статья без DOI попадёт в базу с пометкой «требует источника» и не сможет быть основанием CR.
+        неверные. Статья без DOI попадёт в базу с пометкой «требует источника» и не сможет быть основанием изменения методики.
       </p>
       <div className="form-grid">
         <label className="field span-2">
@@ -78,7 +79,7 @@ function ByFile() {
           />
         </label>
         <label className="field span-2" htmlFor="imp-kb">
-          Ветка базы знаний
+          Тема
           <BranchSelect id="imp-kb" value={kb} onChange={setKb} />
         </label>
         <label className="field">
@@ -111,7 +112,7 @@ function ByFile() {
       )}
       {m.isSuccess && (
         <p className="ok" role="status">
-          Импорт №{m.data.id} в очереди — статус ниже.
+          Загрузка №{m.data.id} в очереди — статус ниже.
         </p>
       )}
       <div>
@@ -153,7 +154,7 @@ function ByDoi() {
           placeholder="https://doi.org/10.3390/electronics14030417" />
       </label>
       <label className="field" htmlFor="doi-kb">
-        Ветка базы знаний
+        Тема
         <BranchSelect id="doi-kb" value={kb} onChange={setKb} />
       </label>
       {m.isError && (
@@ -163,7 +164,7 @@ function ByDoi() {
       )}
       {m.isSuccess && (
         <p className="ok" role="status">
-          «{m.data.title || m.data.doi}» скачана, импорт №{m.data.id} в очереди.
+          «{m.data.title || m.data.doi}» скачана, загрузка №{m.data.id} в очереди.
         </p>
       )}
       <div>
@@ -205,7 +206,7 @@ function Queue({ canRetry }: { canRetry: boolean }) {
               <tr>
                 <th scope="col">№</th>
                 <th scope="col">Статья</th>
-                <th scope="col">Ветка</th>
+                <th scope="col">Тема</th>
                 <th scope="col">Статус</th>
                 <th scope="col">Кто и когда</th>
               </tr>
@@ -259,13 +260,14 @@ export function Import() {
   return (
     <>
       <section className="page-head">
-        <span className="eyebrow">БАЗА ЗНАНИЙ · ИМПОРТ</span>
-        <h1 className="page-title">Импорт статей</h1>
+        <span className="eyebrow">БАНК СТАТЕЙ</span>
+        <h1 className="page-title">Банк статей</h1>
         <p className="lead">
-          Статья разбирается в KBRAG так же, как при импорте на сервере: текст, таблицы, формулы, рисунки. Затем она
-          попадает в поиск выбранной ветки, а факты графа о ней появятся при следующем проходе модели.
+          Загрузите PDF или укажите DOI. Статья разберётся автоматически и появится в поиске выбранной темы, а её связи на
+          карте появятся чуть позже.
         </p>
       </section>
+      <BankTabs />
       {canImport ? (
         <div className="grid-2">
           <ByFile />

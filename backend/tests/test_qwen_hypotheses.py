@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.models import Dataset, MethodologySection
+from app.services.qwen_hypotheses import repeats
 
 TOKEN = {"X-Qwen-Token": "tok"}
 REF = {"doc_id": "10.1_a", "title": "Статья", "doi": "10.1/a", "quote": "ESG investments reduce profitability"}
@@ -72,8 +73,51 @@ def test_result_drops_ungrounded_wrong_node_and_duplicates(make_client, tree) ->
 
 def test_method_must_match_dataset_and_pending_limit(make_client, tree) -> None:  # type: ignore[no-untyped-def]
     c = make_client("boss", "owner")
-    job = _run(c, [_h(title=f"Гипотеза номер {i}", dataset="DS-77" if i == 0 else "DS-04") for i in range(5)])
+    # разные идеи: проверяется лимит, не повторы
+    words = ["[альфа]", "[бета]", "[гамма]", "[дельта]", "[эпсилон]"]
+    job = _run(c, [_h(title=f"ESG-инвестиции и {w}", dataset="DS-77" if i == 0 else "DS-04")
+                   for i, w in enumerate(words)])
     assert len(job["result"]["created"]) == 3  # не больше трёх за проход на задание
     first = c.get(f"/api/hypotheses/{job['result']['created'][0]}").json()
     assert first["suggested"] == {"dataset": "", "method": "", "data_needed": ""}  # нет такого датасета → и метода
-    assert _run(c, [_h(title="Ещё одна гипотеза")])["result"]["created"] == []  # три уже ждут рецензии
+    # три уже ждут рецензии
+    assert _run(c, [_h(title="ESG-инвестиции и [омега]")])["result"]["created"] == []
+
+
+def test_paraphrase_of_existing_is_a_repeat(make_client, tree) -> None:  # type: ignore[no-untyped-def]
+    """Qwen перефразирует уже предложенные («влияют на» → «улучшают»); отклонённые — тоже повтор."""
+    c = make_client("boss", "owner")
+    first = _run(c, [_h(title="ESG-инвестиции влияют на [показатель альфа] через 3 года")])
+    first = first["result"]["created"]
+    c.patch(f"/api/hypotheses/{first[0]}", json={"status": "rejected", "note": "[причина]"})
+    job = _run(c, [
+        _h(title="ESG-инвестиции улучшают [показатель альфа] компаний"),  # перефраз отклонённой
+        _h(title="ESG-инвестиции влияют на результаты компаний"),  # пересказ задания без своих слов
+        _h(title="ESG-инвестиции снижают [показатель бета]"),  # другая идея
+    ])
+    assert len(job["result"]["created"]) == 1
+    assert len(job["result"]["repeats"]) == 2  # отброшенное видно в итоге задачи
+    assert "отброшено как повтор: 2" in job["message"]
+    kept = c.get(f"/api/hypotheses/{job['result']['created'][0]}").json()
+    assert kept["title"].endswith("[показатель бета]")
+
+
+@pytest.mark.parametrize(("title", "existing", "same"), [
+    ("Веса критериев влияют на согласованность ESG-рейтингов",
+     ["Разные веса ESG-блоков влияют на согласованность рейтингов"], True),
+    ("ESG-инвестиции влияют на региональный бюджет через 3 года",
+     ["ESG-инвестиции влияют на бюджет региона через экономические показатели"], True),
+    ("Согласованность ESG-рейтингов влияет на их предсказательную силу",
+     ["Разные веса ESG-блоков влияют на согласованность рейтингов"], False),
+    ("ESG-инвестиции повышают эффективность энергопотребления в регионах",
+     ["ESG-инвестиции улучшают экологические показатели региона"], False),
+    ("ESG-инвестиции влияют на бюджет региона", [], False),  # первая по заданию — не повтор
+    # другая буква ESG при тех же остальных словах — другая идея
+    ("Экологические затраты связаны со стоимостью капитала",
+     ["Социальные затраты связаны со стоимостью капитала"], False),
+    ("Экологические затраты снижают стоимость капитала",
+     ["Экологические затраты связаны со стоимостью капитала"], True),
+])
+def test_repeats(title: str, existing: list[str], same: bool) -> None:
+    """Названия — из стресс-теста генерации гипотез на пилотном корпусе ESG (ноябрь 2026)."""
+    assert (repeats(title, existing) is not None) is same

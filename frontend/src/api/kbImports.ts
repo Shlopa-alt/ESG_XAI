@@ -23,7 +23,7 @@ export interface KbImport {
 export const IMPORT_STATUS: Record<ImportStatus, string> = {
   queued: "в очереди",
   processing: "разбирается",
-  done: "в базе знаний",
+  done: "в банке статей",
   duplicate: "уже была в базе",
   failed: "не удалось",
 };

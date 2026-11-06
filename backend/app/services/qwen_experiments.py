@@ -8,6 +8,7 @@
 среза. Найденное записывается в problems: человек видит, что поправить, прежде чем одобрять.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -139,6 +140,14 @@ def create_from_result(db: Session, settings: Settings, job: QwenJob, result: di
     db.flush()
     p.problems = problems(db, settings, p)
     return p
+
+
+def close_open_proposals(db: Session, h: Hypothesis, user_id: int) -> None:
+    """Проверку настроил человек — ждущие предложения Qwen закрываются с понятной причиной."""
+    for p in db.scalars(select(ExperimentProposal).where(ExperimentProposal.hypothesis_id == h.id,
+                                                         ExperimentProposal.status == "proposed")):
+        p.status, p.note, p.decided_by = "rejected", "Проверку настроили вручную", user_id
+        p.decided_at = datetime.now(UTC)
 
 
 def experiment_from_hypothesis(db: Session, h: Hypothesis, user_id: int, title: str = "", method: str = "",

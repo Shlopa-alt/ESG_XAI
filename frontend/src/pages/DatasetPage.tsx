@@ -45,7 +45,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const body = (await res.json().catch(() => null)) as (T & { detail?: unknown }) | null;
   if (!res.ok || body === null) {
-    if (res.status === 413) throw new Error("Файл слишком большой — положите его в каталог датасета на сервере");
+    if (res.status === 413) throw new Error("Файл слишком большой — положите его в каталог набора данных на сервере");
     const d = body?.detail;
     throw new Error(typeof d === "string" ? d : Array.isArray(d) ? "Проверьте поля формы" : `Ошибка ${res.status}`);
   }
@@ -154,7 +154,7 @@ export function NewDataset({ onDone }: { onDone: () => void }) {
     <DatasetForm
       initial={{ title: "", description: "", source_url: "", license: "", access_level: "public" }}
       canSetNda={me.data?.role === "owner"}
-      submitLabel={m.isPending ? "Создаю…" : "Создать датасет"}
+      submitLabel={m.isPending ? "Создаю…" : "Создать набор данных"}
       pending={m.isPending}
       error={m.isError ? m.error.message : ""}
       onSubmit={(f) => m.mutate(f)}
@@ -183,10 +183,10 @@ function AddSnapshot({ ds }: { ds: DatasetDetail }) {
   const error = upload.error ?? register.error;
   return (
     <section className="card dataset-form">
-      <h2 className="h2">Новый срез</h2>
+      <h2 className="h2">Новая версия данных</h2>
       <p className="muted">
-        Срез — неизменяемый файл: сервер считает его sha256, и запуск сверяет хеш перед расчётом. Поменялись данные —
-        это новый срез, а не правка старого.
+        Версия данных — неизменяемый файл: сервер считает его sha256, и перед каждым расчётом он сверяется. Поменялись данные —
+        это новая версия данных, а не правка старого.
       </p>
       <label className="field">
         Версия (по умолчанию — сегодняшняя дата)
@@ -200,7 +200,7 @@ function AddSnapshot({ ds }: { ds: DatasetDetail }) {
       </div>
       <div>
         <button type="button" className="btn-primary" disabled={!file || upload.isPending} onClick={() => upload.mutate()}>
-          {upload.isPending ? "Загружаю…" : "Загрузить срез"}
+          {upload.isPending ? "Загружаю…" : "Загрузить версию данных"}
         </button>
       </div>
       <h3 className="h3">…или зарегистрировать файл с сервера</h3>
@@ -262,7 +262,7 @@ export function DatasetPage() {
     <>
       <section className="page-head">
         <span className="eyebrow">
-          <Link to="/knowledge">БАЗА ЗНАНИЙ</Link> · ДАТАСЕТ
+          <Link to="/knowledge">БАНК СТАТЕЙ</Link> · ДАТАСЕТ
         </span>
         <h1 className="page-title">
           <span className="mono">{ds.code}</span> · {ds.title}
@@ -314,7 +314,7 @@ export function DatasetPage() {
               <dd>{ds.license || <span className="muted">не указана</span>}</dd>
             </div>
             <div className="run-fact">
-              <dt>Эксперименты</dt>
+              <dt>Проверки</dt>
               <dd>
                 {ds.experiments.length === 0 ? (
                   <span className="muted">пока нет</span>
@@ -334,9 +334,9 @@ export function DatasetPage() {
         </section>
       )}
       <section className="card">
-        <h2 className="h2">Срезы</h2>
+        <h2 className="h2">Версии данных</h2>
         {ds.snapshots.length === 0 ? (
-          <p className="muted">Срезов нет — запустить эксперимент на этом датасете пока нельзя.</p>
+          <p className="muted">Версий данных нет — запустить проверку на этом наборе данных пока нельзя.</p>
         ) : (
           <div className="table-wrap">
             <table className="table">
@@ -348,7 +348,7 @@ export function DatasetPage() {
                     Строк
                   </th>
                   <th scope="col" className="num">
-                    Запусков
+                    Расчётов
                   </th>
                   <th scope="col">Файл</th>
                 </tr>
