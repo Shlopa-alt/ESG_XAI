@@ -1,44 +1,26 @@
 import { useQuery } from "@tanstack/react-query";
 import cytoscape, { type ElementDefinition } from "cytoscape";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { type KbNetwork, kbNetwork, kbTree } from "../api/kb";
 import { BankTabs } from "../components/SectionTabs";
+import { plural } from "../components/Ux";
+import { conceptKey, originalName, POPULAR, ruName } from "../concepts";
 
-// Граф фактов KBRAG. Цвет связи — её направление: это три слота проверенной палитры
-// и серый для «прочих»; легенда и текстовая панель фактов дублируют цвет.
+// Цвет связи — её смысл; подпись дублирует цвет, поэтому он не единственный носитель смысла
 const REL_GROUPS = [
-  { key: "up", label: "повышает", color: "#1baf7a", match: (r: string) => r.includes("повыша") && !r.startsWith("не ") },
-  { key: "down", label: "снижает", color: "#eb6834", match: (r: string) => r.includes("снижа") && !r.startsWith("не ") },
+  { key: "up", label: "повышает", color: "#1baf7a", match: (r: string) => r.includes("повыша") && !r.includes("не ") },
+  { key: "down", label: "снижает", color: "#eb6834", match: (r: string) => r.includes("снижа") && !r.includes("не ") },
   { key: "none", label: "не влияет", color: "#8a948e", match: (r: string) => r.includes("не влияет") },
-  { key: "other", label: "прочие связи", color: "#2a78d6", match: () => true },
+  { key: "other", label: "другие связи", color: "#2a78d6", match: () => true },
 ] as const;
 type RelKey = (typeof REL_GROUPS)[number]["key"];
-// Обзор: N самых связанных сущностей (ползунок) и вдвое больше линий — самых весомых; между
-// парой сущностей одна линия. После полного прохода модели у ветки esg тысячи сущностей и
-// десятки тысяч связей: всё сразу — неразличимый клубок. Подробности — в окрестности сущности:
-// она в центре, вокруг её самые весомые соседи.
-const NEIGHBOURS = 30;
-const EDGES_PER_NODE = 2;
-// Фактов у сущности от 1 до тысяч, статей у связи — от 1 до десятков: размеры по логарифму
-const nodeSize = (facts: number) => Math.min(46, 12 + 4 * Math.log2(Math.max(1, facts)));
-const edgeWidth = (weight: number) => Math.min(6, 1 + 1.5 * Math.log2(Math.max(1, weight)));
-type Fact = KbNetwork["edges"][number];
-const pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
-
-/** Одна линия на пару сущностей — самая весомая связь; самые весомые пары первыми. */
-function strongestPairs(facts: Fact[], keep: (e: Fact) => boolean): Fact[] {
-  const best = new Map<string, Fact>();
-  for (const e of facts) {
-    if (!keep(e)) continue;
-    const k = pairKey(e.source, e.target);
-    const was = best.get(k);
-    if (!was || (e.weight ?? 1) > (was.weight ?? 1)) best.set(k, e);
-  }
-  return [...best.values()].sort((a, b) => (b.weight ?? 1) - (a.weight ?? 1));
-}
 const groupOf = (rel: string): (typeof REL_GROUPS)[number] => REL_GROUPS.find((g) => g.match(rel)) ?? REL_GROUPS[3];
+
+const SIDE_ROWS = 8; // сколько связей с каждой стороны видно сразу
+type Fact = KbNetwork["edges"][number];
+type Concept = KbNetwork["nodes"][number];
 
 interface DatasetFact {
   about: string;
@@ -54,55 +36,81 @@ async function kbDataset(name: string, kb: string): Promise<{ name: string; fact
   return (await res.json()) as { name: string; facts: DatasetFact[] };
 }
 
-interface ExpLink {
-  experiment: string;
-  title: string;
-  status: string;
+const label = (c: Concept | undefined) => ruName(c?.name ?? c?.id ?? "");
+const keyName = (c: Concept) => c.name ?? c.id;
+
+/** Одна связь с соседним понятием: самая весомая формулировка и сколько статей о ней говорят. */
+interface Link2 {
+  other: Concept;
   relation: string;
-  kbrag_id: string;
+  group: RelKey;
+  articles: number;
+  top: number; // вес этой формулировки
 }
 
-async function experimentLinks(): Promise<ExpLink[]> {
-  const res = await fetch("/api/experiment-links", { credentials: "same-origin" });
-  return res.ok ? ((await res.json()) as ExpLink[]) : [];
+function sideLinks(facts: Fact[], byId: Map<string, Concept>, pick: (e: Fact) => string | null): Link2[] {
+  const best = new Map<string, Link2>();
+  for (const e of facts) {
+    const id = pick(e);
+    const other = id ? byId.get(id) : undefined;
+    if (!other) continue;
+    const weight = e.weight ?? 1;
+    const was = best.get(other.id);
+    const articles = (was?.articles ?? 0) + weight;
+    if (!was || weight > was.top) {
+      best.set(other.id, { other, relation: e.label ?? "", group: groupOf(e.label ?? "").key, articles, top: weight });
+    } else {
+      was.articles = articles;
+    }
+  }
+  // почти у всех связей по одной статье: при равенстве выше понятие, о котором пишут чаще
+  return [...best.values()].sort((a, b) => b.articles - a.articles || (b.other.facts ?? 0) - (a.other.facts ?? 0));
 }
 
-function FactsPanel({ name, kb, onClose, onFocus }: { name: string; kb: string; onClose: () => void; onFocus?: () => void }) {
+/** Цитаты по одной связи: каждая связь держится на дословной цитате из статьи. */
+function Quotes({ name, otherName, kb, onOpen, onClose }: { name: string; otherName: string; kb: string; onOpen: () => void; onClose: () => void }) {
   const q = useQuery({ queryKey: ["kb", "dataset", kb, name], queryFn: () => kbDataset(name, kb) });
+  const facts = (q.data?.facts ?? []).filter((f) => f.other === otherName);
   return (
-    <aside className="card graph-panel" aria-label={`Факты о ${name}`}>
+    <section className="card concept-quotes" aria-label="Что говорят статьи">
       <div className="viz-head">
         <div>
-          <span className="eyebrow">ПОНЯТИЕ</span>
-          <h2 className="h2">{name}</h2>
+          <span className="eyebrow">ЧТО ГОВОРЯТ СТАТЬИ</span>
+          <h2 className="h3">
+            {ruName(name)} и {ruName(otherName)}
+          </h2>
         </div>
         <div className="actions">
-          {onFocus && (
-            <button type="button" className="btn-ghost" onClick={onFocus}>
-              Показать соседей на карте
-            </button>
-          )}
+          <button type="button" className="btn-ghost" onClick={onOpen}>
+            Открыть «{ruName(otherName)}»
+          </button>
           <button type="button" className="btn-ghost" onClick={onClose}>
             Закрыть
           </button>
         </div>
       </div>
-      {q.isPending && <p className="muted">Загрузка фактов…</p>}
-      {q.isError && <p className="error">{q.error.message}</p>}
+      <p className="muted">Цитаты приведены на языке статьи. Нажмите на название, чтобы прочитать статью целиком.</p>
+      {q.isPending && <p className="muted">Загрузка цитат…</p>}
+      {q.isError && (
+        <p className="error" role="alert">
+          {q.error.message}
+        </p>
+      )}
+      {q.isSuccess && facts.length === 0 && <p className="muted">Цитаты по этой связи не найдены: возможно, она из другой темы.</p>}
       <ul className="facts">
-        {(q.data?.facts ?? []).map((f, i) => {
+        {facts.map((f, i) => {
           const g = groupOf(f.relation);
           const [from, to] = f.direction === "←" ? [f.other, f.about] : [f.about, f.other];
           return (
             <li key={i}>
               <div className="fact-line">
-                <strong>{from}</strong>{" "}
+                <strong>{ruName(from)}</strong>{" "}
                 <span className="rel-tag" style={{ borderColor: g.color }}>
                   {f.relation}
                 </span>{" "}
-                <strong>{to}</strong>
+                <strong>{ruName(to)}</strong>
               </div>
-              {f.quotes.slice(0, 2).map((qt) => (
+              {f.quotes.slice(0, 3).map((qt) => (
                 <blockquote key={qt.doc_id + qt.quote.slice(0, 20)}>
                   «{qt.quote}»
                   <cite>
@@ -117,115 +125,115 @@ function FactsPanel({ name, kb, onClose, onFocus }: { name: string; kb: string; 
           );
         })}
       </ul>
-    </aside>
+    </section>
   );
 }
 
-export function Graph() {
-  const [kb, setKb] = useState("esg");
-  const [rels, setRels] = useState<Set<RelKey>>(new Set(["up", "down", "none", "other"]));
-  const [size, setSize] = useState(50);
-  const [sizeDraft, setSizeDraft] = useState(50); // ползунок: применяется, когда его отпустили
-  const [center, setCenter] = useState<string | null>(null); // id сущности — режим «окрестность»
-  const [note, setNote] = useState("");
-  const [withArticles, setWithArticles] = useState(false);
-  const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
+function Side({
+  title,
+  empty,
+  links,
+  arrow,
+  active,
+  onConcept,
+  onQuotes,
+}: {
+  title: string;
+  empty: string;
+  links: Link2[];
+  arrow: "in" | "out";
+  active: string | null;
+  onConcept: (id: string) => void;
+  onQuotes: (id: string) => void;
+}) {
+  const [rows, setRows] = useState(SIDE_ROWS);
+  const first = links[0]?.other.id;
+  useEffect(() => setRows(SIDE_ROWS), [first]); // другое понятие — снова короткий список
+  const shown = links.slice(0, rows);
+  return (
+    <div className={`concept-side concept-${arrow}`}>
+      <h3 className="concept-side-title">{title}</h3>
+      {links.length === 0 && <p className="muted">{empty}</p>}
+      <ul className="concept-rows">
+        {shown.map((l) => {
+          const g = REL_GROUPS.find((x) => x.key === l.group) ?? REL_GROUPS[3];
+          return (
+            <li key={l.other.id} className={active === l.other.id ? "concept-row active" : "concept-row"} style={{ borderColor: g.color }}>
+              <button type="button" className="concept-open" title="Открыть это понятие" onClick={() => onConcept(l.other.id)}>
+                <span className="concept-name">{label(l.other)}</span>
+                {originalName(keyName(l.other)) && <span className="concept-orig">{originalName(keyName(l.other))}</span>}
+              </button>
+              <button type="button" className="concept-evidence" onClick={() => onQuotes(l.other.id)}>
+                <span className="concept-rel">{l.relation}</span>
+                <span className="concept-count">{plural(l.articles, "статья", "статьи", "статей")}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {links.length > SIDE_ROWS && (
+        <div className="concept-more">
+          {rows < links.length && (
+            <button type="button" className="link-btn" onClick={() => setRows(rows + 20)}>
+              Показать ещё {Math.min(20, links.length - rows)} из {links.length - rows}
+            </button>
+          )}
+          {rows > SIDE_ROWS && (
+            <button type="button" className="link-btn" onClick={() => setRows(SIDE_ROWS)}>
+              Свернуть
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Общая карта: самые связанные понятия одной картинкой, нажатие открывает понятие. */
+function Overview({ facts, nodes, size, onOpen }: { facts: Fact[]; nodes: Concept[]; size: number; onOpen: (id: string) => void }) {
   const box = useRef<HTMLDivElement>(null);
-  const tree = useQuery({ queryKey: ["kb", "kbs"], queryFn: () => kbTree("esg") });
-  const net = useQuery({ queryKey: ["kb", "network", kb], queryFn: () => kbNetwork(kb) });
-  const links = useQuery({ queryKey: ["experiment-links"], queryFn: experimentLinks });
-  useEffect(() => {
-    const t = window.setTimeout(() => setSize(sizeDraft), 350);
-    return () => window.clearTimeout(t);
-  }, [sizeDraft]);
-  useEffect(() => {
-    setSelected(null);
-    setCenter(null);
-    setNote("");
-  }, [kb]);
-
-  const entityNodes = useMemo(() => (net.data?.nodes ?? []).filter((n) => n.kind === "сущность"), [net.data]);
-  const nameOf = (id: string | null) => entityNodes.find((n) => n.id === id)?.name ?? id ?? "";
-  const idOf = (name: string) => entityNodes.find((n) => n.name === name)?.id ?? null;
-
-  const view = useMemo(() => {
-    const out: ElementDefinition[] = [];
-    if (!net.data) return { elements: out, entitiesTotal: 0, hidden: 0, around: 0 };
-    const facts = net.data.edges.filter((e) => e.type === "факт" && rels.has(groupOf(e.label ?? "").key));
+  const elements = useMemo(() => {
     const degree = new Map<string, number>();
     for (const e of facts) {
       degree.set(e.source, (degree.get(e.source) ?? 0) + (e.weight ?? 1));
       degree.set(e.target, (degree.get(e.target) ?? 0) + (e.weight ?? 1));
     }
-    let drawn: Fact[];
-    let hidden: number;
-    let around = 0;
-    if (center) {
-      const touching = strongestPairs(facts, (e) => e.source === center || e.target === center);
-      const top = touching.slice(0, NEIGHBOURS);
-      const ring = new Set(top.flatMap((e) => [e.source, e.target]));
-      const between = strongestPairs(
-        facts,
-        (e) => e.source !== center && e.target !== center && ring.has(e.source) && ring.has(e.target),
-      );
-      drawn = [...top, ...between.slice(0, NEIGHBOURS)];
-      around = touching.length;
-      hidden = touching.length - top.length;
-    } else {
-      const keep = new Set(
-        [...degree]
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, size)
-          .map(([id]) => id),
-      );
-      const among = strongestPairs(facts, (e) => keep.has(e.source) && keep.has(e.target));
-      drawn = among.slice(0, size * EDGES_PER_NODE);
-      hidden = among.length - drawn.length;
+    const keep = new Set([...degree].sort((a, b) => b[1] - a[1]).slice(0, size).map(([id]) => id));
+    const pairs = new Map<string, Fact>();
+    for (const e of facts) {
+      if (!keep.has(e.source) || !keep.has(e.target) || e.source === e.target) continue;
+      const k = e.source < e.target ? `${e.source}|${e.target}` : `${e.target}|${e.source}`;
+      const was = pairs.get(k);
+      if (!was || (e.weight ?? 1) > (was.weight ?? 1)) pairs.set(k, e);
     }
+    const drawn = [...pairs.values()].sort((a, b) => (b.weight ?? 1) - (a.weight ?? 1)).slice(0, size * 2);
     const linked = new Set(drawn.flatMap((e) => [e.source, e.target]));
-    if (center) linked.add(center);
-    for (const n of net.data.nodes) {
-      if (n.kind === "сущность" && linked.has(n.id)) {
-        out.push({ data: { id: n.id, label: n.name ?? n.id, kind: "entity", size: nodeSize(n.facts ?? 1), center: n.id === center ? "yes" : "no" } });
+    const out: ElementDefinition[] = [];
+    for (const n of nodes) {
+      if (linked.has(n.id)) {
+        out.push({ data: { id: n.id, label: label(n), size: Math.min(50, 16 + 4 * Math.log2(Math.max(1, n.facts ?? 1))) } });
       }
     }
     for (const e of drawn) {
       out.push({
-        data: { id: `${e.source}>${e.target}>${e.label}`, source: e.source, target: e.target, label: e.label, kind: "fact", color: groupOf(e.label ?? "").color, width: edgeWidth(e.weight ?? 1) },
+        data: {
+          id: `${e.source}>${e.target}>${e.label}`,
+          source: e.source,
+          target: e.target,
+          color: groupOf(e.label ?? "").color,
+          width: Math.min(6, 1 + 1.5 * Math.log2(Math.max(1, e.weight ?? 1))),
+        },
       });
     }
-    if (withArticles) {
-      const articles = new Set<string>();
-      for (const e of net.data.edges.filter((x) => x.type === "из статьи" && linked.has(x.target))) {
-        articles.add(e.source);
-        out.push({ data: { id: `${e.source}>${e.target}`, source: e.source, target: e.target, label: "", color: "#c5cdc8", width: 1 } });
-      }
-      for (const n of net.data.nodes.filter((x) => articles.has(x.id))) {
-        out.push({ data: { id: n.id, label: (n.name ?? n.id).slice(0, 40), kind: "article", size: 14 } });
-      }
-      const exps = new Set<string>();
-      for (const l of links.data ?? []) {
-        const art = `статья:${l.kbrag_id}`;
-        if (!articles.has(art)) continue;
-        const id = `exp:${l.experiment}`;
-        if (!exps.has(id)) {
-          exps.add(id);
-          out.push({ data: { id, label: l.experiment, kind: "experiment", size: 26 } });
-        }
-        out.push({ data: { id: `${id}>${art}`, source: id, target: art, label: l.relation, color: "#14231c", width: 2 } });
-      }
-    }
-    return { elements: out, entitiesTotal: degree.size, hidden, around };
-  }, [net.data, rels, size, center, withArticles, links.data]);
-
+    return out;
+  }, [facts, nodes, size]);
   useEffect(() => {
     if (!box.current) return undefined;
     const instance = cytoscape({
       container: box.current,
-      elements: view.elements,
-      minZoom: 0.2,
-      maxZoom: 3,
+      elements,
+      minZoom: 0.3,
+      maxZoom: 2.5,
       style: [
         {
           selector: "node",
@@ -234,90 +242,108 @@ export function Graph() {
             label: "data(label)",
             width: "data(size)",
             height: "data(size)",
-            "font-size": 11,
-            "min-zoomed-font-size": 7,
+            "font-size": 13,
             color: "#17201b",
             "text-valign": "bottom",
-            "text-margin-y": 3,
-            "text-wrap": "ellipsis",
-            "text-max-width": "130px",
+            "text-margin-y": 4,
+            "text-wrap": "wrap",
+            "text-max-width": "150px",
             "text-outline-color": "#ffffff",
             "text-outline-width": 2,
-            "border-width": 1.5,
-            "border-color": "#ffffff",
           },
         },
-        { selector: 'node[center = "yes"]', style: { "background-color": "#b5651d", "font-size": 13, "font-weight": "bold" } },
-        { selector: 'node[kind = "article"]', style: { shape: "round-rectangle", "background-color": "#c5cdc8", "font-size": 9, color: "#5a6b62" } },
-        { selector: 'node[kind = "experiment"]', style: { shape: "diamond", "background-color": "#1f6f4a", "font-weight": "bold" } },
-        {
-          selector: "edge",
-          style: { width: "data(width)", "line-color": "data(color)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "curve-style": "bezier", "arrow-scale": 0.7, opacity: 0.6 },
-        },
-        { selector: "edge:selected, edge.hover", style: { opacity: 1, label: "data(label)", "font-size": 10, "text-background-color": "#ffffff", "text-background-opacity": 1, "text-background-padding": "2px" } },
-        { selector: ".faded", style: { opacity: 0.1 } },
-        { selector: "node:selected", style: { "border-color": "#b5651d", "border-width": 3 } },
+        { selector: "edge", style: { width: "data(width)", "line-color": "data(color)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "curve-style": "bezier", "arrow-scale": 0.7, opacity: 0.45 } },
+        { selector: ".faded", style: { opacity: 0.12 } },
+        { selector: "edge.near", style: { opacity: 1 } },
       ],
-      layout: center
-        ? {
-            name: "concentric",
-            animate: false,
-            padding: 30,
-            minNodeSpacing: 28,
-            levelWidth: () => 1,
-            concentric: (n) => (n.id() === center ? 3 : n.data("kind") === "entity" ? 2 : 1),
-          }
-        : { name: "cose", animate: false, numIter: 1000, nodeRepulsion: () => 60000, idealEdgeLength: () => 110, nodeOverlap: 30, gravity: 0.2, componentSpacing: 60, padding: 30 },
+      layout: { name: "cose", animate: false, nodeDimensionsIncludeLabels: true, numIter: 1200, nodeRepulsion: () => 90000, idealEdgeLength: () => 140, nodeOverlap: 40, gravity: 0.25, componentSpacing: 80, padding: 40 },
     });
-    // у окрестности из пары соседей «вписать в окно» даёт огромный масштаб и подписи
-    if (instance.zoom() > 1.4) {
-      instance.zoom(1.4);
-      instance.center();
-    }
-    instance.on("tap", "node", (ev) => {
-      const n = ev.target;
+    instance.on("mouseover", "node", (ev) => {
       instance.elements().addClass("faded");
-      n.closedNeighborhood().removeClass("faded");
-      if (n.data("kind") === "entity") setSelected(n.data("label") as string);
+      const near = ev.target.closedNeighborhood();
+      near.removeClass("faded");
+      near.edges().addClass("near");
     });
-    instance.on("dbltap", "node", (ev) => {
-      const n = ev.target;
-      if (n.data("kind") !== "entity") return;
-      setCenter(n.id());
-      setSelected(n.data("label") as string);
+    instance.on("mouseout", "node", () => {
+      instance.elements().removeClass("faded");
+      instance.edges().removeClass("near");
     });
-    instance.on("tap", (ev) => {
-      if (ev.target === instance) {
-        instance.elements().removeClass("faded");
-        setSelected(null);
-      }
-    });
-    instance.on("mouseover", "edge", (ev) => ev.target.addClass("hover"));
-    instance.on("mouseout", "edge", (ev) => ev.target.removeClass("hover"));
+    instance.on("tap", "node", (ev) => onOpen(ev.target.id() as string));
     return () => instance.destroy();
-  }, [view.elements, center]);
+  }, [elements, onOpen]);
+  return <div ref={box} className="card graph-canvas" role="img" aria-label="Общая карта: самые связанные понятия банка статей" />;
+}
 
-  const search = () => {
+type Mode = "concept" | "map";
+
+export function Graph() {
+  const [kb, setKb] = useState("esg");
+  const [mode, setMode] = useState<Mode>("concept");
+  const [rels, setRels] = useState<Set<RelKey>>(new Set(["up", "down", "none", "other"]));
+  const [size, setSize] = useState(30);
+  const [current, setCurrent] = useState<string | null>(null);
+  const [trail, setTrail] = useState<string[]>([]); // откуда пришли: можно вернуться назад
+  const [evidence, setEvidence] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [found, setFound] = useState<Concept[] | null>(null);
+  const tree = useQuery({ queryKey: ["kb", "kbs"], queryFn: () => kbTree("esg") });
+  const net = useQuery({ queryKey: ["kb", "network", kb], queryFn: () => kbNetwork(kb) });
+
+  const nodes = useMemo(() => (net.data?.nodes ?? []).filter((n) => n.kind === "сущность"), [net.data]);
+  const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  const facts = useMemo(() => (net.data?.edges ?? []).filter((e) => e.type === "факт"), [net.data]);
+  const shownFacts = useMemo(() => facts.filter((e) => rels.has(groupOf(e.label ?? "").key)), [facts, rels]);
+  const popular = useMemo(() => {
+    const byKey = new Map(nodes.map((n) => [conceptKey(keyName(n)), n]));
+    const curated = POPULAR.flatMap((k) => byKey.get(k) ?? []);
+    return curated.length >= 4 ? curated : [...nodes].sort((a, b) => (b.facts ?? 0) - (a.facts ?? 0)).slice(0, 10);
+  }, [nodes]);
+
+  useEffect(() => {
+    setCurrent(null);
+    setTrail([]);
+    setEvidence(null);
+    setFound(null);
+  }, [kb]);
+  useEffect(() => {
+    if (current === null && popular[0]) setCurrent(popular[0].id);
+  }, [current, popular]);
+
+  const open = (id: string) => {
+    setMode("concept");
+    setFound(null);
+    setEvidence(null);
+    setTrail((t) => (current && current !== id ? [...t, current] : t));
+    setCurrent(id);
+  };
+  const back = () => {
+    const last = trail[trail.length - 1];
+    if (!last) return;
+    setTrail(trail.slice(0, -1));
+    setEvidence(null);
+    setCurrent(last);
+  };
+  const search = (e: FormEvent) => {
+    e.preventDefault();
     const needle = query.trim().toLowerCase();
     if (!needle) return;
-    // имя или написание (синонимы свели «cost of capital» к «стоимость капитала»): сначала
-    // точное совпадение, затем вхождение — у кого больше фактов
-    const names = (n: (typeof entityNodes)[number]) => [n.name ?? "", ...(n.spellings ?? [])].map((x) => x.toLowerCase());
-    const hits = entityNodes.filter((n) => names(n).some((x) => x.includes(needle)));
-    const hit = hits.find((n) => names(n).includes(needle)) ?? [...hits].sort((a, b) => (b.facts ?? 0) - (a.facts ?? 0))[0];
-    if (!hit) {
-      setNote(`В этой теме нет понятия, похожего на «${query.trim()}».`);
+    const names = (n: Concept) => [keyName(n), label(n), ...(n.spellings ?? [])].map((x) => x.toLowerCase());
+    const hits = nodes.filter((n) => names(n).some((x) => x.includes(needle))).sort((a, b) => (b.facts ?? 0) - (a.facts ?? 0));
+    const exact = hits.find((n) => names(n).includes(needle));
+    if (exact) {
+      open(exact.id);
       return;
     }
-    const exact = names(hit).includes(needle);
-    setNote(hits.length > 1 && !exact ? `Похожих понятий ${hits.length}; показана «${hit.name ?? hit.id}» — у неё больше всего фактов.` : "");
-    setCenter(hit.id);
-    setSelected(hit.name ?? hit.id);
+    if (hits.length === 1 && hits[0]) {
+      open(hits[0].id);
+      return;
+    }
+    setFound(hits.slice(0, 12));
   };
-
-  const entities = view.elements.filter((e) => e.data.kind === "entity").length;
-  const edges = view.elements.filter((e) => e.data.kind === "fact").length;
-  const total = net.data?.edges.filter((e) => e.type === "факт").length ?? 0;
+  const concept = current ? byId.get(current) : undefined;
+  const incoming = useMemo(() => sideLinks(shownFacts, byId, (e) => (e.target === current && e.source !== current ? e.source : null)), [shownFacts, byId, current]);
+  const outgoing = useMemo(() => sideLinks(shownFacts, byId, (e) => (e.source === current && e.target !== current ? e.target : null)), [shownFacts, byId, current]);
+  const evidenceNode = evidence ? byId.get(evidence) : undefined;
   const branches = (tree.data?.nodes ?? []).filter((n) => n.path === "esg" || n.path.startsWith("esg."));
   const toggle = (k: RelKey) => {
     const next = new Set(rels);
@@ -325,20 +351,29 @@ export function Graph() {
     else next.add(k);
     setRels(next);
   };
-  const selectedId = selected ? idOf(selected) : null;
+  const previous = trail.length ? byId.get(trail[trail.length - 1] ?? "") : undefined;
 
   return (
     <>
       <section className="page-head">
         <span className="eyebrow">БАНК СТАТЕЙ</span>
-        <h1 className="page-title">Банк статей</h1>
+        <h1 className="page-title">Карта связей</h1>
         <p className="lead">
-          Карта показывает, что статьи говорят о связях между понятиями. Нажмите на понятие, чтобы увидеть цитаты из статей;
-          двойное нажатие покажет его соседей.
+          Из статей выписаны утверждения вида «одно влияет на другое», и каждое подтверждено цитатой. Выберите понятие и
+          посмотрите, что на него влияет и на что влияет оно.
         </p>
       </section>
       <BankTabs />
       <div className="card graph-controls">
+        <form className="search-row" role="search" onSubmit={search}>
+          <label htmlFor="graph-q" className="sr-only">
+            Найти понятие на карте
+          </label>
+          <input id="graph-q" className="search" placeholder="Найти понятие: прибыльность, ESG-рейтинг, cost of capital…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <button type="submit" className="btn-primary">
+            Найти
+          </button>
+        </form>
         <label className="field inline">
           Тема
           <select value={kb} onChange={(e) => setKb(e.target.value)}>
@@ -350,37 +385,14 @@ export function Graph() {
             ))}
           </select>
         </label>
-        <div className="rel-filters" role="group" aria-label="Какие связи показывать">
-          {REL_GROUPS.map((g) => (
-            <button key={g.key} type="button" aria-pressed={rels.has(g.key)} className={rels.has(g.key) ? "chip active-rel" : "chip"} onClick={() => toggle(g.key)}>
-              <span className="rel-swatch" style={{ background: g.color }} aria-hidden="true" />
-              {g.label}
-            </button>
-          ))}
-        </div>
-        <label className="field inline">
-          Понятий на карте: {sizeDraft}
-          <input type="range" min={20} max={200} step={10} value={sizeDraft} onChange={(e) => setSizeDraft(Number(e.target.value))} />
-        </label>
-        <label className="check">
-          <input type="checkbox" checked={withArticles} onChange={(e) => setWithArticles(e.target.checked)} /> статьи и проверки
-        </label>
-        <form
-          className="search-row"
-          role="search"
-          onSubmit={(e) => {
-            e.preventDefault();
-            search();
-          }}
-        >
-          <label htmlFor="graph-q" className="sr-only">
-            Найти понятие на карте
-          </label>
-          <input id="graph-q" className="search" placeholder="Найти: ESG disclosure, cost of capital…" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <button type="submit" className="btn-ghost">
-            Найти
+        <div className="filters" role="group" aria-label="Вид карты">
+          <button type="button" className={mode === "concept" ? "chip active" : "chip"} aria-pressed={mode === "concept"} onClick={() => setMode("concept")}>
+            По понятиям
           </button>
-        </form>
+          <button type="button" className={mode === "map" ? "chip active" : "chip"} aria-pressed={mode === "map"} onClick={() => setMode("map")}>
+            Общая карта
+          </button>
+        </div>
       </div>
       {net.isError && (
         <p className="error" role="alert">
@@ -389,49 +401,94 @@ export function Graph() {
       )}
       {net.isPending && (
         <p className="muted" role="status">
-          Загружаем карту с компьютера лаборатории — при первом открытии это до минуты…
+          Загружаем карту с компьютера лаборатории. При первом открытии это может занять до минуты…
         </p>
       )}
-      {net.isSuccess && total === 0 && (
+      {net.isSuccess && facts.length === 0 && (
         <div className="card empty-state">
-          <h2 className="h2">В этой теме фактов пока нет</h2>
-          <p className="muted">Карта строится ИИ-помощником по статьям темы; факты появятся по мере прохода.</p>
+          <h2 className="h2">В этой теме связей пока нет</h2>
+          <p className="muted">ИИ-помощник выписывает их из статей темы, и они появятся по мере обработки. Попробуйте выбрать «Все темы».</p>
         </div>
       )}
-      {net.isSuccess && center && (
-        <p className="muted" role="status">
-          Окрестность «{nameOf(center)}»: соседей {view.around}
-          {view.around > NEIGHBOURS && `, показаны ${NEIGHBOURS} с самыми весомыми связями`} · двойной щелчок по соседу — его
-          окрестность{" "}
-          <button type="button" className="btn-ghost" onClick={() => setCenter(null)}>
-            ← Вся карта
-          </button>
-        </p>
+      {found && (
+        <section className="card concept-found" aria-label="Результаты поиска">
+          {found.length === 0 ? (
+            <p>
+              Такого понятия нет. Попробуйте другое слово или английское название, ведь большинство статей написаны на английском.
+            </p>
+          ) : (
+            <>
+              <p>Похожие понятия: выберите нужное.</p>
+              <div className="chips-row">
+                {found.map((n) => (
+                  <button key={n.id} type="button" className="chip" onClick={() => open(n.id)}>
+                    {label(n)}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
       )}
-      {net.isSuccess && !center && total > 0 && (
-        <p className="muted">
-          На карте {entities} самых связанных понятий из {view.entitiesTotal} и {edges} самых весомых связей · всего фактов в
-          теме {total}
-          {view.hidden > 0 && ` · ещё ${view.hidden} связей между ними скрыто`} · найдите понятие или дважды щёлкните её —
-          откроется её окрестность
-        </p>
+      {net.isSuccess && facts.length > 0 && (
+        <div className="rel-legend" role="group" aria-label="Какие связи показывать">
+          {REL_GROUPS.map((g) => (
+            <button key={g.key} type="button" aria-pressed={rels.has(g.key)} className={rels.has(g.key) ? "chip active-rel" : "chip"} onClick={() => toggle(g.key)}>
+              <span className="rel-swatch" style={{ background: g.color }} aria-hidden="true" />
+              {g.label}
+            </button>
+          ))}
+        </div>
       )}
-      {note && (
-        <p className="muted" role="status">
-          {note}
-        </p>
+      {net.isSuccess && facts.length > 0 && mode === "concept" && (
+        <>
+          <div className="concept-popular">
+            <span className="muted">С чего начать:</span>
+            <div className="chips-row">
+              {popular.map((n) => (
+                <button key={n.id} type="button" className={n.id === current ? "chip active" : "chip"} aria-pressed={n.id === current} onClick={() => open(n.id)}>
+                  {label(n)}
+                </button>
+              ))}
+            </div>
+          </div>
+          {previous && (
+            <button type="button" className="btn-ghost concept-back" onClick={back}>
+              ← Назад: {label(previous)}
+            </button>
+          )}
+          {concept && (
+            <div className="concept-map">
+              <Side title="Что на это влияет" empty="В статьях таких связей не нашлось." links={incoming} arrow="in" active={evidence} onConcept={open} onQuotes={setEvidence} />
+              <div className="concept-center">
+                <span className="eyebrow">ПОНЯТИЕ</span>
+                <h2 className="concept-title">{label(concept)}</h2>
+                {originalName(keyName(concept)) && <span className="concept-orig">{originalName(keyName(concept))}</span>}
+                <p className="muted">
+                  Упоминается в {plural(concept.facts ?? 0, "утверждении", "утверждениях", "утверждениях")} из статей. Нажмите на
+                  соседнее понятие, чтобы перейти к нему, или на число статей, чтобы увидеть цитаты.
+                </p>
+              </div>
+              <Side title="На что это влияет" empty="В статьях таких связей не нашлось." links={outgoing} arrow="out" active={evidence} onConcept={open} onQuotes={setEvidence} />
+            </div>
+          )}
+          {concept && evidenceNode && (
+            <Quotes name={keyName(concept)} otherName={keyName(evidenceNode)} kb={kb} onOpen={() => open(evidenceNode.id)} onClose={() => setEvidence(null)} />
+          )}
+        </>
       )}
-      <div className={selected ? "graph-layout with-panel" : "graph-layout"}>
-        <div ref={box} className="card graph-canvas" role="img" aria-label="Карта связей: понятия и связи между ними" />
-        {selected && (
-          <FactsPanel
-            name={selected}
-            kb={kb}
-            onClose={() => setSelected(null)}
-            onFocus={selectedId && selectedId !== center ? () => setCenter(selectedId) : undefined}
-          />
-        )}
-      </div>
+      {net.isSuccess && facts.length > 0 && mode === "map" && (
+        <>
+          <div className="map-size">
+            <label className="field inline">
+              Понятий на карте: {size}
+              <input type="range" min={15} max={80} step={5} value={size} onChange={(e) => setSize(Number(e.target.value))} />
+            </label>
+            <p className="muted">Самые связанные понятия: чем больше круг, тем чаще о понятии пишут. Наведите, чтобы выделить связи, и нажмите, чтобы открыть.</p>
+          </div>
+          <Overview facts={shownFacts} nodes={nodes} size={size} onOpen={open} />
+        </>
+      )}
     </>
   );
 }

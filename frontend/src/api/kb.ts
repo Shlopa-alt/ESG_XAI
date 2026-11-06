@@ -5,6 +5,7 @@ export interface KbStats {
   kb_title: string;
   documents: number;
   chunks: number;
+  facts?: number; // утверждений с цитатами; старый KBRAG их не считает
   year_from: number | null;
   year_to: number | null;
 }
@@ -88,6 +89,9 @@ export const kbSearch = (q: string, kb: string) =>
   get<{ hits: KbHit[] }>("search", { q, kb, limit: "12" }).then((r) => r.hits);
 export const kbDocuments = (kb: string) =>
   get<{ documents: KbDocument[] }>("documents", { kb }).then((r) => r.documents);
+/** Страница списка статей: сколько показать и фильтр по названию. */
+export const kbDocumentsPage = (kb: string, limit: number, q: string) =>
+  get<{ documents: KbDocument[]; total?: number }>("documents", { kb, limit: String(limit), ...(q ? { q } : {}) });
 export const kbNetwork = (kb: string) => get<KbNetwork>("network", { kb });
 export const kbArticle = (docId: string, offset: number) =>
   get<KbArticle>("article", { doc_id: docId, text: "1", offset: String(offset), limit: "20" });

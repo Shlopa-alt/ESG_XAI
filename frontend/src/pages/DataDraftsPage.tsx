@@ -74,7 +74,13 @@ export function DataDrafts() {
       </div>
       <section className="card">
         {q.isError && <p className="error" role="alert">{q.error.message}</p>}
-        {q.data && q.data.length === 0 && <p className="muted">Черновиков нет.</p>}
+        {q.data && q.data.length === 0 && (
+          <p className="muted">
+            {filter === "proposed"
+              ? "Новых таблиц пока нет. Они появляются после поиска по статьям банка и после добавления новой статьи."
+              : "С таким статусом таблиц нет."}
+          </p>
+        )}
         {q.data && q.data.length > 0 && (
           <div className="table-wrap">
             <table className="table">

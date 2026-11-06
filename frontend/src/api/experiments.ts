@@ -36,6 +36,7 @@ export interface Dataset {
   description: string;
   source_url: string;
   access_level: "public" | "nda";
+  snapshots?: number; // сколько версий файла загружено
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {

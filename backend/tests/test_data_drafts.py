@@ -75,6 +75,21 @@ def test_scan_of_all_articles_is_for_owner(make_client) -> None:  # type: ignore
     assert make_client("own", "owner").post("/api/data-drafts/scan", json={}).status_code == 202
 
 
+def test_worker_sends_drafts_in_batches(make_client, db_session: Session) -> None:  # type: ignore[no-untyped-def]
+    c = make_client("res", "researcher")
+    job = c.post("/api/data-drafts/scan", json={"doc_id": "[статья]"}).json()["job"]
+    c.post("/api/qwen/worker/next", headers=TOKEN)
+    url = "/api/qwen/worker/tables-drafts"
+    assert c.post(url, json={"job": job, "drafts": [_draft()]}).status_code == 403  # без токена обработчика
+    r = c.post(url, headers=TOKEN, json={"job": job, "drafts": [_draft()]})
+    assert r.status_code == 200 and len(r.json()["created"]) == 1
+    # повтор той же порции после обрыва связи черновик не задваивает
+    assert c.post(url, headers=TOKEN, json={"job": job, "drafts": [_draft()]}).json()["created"] == []
+    assert c.post(url, headers=TOKEN, json={"job": 999999, "drafts": []}).status_code == 404
+    done = c.post(f"/api/qwen/worker/{job}/result", headers=TOKEN, json={"status": "done", "result": {"drafts": []}}).json()
+    assert done["message"] == "Черновиков данных: 1"
+
+
 # --- операции ---
 
 

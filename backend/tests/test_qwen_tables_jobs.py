@@ -41,6 +41,7 @@ class Platform:
     def __init__(self, known: list[list[Any]], draft: dict[str, Any] | None = None) -> None:
         self.known, self.draft = known, draft
         self.calls: list[str] = []
+        self.batches: list[Any] = []
 
     def post(self, path: str, body: Any = None) -> tuple[int, Any]:
         self.calls.append(path)
@@ -48,6 +49,9 @@ class Platform:
             return 200, {"known": self.known}
         if path == "draft-context":
             return 200, self.draft
+        if path == "tables-drafts":
+            self.batches.append(body)
+            return 200, {"created": [1]}
         raise AssertionError(path)
 
 
@@ -178,3 +182,53 @@ def test_edit_rows_are_one_based_in_prompt(monkeypatch: pytest.MonkeyPatch) -> N
         {"op": "transpose"},
     ]
     assert out["draft"] == 7
+
+
+def test_drafts_are_sent_in_batches_and_all_articles_asked(kbrag: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Многочасовой поиск не держит находки в памяти; список статей запрашивается без лимита в 500."""
+    asked: list[Any] = []
+
+    def get(path: str, params: dict[str, Any], token: str, timeout_s: float = 20) -> dict[str, Any]:
+        asked.append(params)
+        if params.get("kb") == "esg.experiments":
+            return {"documents": []}
+        return {"documents": [{"doc_id": "[статья]", "title": "[название]", "url": ""}]}
+
+    monkeypatch.setattr(W, "kbrag_get", get)
+    monkeypatch.setattr(W, "ask_json", _ok)
+    monkeypatch.setattr(W, "TABLE_BATCH", 1)
+    platform = Platform([])
+    out = W.job_tables({"id": 7, "payload": {}}, {"platform": platform, "kbrag": kbrag, "kbrag_token": ""})
+    assert platform.batches[0]["job"] == 7 and len(platform.batches[0]["drafts"]) == 1
+    assert out["drafts"] == [] and out["sent"] == 1
+    assert any(p.get("limit", 0) > 5000 for p in asked)
+
+
+def test_result_survives_connection_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(W, "RETRY_PAUSES_S", (0, 0))
+    monkeypatch.setattr(W, "log", lambda *a: None)
+    calls: list[str] = []
+
+    class Flaky:
+        def post(self, path: str, body: Any = None) -> tuple[int, Any]:
+            calls.append(path)
+            if len(calls) < 3:
+                raise OSError("[обрыв]")
+            return 200, {"ok": True}
+
+    assert W.post_retry(Flaky(), "1/result", {}) == (200, {"ok": True})
+    assert len(calls) == 3
+
+
+def test_platform_refusal_is_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(W, "RETRY_PAUSES_S", (0, 0))
+    calls: list[str] = []
+
+    class Refuses:
+        def post(self, path: str, body: Any = None) -> tuple[int, Any]:
+            calls.append(path)
+            raise RuntimeError("платформа ответила 409: [уже]")
+
+    with pytest.raises(RuntimeError):
+        W.post_retry(Refuses(), "1/result", {})
+    assert len(calls) == 1

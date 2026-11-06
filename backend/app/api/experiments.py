@@ -3,7 +3,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user, require_role
@@ -143,6 +143,7 @@ class DatasetOut(BaseModel):
     description: str
     source_url: str
     access_level: str
+    snapshots: int = 0  # сколько версий файла загружено
 
 
 def _get(db: Session, code: str) -> Experiment:
@@ -299,8 +300,11 @@ def add_review(
 
 
 @router.get("/datasets", response_model=list[DatasetOut], dependencies=[Depends(current_user)])
-def list_datasets(db: Annotated[Session, Depends(get_db)]) -> list[Dataset]:
-    return list(db.scalars(select(Dataset).order_by(Dataset.code)))
+def list_datasets(db: Annotated[Session, Depends(get_db)]) -> list[DatasetOut]:
+    counts = dict(db.execute(select(DatasetSnapshot.dataset_id, func.count()).group_by(DatasetSnapshot.dataset_id)).all())
+    return [DatasetOut(code=d.code, title=d.title, description=d.description, source_url=d.source_url,
+                       access_level=d.access_level, snapshots=counts.get(d.id, 0))
+            for d in db.scalars(select(Dataset).order_by(Dataset.code))]
 
 
 class GraphLinkOut(BaseModel):

@@ -16,7 +16,7 @@ import redis
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_role
@@ -222,6 +222,22 @@ def worker_tables_context(db: Annotated[Session, Depends(get_db)]) -> dict[str, 
     return {"known": data_drafts.known(db)}
 
 
+class TableDraftsIn(BaseModel):
+    job: int
+    drafts: list[dict[str, Any]]
+
+
+@router.post("/worker/tables-drafts", dependencies=[Worker])
+def worker_tables_drafts(body: TableDraftsIn, db: Annotated[Session, Depends(get_db)]) -> dict[str, list[int]]:
+    """Черновики порциями: поиск по всем статьям идёт часами, найденное не должно ждать конца задачи."""
+    job = db.get(QwenJob, body.job)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет задачи №{body.job}")
+    created = data_drafts.create_from_result(db, job, {"drafts": body.drafts})
+    db.commit()
+    return {"created": created}
+
+
 class DraftContextIn(BaseModel):
     draft: int
     command: str = ""
@@ -284,8 +300,8 @@ def job_result(job_id: int, body: JobResult, db: Annotated[Session, Depends(get_
         drafts = data_drafts.create_from_result(db, job, body.result)
         job.result = {**{k: v for k, v in body.result.items() if k != "drafts"},
                       "proposed": len(body.result.get("drafts") or []), "created": drafts}
-        job.message = (f"Черновиков данных: {len(drafts)} (№ {', '.join(map(str, drafts))})"
-                       if drafts else "Новых таблиц-наблюдений нет")
+        total = db.scalar(select(func.count()).select_from(DataDraft).where(DataDraft.qwen_job_id == job.id)) or 0
+        job.message = f"Черновиков данных: {total}" if total else "Новых таблиц-наблюдений нет"
     if job.kind == "table_edit" and body.status == "done":
         job.message = data_drafts.apply_edit_result(db, job, body.result)
     if job.kind == "experiment" and body.status == "done":

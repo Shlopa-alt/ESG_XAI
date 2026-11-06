@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 
 import type { User } from "../api/auth";
 import { useLogout } from "../auth/useAuth";
-import { ORG } from "../org";
+import { ORG, WITH_LAB } from "../org";
 import { ROLE_LABEL } from "./Ux";
 
 interface NavItem {
@@ -94,6 +94,7 @@ export function Layout({ user }: { user: User }) {
           <div style={{ display: "flex", flexDirection: "column" }}>
             <span className="brand-name">ESG Open Research</span>
             <span className="brand-sub">{ORG}</span>
+            <span className="brand-sub">{WITH_LAB}</span>
           </div>
         </div>
         <div className="nav">

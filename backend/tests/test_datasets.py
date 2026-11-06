@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import Dataset
+from app.models import Dataset, DatasetSnapshot
 
 CSV = b"a,b\n1,2\n3,4\n"
 
@@ -77,3 +77,14 @@ def test_nda_files_hidden_from_non_owner(make_client, db_session: Session) -> No
     assert c.post("/api/datasets/DS-03/snapshots", files={"file": ("d.csv", CSV)}).status_code == 403
     owner = make_client("boss", "owner")
     assert owner.get("/api/datasets/DS-03").json()["can_see_files"] is True
+
+
+def test_list_shows_how_many_versions(make_client, db_session: Session) -> None:  # type: ignore[no-untyped-def]
+    c = make_client("res", "researcher")
+    ds = Dataset(code="DS-77", title="[набор]", access_level="public")
+    db_session.add_all([ds, Dataset(code="DS-78", title="[без файлов]", access_level="public")])
+    db_session.flush()
+    db_session.add(DatasetSnapshot(dataset_id=ds.id, version="[в]", sha256="a" * 64, storage_path="/data/esg/x.csv"))
+    db_session.commit()
+    counts = {d["code"]: d["snapshots"] for d in c.get("/api/datasets").json()}
+    assert counts["DS-77"] == 1 and counts["DS-78"] == 0

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -58,9 +58,9 @@ describe("App", () => {
     renderApp();
     const nav = await screen.findByRole("navigation", { name: "Разделы платформы" });
     for (const name of ["Обзор", "Методика", "Банк статей", "Идеи для проверки", "Проверки", "Данные"]) {
-      expect(nav).toContainElement(screen.getByRole("link", { name }));
+      expect(within(nav).getByRole("link", { name })).toBeInTheDocument();
     }
-    expect(screen.getByRole("link", { name: "Обзор" })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("link", { name: "Обзор" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("img", { name: "Профиль: Иван Иванов" })).toHaveTextContent("ИИ");
   });
 

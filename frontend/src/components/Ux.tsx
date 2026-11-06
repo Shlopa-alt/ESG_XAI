@@ -10,7 +10,7 @@ export const ROLE_LABEL: Record<string, { name: string }> = {
   reader: { name: "читатель" },
   researcher: { name: "исследователь" },
   reviewer: { name: "рецензент" },
-  owner: { name: "руководитель" },
+  owner: { name: "администратор" },
 };
 
 /** «1 гипотеза», «3 гипотезы», «5 гипотез». */

@@ -36,6 +36,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from http.client import HTTPException
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -50,6 +51,8 @@ LLM_CONTAINER = "kbrag-llm"
 KBRAG_WEB = os.environ.get("KBRAG_WEB", "http://127.0.0.1:8000").rstrip("/")
 POLL_S = 15
 BEAT_S = 30
+RETRY_PAUSES_S = (20, 60, 180, 600)  # связь с платформой бывает нестабильной: итог задачи важнее спешки
+TABLE_BATCH = 10  # черновики отправляются порциями: поиск по всем статьям идёт часами
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -84,6 +87,25 @@ class Platform:
                 return r.status, json.loads(raw) if raw else None
         except HTTPError as exc:
             raise RuntimeError(f"платформа ответила {exc.code}: {exc.read()[:300]!r}") from exc
+
+
+def post_retry(platform: "Platform", path: str, body: dict[str, Any]) -> tuple[int, Any]:
+    """Отправка, которую нельзя потерять: при сбое связи или 5xx — ещё несколько попыток.
+    Ответ 4xx не повторяется: платформа уже всё решила."""
+    for pause in (*RETRY_PAUSES_S, None):
+        try:
+            return platform.post(path, body)
+        except (URLError, OSError, HTTPException) as exc:
+            error: Exception = exc
+        except RuntimeError as exc:
+            if "ответила 5" not in str(exc):
+                raise
+            error = exc
+        if pause is None:
+            raise error
+        log(f"платформа не приняла {path} ({error}); повтор через {pause} с")
+        time.sleep(pause)
+    raise AssertionError("недостижимо")
 
 
 class Model:
@@ -935,7 +957,8 @@ def job_tables(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     import tables as T  # рядом с worker.py; только stdlib
 
     want = str(job["payload"].get("doc_id") or "")
-    docs = kbrag_get("documents", {"kb": "esg"}, ctx["kbrag_token"], timeout_s=60).get("documents") or []
+    # без limit KBRAG отдаёт только первые 500 статей
+    docs = kbrag_get("documents", {"kb": "esg", "limit": 20000}, ctx["kbrag_token"], timeout_s=120).get("documents") or []
     # материалы и отчёты лаборатории — не данные из чужих статей: их таблицы посчитаны у нас
     own = _own_reports(ctx["kbrag_token"])
     docs = [d for d in docs if (not want or d.get("doc_id") == want)
@@ -944,7 +967,7 @@ def job_tables(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     acquired = Path(ctx["kbrag"]) / ".local" / "acquired"
     drafts: list[dict[str, Any]] = []
     skipped: list[str] = []
-    asked = failed = 0
+    asked = failed = sent = 0
     for meta in docs:
         doc_id = str(meta.get("doc_id") or "")
         path = acquired / f"{doc_id}.docling.json"
@@ -978,9 +1001,13 @@ def job_tables(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
                            "description": _describe(d),
                            "columns": t.columns, "rows": t.rows[:5000], "notes": t.notes})
             log(f"  {doc_id} т{x['number']}: черновик «{d.get('title', '')}» ({len(t.rows)}×{len(t.columns)})")
+            if len(drafts) >= TABLE_BATCH:
+                post_retry(ctx["platform"], "tables-drafts", {"job": job["id"], "drafts": drafts})
+                sent += len(drafts)
+                drafts = []
     if asked and failed == asked:
         raise RuntimeError(f"модель не ответила ни по одной таблице ({failed}): {skipped[-1]}")
-    return {"drafts": drafts, "skipped": skipped[:200], "docs": len(docs)}
+    return {"drafts": drafts, "sent": sent, "skipped": skipped[:200], "docs": len(docs)}
 
 
 OPS = ["rename", "drop_columns", "keep_columns", "drop_rows", "drop_rows_where", "keep_rows_where", "set_cell",
@@ -1063,7 +1090,7 @@ def describe(kind: str, result: dict[str, Any]) -> str:
         return ("Черновик CR передан платформе" if result.get("decision") == "change"
                 else f"Менять методику не нужно: {result.get('reason', '')}")
     if kind == "tables":
-        return (f"Статей {result.get('docs', 0)}: таблиц-наблюдений {len(result.get('drafts') or [])} "
+        return (f"Статей {result.get('docs', 0)}: таблиц-наблюдений {result.get('sent', 0) + len(result.get('drafts') or [])} "
                 "(черновики создаст платформа)")
     if kind == "table_edit":
         return f"Операций {len(result.get('ops') or [])}: {result.get('explanation', '')}"
@@ -1141,8 +1168,8 @@ def main() -> int:
                     body = {"status": "failed", "message": f"{type(exc).__name__}: {exc}"[:2000]}
                 log(f"задача №{job['id']}: {body['status']} {body.get('message', '')}")
                 try:
-                    platform.post(f"{job['id']}/result", body)
-                except (RuntimeError, URLError, OSError) as exc:
+                    post_retry(platform, f"{job['id']}/result", body)
+                except (RuntimeError, URLError, OSError, HTTPException) as exc:
                     log(f"итог не отправлен ({exc}); при перезапуске задача вернётся в очередь")
                 current.clear()
             idle_since = time.time()
