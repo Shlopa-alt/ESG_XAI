@@ -455,8 +455,10 @@ CHECK_SYSTEM = """Ты — строгий рецензент лаборатор�
 Ответ — только JSON по схеме."""
 
 # с начала слова: «снижение выбросов» в названии фактора — не знак связи («ниже» внутри «снижение»)
-SIGNED = re.compile(r"\b(?:положительн|отрицательн|повыша|понижа|снижа|увелич|уменьш|рост|выше|ниже|лучше|хуже|"
+SIGNED = re.compile(r"\b(?:положительн|отрицательн|повыша|понижа|снижа|увелич|уменьш|рост|выше|ниже|лучше|хуже|улучш|ухудш|"
                     r"сильнее|слабее|больше|меньше)", re.I)
+# Qwen иногда вставляет китайские (реже японские, корейские) слова: «финансовую绩效 компании»
+CJK = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
 YEARS = re.compile(r"(\d+)\s*(?:[-–—]\s*(\d+)\s*)?(?:-?\s*летн|год|года|лет|year|yr)", re.I)
 
 
@@ -516,8 +518,9 @@ def _verify(h: dict[str, Any], cited: list[dict[str, Any]],
         failed.append("в опорах нет связи этого фактора с этим показателем"
                       + (" (цитата не дословная или из таблицы)" if d["link_quote"] else ""))
     direction = d["direction"]
-    # знак — и по словам утверждения: модель охотно пишет «связь без знака», чтобы не искать цитату
-    if direction not in ("рост", "снижение") and SIGNED.search(h["statement"]):
+    # знак — и по словам утверждения и названия: модель охотно пишет «связь без знака», чтобы не искать
+    # цитату, а в названии оставляет «повышают» при «связан» в утверждении
+    if direction not in ("рост", "снижение") and SIGNED.search(f"{h['title']} {h['statement']}"):
         direction = "снижение" if d["refs_direction"] == "снижение" else "рост"
     sign_only = False
     if direction in ("рост", "снижение") and (d["refs_direction"] != direction
@@ -562,7 +565,8 @@ def _unsign(h: dict[str, Any]) -> dict[str, Any] | None:
     except (ValueError, TimeoutError, URLError, OSError):
         return None
     title, statement = str(d.get("title") or "").strip(), str(d.get("statement") or "").strip()
-    if len(title) < 5 or len(statement) < 10 or SIGNED.search(f"{title} {statement}"):
+    if len(title) < 5 or len(statement) < 10 or SIGNED.search(f"{title} {statement}") or CJK.search(
+            f"{title} {statement}"):
         return None
     return {**h, "title": title, "statement": statement}
 
@@ -572,6 +576,8 @@ def _review(h: dict[str, Any], cited: list[dict[str, Any]],
     """Проверка опор с исправлениями кодом: знак, которого опоры не называют, убирается (правило 10),
     замена объёма инвестиций рейтингом (правило 9) и зарубежные данные о России (правило 8)
     помечаются. Возвращает (гипотеза или None, комментарий)."""
+    if CJK.search(f"{h['title']} {h['statement']} {h['rationale']}"):
+        return None, "в тексте иероглифы — модель сбилась с языка"
     ok, comment, marks, sign_only = _verify(h, cited, target)
     if not ok and sign_only:
         fixed = _unsign(h)

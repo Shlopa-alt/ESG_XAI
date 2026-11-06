@@ -279,6 +279,7 @@ def test_other_failure_is_not_rescued_by_unsign(model: dict[str, Any]) -> None:
         ("Фактор альфа положительно влияет на бета", True),
         ("Затраты на снижение выбросов связаны с показателем бета", False),
         ("Фактор альфа связан с показателем бета", False),
+        ("Фактор альфа связан с улучшением показателя бета", True),
     ],
 )
 def test_sign_words(text: str, signed: bool) -> None:
@@ -332,3 +333,20 @@ def test_foreign_data_mark_only_when_needed(
     ok, comment, marks, _ = W._verify({**H, "statement": statement}, ABROAD_CITED, TARGET)
     assert ok, comment
     assert ("abroad" in marks) is marked
+
+
+def test_sign_in_title_counts(model: dict[str, Any]) -> None:
+    """«Повышают» в названии при «связан» в утверждении — тоже знак без опоры."""
+    model["answer"] = answer(direction="связь без знака", **NO_SIGN_IN_REFS)
+    h = {**H, "title": "Фактор альфа повышает бета", "statement": UNSIGNED["statement"]}
+    ok, comment, _, sign_only = W._verify(h, CITED, TARGET)
+    assert not ok and sign_only
+    assert "направление «рост»" in comment
+
+
+@pytest.mark.parametrize("field", ["title", "statement", "rationale"])
+def test_cjk_is_rejected_without_asking_model(model: dict[str, Any], field: str) -> None:
+    h = {**H, field: f"{H[field]} [заглушка]绩效"}
+    checked, comment = W._review(h, CITED, TARGET)
+    assert checked is None and "иероглифы" in comment
+    assert model["calls"] == []
