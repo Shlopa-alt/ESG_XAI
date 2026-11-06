@@ -646,16 +646,7 @@ a.btn-ghost.active { border-color: var(--accent); }
 @media (max-width: 1023px) { .methodology-layout { grid-template-columns: minmax(0, 1fr); } }
 .tree { display: flex; flex-direction: column; gap: 16px; }
 .node { margin: 0; }
-.node > .node, .node > .node-sections { margin-left: 16px; }
-.node-variant, .node-task { margin-top: 12px; padding-left: 12px; border-left: 3px solid var(--border); }
-.node-task { border-left-color: #b9d3c4; }
-.node-head { cursor: pointer; line-height: 1.5; }
-.node-section > .node-head { cursor: default; }
-.node-kind { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px; }
-.node-num { font-size: 13px; color: var(--text-muted); }
 .node-text { margin: 6px 0; }
-.node-sections { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-.node-section { padding: 8px 12px; border-radius: 8px; background: var(--surface-2, #f4f6f4); }
 .node-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0; }
 .node-links { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; }
 .pre-line { white-space: pre-line; }
@@ -683,12 +674,6 @@ a.btn-ghost.active { border-color: var(--accent); }
 .draft-jobs p { margin: 2px 0 0; }
 
 /* --- удобство: меню по шагам цикла, шаги, «что дальше», мастер запуска (цвета — только токены выше) --- */
-.nav { gap: 14px; }
-.nav-group { display: flex; flex-direction: column; gap: 2px; }
-.nav-group-title { display: flex; align-items: center; gap: 8px; padding: 0 12px 4px; font: 500 11px "IBM Plex Mono", monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--nav-muted); }
-.nav-step { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--nav-muted); color: var(--nav-muted); font-size: 11px; }
-.nav-group .nav-link { padding-left: 38px; }
-.nav-group:first-child .nav-link { padding-left: 12px; }
 
 .stepper { list-style: none; margin: 4px 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 0; font-size: 13px; }
 .step { display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
@@ -765,3 +750,52 @@ a.btn-ghost.active { border-color: var(--accent); }
 .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
 .toolbar-search { flex: 0 1 320px; }
 @media (max-width: 640px) { .toolbar-search { flex-basis: 100%; } }
+
+/* --- меню --- */
+.nav-low { margin-top: 18px; padding: 0 12px 2px; font-size: 12px; color: var(--nav-muted); }
+
+/* --- обзор --- */
+.hero { background: var(--sidebar); color: var(--on-accent); border-radius: 14px; padding: clamp(24px, 4vw, 44px); display: flex; flex-direction: column; gap: 14px; }
+.hero-kicker { font: 500 12px/1.4 "IBM Plex Mono", monospace; color: var(--nav-muted); }
+.hero-title { margin: 0; font-size: clamp(26px, 3.6vw, 40px); line-height: 1.15; letter-spacing: -0.01em; max-width: 22em; text-wrap: balance; }
+.hero-lead { margin: 0; font-size: 17px; line-height: 1.55; max-width: 62ch; color: var(--nav-muted); }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.btn-hero, .btn-hero-ghost { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 8px; font: 600 15px "IBM Plex Sans", sans-serif; text-decoration: none; }
+.btn-hero { background: var(--on-accent); color: var(--sidebar); }
+.btn-hero-ghost { color: var(--on-accent); border: 1px solid var(--nav-muted); }
+.btn-hero:hover { background: var(--ok-bg); color: var(--sidebar); }
+.btn-hero-ghost:hover { color: var(--on-accent); background: var(--accent); }
+.overview-block { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; scroll-margin-top: 80px; }
+.overview-text { margin: 0; max-width: 66ch; line-height: 1.55; }
+.esg-grid, .found-grid, .start-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.esg-grid { list-style: none; margin: 0; padding: 0; }
+.esg-grid .card { display: flex; flex-direction: column; gap: 4px; }
+.esg-letter { font: 500 32px/1 "IBM Plex Mono", monospace; color: var(--accent); }
+.found-card { display: flex; flex-direction: column; gap: 8px; }
+.found-card p { margin: 0; }
+.start-card { display: flex; flex-direction: column; gap: 4px; color: inherit; text-decoration: none; }
+.start-card strong { color: var(--accent); }
+.start-card:hover { border-color: var(--accent); color: inherit; }
+
+/* --- вкладки-ссылки --- */
+a.tab { display: inline-flex; align-items: center; text-decoration: none; color: inherit; }
+
+/* --- методика: свёрнутые пункты, текст открывается по нажатию --- */
+.node-card { padding: 4px 16px; }
+.node-card > .h3 { margin: 12px 0 4px; }
+.node-head { cursor: pointer; display: grid; gap: 2px; padding: 12px 0; line-height: 1.4; list-style: none; }
+.node-head::-webkit-details-marker { display: none; }
+.node-head:hover .node-title { color: var(--accent); }
+.node-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 600; }
+.node-title::before { content: "›"; color: var(--accent); font-weight: 600; transition: transform 0.12s; }
+details[open] > .node-head .node-title::before { transform: rotate(90deg); }
+.node-preview, .node-count { font-size: 14px; padding-left: 15px; }
+.node-direction > .node-head .node-title { font-size: 17px; }
+.node-body { padding: 0 0 10px 15px; display: flex; flex-direction: column; gap: 6px; }
+.node-body > .node { border-top: 1px solid var(--border); }
+.node-info { margin: 0; font-size: 13px; }
+.node-text { margin: 0; line-height: 1.55; max-width: 72ch; }
+.method-add { display: flex; flex-direction: column; gap: 8px; }
+@media (prefers-reduced-motion: reduce) { .node-title::before { transition: none; } }
+.clamp-2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+details[open] > .node-head .node-preview { display: none; }

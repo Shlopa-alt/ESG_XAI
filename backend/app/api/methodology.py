@@ -151,8 +151,8 @@ def _cr_out(db: Session, cr: ChangeRequest) -> CrOut:
         else:
             kb = db.get(KbRef, b.kb_ref_id) if b.kb_ref_id else None
             ref = (kb.doi or kb.kbrag_id) if kb else "?"
-            label = (f"факт KBRAG {kb.kbrag_id}" if b.basis_type == "kb_fact"
-                     else f"статья KBRAG {kb.doi}") if kb else "?"
+            label = (f"факт из банка статей {kb.kbrag_id}" if b.basis_type == "kb_fact"
+                     else f"статья из банка статей {kb.doi}") if kb else "?"
         bases.append(BasisOut(basis_type=b.basis_type, ref=ref, valid=label in valid))
     reviews = db.execute(
         select(Review, User.login).join(User, User.id == Review.reviewer_id)
@@ -282,7 +282,7 @@ def create_cr(
     section = _section(db, body.section) if body.section else None
     if body.action == "edit":
         if section is None:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Какой узел меняется — section")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Какой пункт меняется — section")
     else:
         allowed = svc.CHILD_KINDS[section.kind if section else None]
         if body.new_kind not in allowed:
@@ -290,9 +290,9 @@ def create_cr(
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 f"Добавить {where} можно: {', '.join(allowed) or 'ничего'}")
         if len(body.new_title.strip()) < 3:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Заголовок нового узла — new_title")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Название нового пункта — new_title")
         if not body.proposed_content.strip():
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Текст нового узла — proposed_content")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Текст нового пункта — proposed_content")
     cr = ChangeRequest(code=code, section_id=section.id if section else None, action=body.action,
                        new_kind=body.new_kind if body.action == "add" else "",
                        new_title=body.new_title.strip() if body.action == "add" else "",
@@ -354,9 +354,9 @@ def patch_cr(
         if svc.has_approval(db, cr):
             raise HTTPException(status.HTTP_409_CONFLICT, "CR уже одобрен рецензентом — текст не меняется")
         if "new_title" in text and cr.action != "add":
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Заголовок нового узла — только у CR «добавить»")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Название нового пункта — только у CR «добавить»")
         if cr.action == "add" and not (text.get("proposed_content", cr.proposed_content) or "").strip():
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Текст нового узла — proposed_content")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Текст нового пункта — proposed_content")
         for k, v in text.items():
             setattr(cr, k, (v or "").strip())
         cr.problems = qwen_cr.problems(db, cr)

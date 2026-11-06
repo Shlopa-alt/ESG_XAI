@@ -10,7 +10,7 @@ export interface Section {
   content: string;
   stability: Stability;
   kind: NodeKind;
-  parent: string; // номер родителя; пусто — корень методики
+  parent: string; // номер родителя; пусто — всю методику
   position: number;
 }
 
@@ -45,12 +45,12 @@ export interface ChangeRequest {
   bases: Array<{ basis_type: string; ref: string; valid: boolean }>;
   reviews: Array<{ reviewer: string; verdict: "approve" | "changes" | "reject"; text: string; created_at: string }>;
   blockers: string[];
-  source: "" | "qwen"; // "qwen" — черновик Qwen по одобренному отчёту
+  source: "" | "qwen"; // "qwen" — черновик ИИ-помощника по одобренному отчёту
   report: string; // «EXP-001 v1»
   report_experiment: string;
-  problems: string; // что проверить в черновике Qwen
+  problems: string; // что проверить в черновике ИИ-помощник
   author: string;
-  editable: boolean; // текст можно править: CR открыт и одобряющей рецензии нет
+  editable: boolean; // текст можно править: предложение открыто и одобряющей рецензии нет
 }
 
 export interface Version {

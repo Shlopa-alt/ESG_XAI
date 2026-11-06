@@ -77,7 +77,7 @@ async function get<T>(name: string, params: Record<string, string>): Promise<T> 
   });
   const body = (await res.json().catch(() => null)) as (T & { error?: string; detail?: string }) | null;
   if (!res.ok || body === null) {
-    throw new Error(body?.detail ?? body?.error ?? `База знаний: ошибка ${res.status}`);
+    throw new Error(body?.detail ?? body?.error ?? `Банк статей: ошибка ${res.status}`);
   }
   return body;
 }

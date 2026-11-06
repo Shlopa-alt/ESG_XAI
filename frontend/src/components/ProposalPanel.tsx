@@ -62,13 +62,13 @@ export function ProposalPanel({ code, status }: { code: string; status: string }
     <>
       {approved && (
         <p className="muted">
-          {approved.from_qwen ? "Эксперимент по предложению Qwen" : "Эксперимент настроен вручную"}:{" "}
+          {approved.from_qwen ? "Проверка по предложению ИИ-помощника" : "Проверка настроена вручную"}:{" "}
           <Link to={`/experiments/${approved.experiment}`} className="mono">
             {approved.experiment}
           </Link>
           {approved.run_id && (
             <>
-              , запуск <Link to={`/run/${approved.run_id}`}>№{approved.run_id}</Link>
+              , расчёт <Link to={`/run/${approved.run_id}`}>№{approved.run_id}</Link>
             </>
           )}{" "}
           ({approved.from_qwen ? "одобрил" : "настроил"} {approved.decided_by})
@@ -79,7 +79,7 @@ export function ProposalPanel({ code, status }: { code: string; status: string }
         .filter((p) => p.status === "rejected")
         .map((p) => (
           <p key={p.id} className="muted">
-            Предложение Qwen «{p.title}» отклонено ({p.decided_by}): {p.note}
+            Предложение ИИ-помощника «{p.title}» отклонено ({p.decided_by}): {p.note}
           </p>
         ))}
     </>

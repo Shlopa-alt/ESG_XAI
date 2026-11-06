@@ -19,10 +19,11 @@ import {
   scanTables,
 } from "../api/dataDrafts";
 import { useMe } from "../auth/useAuth";
+import { DataTabs } from "../components/SectionTabs";
 
 const FILTERS: Array<[DraftStatus | "all", string]> = [
   ["proposed", "Ждут решения"],
-  ["approved", "Датасет создан"],
+  ["approved", "Набор данных создан"],
   ["rejected", "Отклонены"],
   ["all", "Все"],
 ];
@@ -45,26 +46,24 @@ export function DataDrafts() {
   return (
     <>
       <section className="page-head">
-        <span className="eyebrow">
-          <Link to="/knowledge">БАЗА ЗНАНИЙ</Link> · ДАННЫЕ ИЗ СТАТЕЙ
-        </span>
-        <h1 className="page-title">Черновики данных</h1>
-        <p className="muted">
-          Таблицы-наблюдения из статей базы знаний: их нашёл и разобрал обработчик, отобрала и описала Qwen. Проверьте
-          таблицу, поправьте руками или командой Qwen — и создайте датасет, на котором можно запустить метод
-          лаборатории.
+        <span className="eyebrow">ДАННЫЕ</span>
+        <h1 className="page-title">Данные из статей</h1>
+        <p className="lead">
+          Таблицы с исходными данными, найденные в статьях банка. Проверьте таблицу, при необходимости поправьте и создайте
+          из неё набор данных: на нём можно считать проверки.
         </p>
         {isOwner && (
           <div className="run-head">
             <button type="button" className="btn-ghost" disabled={scan.isPending || scan.isSuccess} onClick={() => scan.mutate()}>
               Поискать таблицы во всех статьях
             </button>
-            {!scan.isSuccess && <span className="muted">Может занять часы и задержать другие задачи Qwen.</span>}
-            {scan.isSuccess && <span className="muted">Задача Qwen №{scan.data.job} в очереди — черновики появятся здесь.</span>}
+            {!scan.isSuccess && <span className="muted">Может занять часы и задержать другие задачи ИИ-помощника.</span>}
+            {scan.isSuccess && <span className="muted">Задача ИИ-помощника №{scan.data.job} в очереди — черновики появятся здесь.</span>}
             {scan.isError && <span className="error" role="alert">{scan.error.message}</span>}
           </div>
         )}
       </section>
+      <DataTabs />
       <div className="filters" role="group" aria-label="Статус черновика">
         {FILTERS.map(([key, label]) => (
           <button key={key} type="button" className={filter === key ? "chip active" : "chip"} aria-pressed={filter === key}
@@ -154,7 +153,7 @@ function DraftTable({ d, canEdit, apply, pending }: { d: Draft; canEdit: boolean
       {canEdit && (
         <p className="muted">
           Нажмите на ячейку или имя столбца, чтобы поправить (Enter — сохранить, Esc — отмена). Каждая правка
-          попадает в журнал и в описание будущего датасета.
+          попадает в журнал и в описание будущего набора данных.
         </p>
       )}
       <div className="table-wrap">
@@ -252,10 +251,10 @@ function QwenCommand({ d }: { d: Draft }) {
   const busy = d.jobs.some((j) => j.status === "queued" || j.status === "running");
   return (
     <section className="card">
-      <h2 className="h2">Команда Qwen</h2>
+      <h2 className="h2">Команда ИИ-помощнику</h2>
       <p className="muted">
         Скажите словами, что поправить: «убери итоговые строки», «переведи тыс. руб. в рубли», «переименуй столбцы
-        по-русски», «оставь только 2020–2022». Qwen ответит операциями правки, платформа применит их и запишет в
+        по-русски», «оставь только 2020–2022». ИИ-помощник ответит операциями правки, платформа применит их и запишет в
         журнал; код модель не пишет.
       </p>
       <form className="review-form" onSubmit={submit}>
@@ -264,7 +263,7 @@ function QwenCommand({ d }: { d: Draft }) {
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} required minLength={3} maxLength={1000} />
         </label>
         <button type="submit" className="btn-primary" disabled={m.isPending || busy}>
-          {busy ? "Qwen работает…" : "Отправить"}
+          {busy ? "ИИ-помощник работает…" : "Отправить"}
         </button>
       </form>
       {m.isError && <p className="error" role="alert">{m.error.message}</p>}
@@ -302,7 +301,7 @@ function Decide({ d }: { d: Draft }) {
       <h2 className="h2">Решение</h2>
       <form className="review-form" onSubmit={(e) => { e.preventDefault(); approve.mutate(); }}>
         <label className="field grow">
-          Название датасета
+          Название набора данных
           <input value={title} onChange={(e) => setTitle(e.target.value)} required minLength={3} maxLength={512} />
         </label>
         {me.data?.role === "owner" && (
@@ -311,11 +310,11 @@ function Decide({ d }: { d: Draft }) {
           </label>
         )}
         <button type="submit" className="btn-primary" disabled={approve.isPending}>
-          Создать датасет
+          Создать набор данных
         </button>
       </form>
       <p className="muted">
-        Будет заведён датасет со ссылкой на статью (DOI) и срез CSV из этой таблицы; в описание войдут подпись
+        Будет заведён набор данных со ссылкой на статью (DOI) и версию данных в CSV из этой таблицы; в описание войдут подпись
         таблицы и журнал правок.
       </p>
       {approve.isError && <p className="error" role="alert">{approve.error.message}</p>}

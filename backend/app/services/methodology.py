@@ -31,9 +31,9 @@ def valid_bases(db: Session, cr: ChangeRequest) -> list[str]:
             if ref is None:
                 continue
             if basis.basis_type == "kb_fact" and ref.kind == "fact" and ref.quote.strip():
-                ok.append(f"факт KBRAG {ref.kbrag_id}")
+                ok.append(f"факт из банка статей {ref.kbrag_id}")
             if basis.basis_type == "kb_article" and ref.kind == "article" and ref.doi.strip():
-                ok.append(f"статья KBRAG {ref.doi}")
+                ok.append(f"статья из банка статей {ref.doi}")
     return ok
 
 
@@ -52,8 +52,8 @@ def why_not_acceptable(db: Session, cr: ChangeRequest) -> list[str]:
     reasons = []
     if not valid_bases(db, cr):
         reasons.append(
-            "нет основания: нужен завершённый эксперимент, проверенный факт KBRAG с цитатой "
-            "или статья KBRAG с DOI"
+            "нет основания: нужна завершённая проверка, проверенный факт с цитатой "
+            "или статья из банка статей с DOI"
         )
     if not has_approval(db, cr):
         reasons.append("нет одобряющей рецензии")

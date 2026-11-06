@@ -46,13 +46,13 @@ const STATUS: Record<Report["status"], string> = {
   rejected: "отклонён",
 };
 const BADGE: Record<Report["status"], string> = { draft: "st-planned", review: "st-review", approved: "st-done", rejected: "st-failed" };
-const VERDICT = { confirmed: "гипотеза подтверждена", rejected: "гипотеза отклонена", inconclusive: "результат неоднозначен" };
+const VERDICT = { confirmed: "идея подтвердилась", rejected: "идея не подтвердилась", inconclusive: "результат неоднозначен" };
 const KB: Record<string, string> = {
-  queued: "ждёт импорта в базу знаний",
-  processing: "загружается в базу знаний",
-  done: "в базе знаний",
-  duplicate: "уже был в базе знаний",
-  failed: "импорт в базу знаний не удался",
+  queued: "ждёт загрузки в банк статей",
+  processing: "загружается в банк статей",
+  done: "в банке статей",
+  duplicate: "уже был в банке статей",
+  failed: "загрузка в банк статей не удалась",
 };
 const lines = (t: string) => t.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -164,7 +164,7 @@ function ReportCard({ r, role }: { r: Report; role: string | undefined }) {
         {s.verdict && <span className="badge st-running">{VERDICT[s.verdict]}</span>}
         {r.run_id && (
           <Link to={`/run/${r.run_id}`} className="muted">
-            по запуску №{r.run_id}
+            по расчёту №{r.run_id}
           </Link>
         )}
         {r.reviewer && <span className="muted">рецензент {r.reviewer}</span>}
@@ -179,7 +179,7 @@ function ReportCard({ r, role }: { r: Report; role: string | undefined }) {
           </span>
         )}
       </div>
-      {r.writing && <p className="muted">Qwen пишет текст отчёта по фактам расчёта — несколько минут.</p>}
+      {r.writing && <p className="muted">ИИ-помощник пишет текст отчёта по фактам расчёта — несколько минут.</p>}
       {r.problems && <p className="blockers">{r.problems}</p>}
       {r.note && <p className="muted">Рецензент: {r.note}</p>}
       {!r.writing && !editing && s.summary && (
@@ -223,7 +223,7 @@ function ReportCard({ r, role }: { r: Report; role: string | undefined }) {
           )}
           {canReview && (
             <button type="button" className="btn-primary" disabled={act.isPending} onClick={() => act.mutate("approve")}>
-              Одобрить и отправить в базу знаний
+              Одобрить и отправить в банк статей
             </button>
           )}
         </div>
@@ -238,13 +238,13 @@ function ReportCard({ r, role }: { r: Report; role: string | undefined }) {
               </Link>
             </span>
           ) : r.cr_writing ? (
-            <span className="muted">Qwen готовит черновик изменения методики (CR) — несколько минут.</span>
+            <span className="muted">ИИ-помощник готовит черновик изменения методики — несколько минут.</span>
           ) : (
             <>
               {r.cr_note && <span className="muted">{r.cr_note}</span>}
               {(role === "researcher" || role === "owner") && (
                 <button type="button" className="btn-ghost" disabled={askCr.isPending} onClick={() => askCr.mutate()}>
-                  {r.cr_note ? "Попросить CR ещё раз" : "Предложить CR по отчёту"}
+                  {r.cr_note ? "Попросить предложение ещё раз" : "Предложить изменение методики по отчёту"}
                 </button>
               )}
             </>
@@ -304,12 +304,12 @@ export function ReportPanel({ code, role }: { code: string; role: string | undef
         )}
       </div>
       <p className="muted">
-        Отчёт пишет Qwen по фактам последнего удачного запуска: цифры, таблицы и графики — из расчёта, текст —
+        Отчёт пишет ИИ-помощник по фактам последнего удачного расчёта: цифры, таблицы и графики — из расчёта, текст —
         интерпретация модели (числа в нём сверяются с расчётом). После одобрения рецензентом отчёт попадает в базу
-        знаний, в ветку «Отчёты экспериментов».
+        знаний, в тему «Отчёты проверок».
       </p>
       {make.isError && <p className="error">{make.error.message}</p>}
-      {q.isSuccess && reports.length === 0 && <p className="muted">Отчётов ещё нет — он появится сам после удачного запуска.</p>}
+      {q.isSuccess && reports.length === 0 && <p className="muted">Отчётов ещё нет — он появится сам после удачного расчёта.</p>}
       {reports.map((r) => (
         <ReportCard key={r.id} r={r} role={role} />
       ))}

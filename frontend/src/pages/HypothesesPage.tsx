@@ -43,13 +43,13 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
   };
   return (
     <form className="card propose" onSubmit={submit}>
-      <h2 className="h2">Предложить гипотезу</h2>
+      <h2 className="h2">Предложить идею</h2>
       <p className="muted">
-        Гипотезу может предложить любой участник. Рецензент примет её к проверке или объяснит, почему отклонил;
-        принятую исследователь проверит экспериментом.
+        Идею может предложить любой участник. Рецензент примет её к проверке или объяснит, почему отклонил;
+        принятую исследователь проверит расчётом.
       </p>
       <label className="field">
-        Коротко, о чём гипотеза
+        Коротко, о чём идея
         <input value={title} onChange={(e) => setTitle(e.target.value)} required minLength={5} maxLength={512}
           placeholder="Например: ESG-раскрытие снижает стоимость долга" />
       </label>
@@ -78,7 +78,7 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
       </label>
       {refs.length > 0 && (
         <div className="muted">
-          Опора в базе знаний:
+          Источник в банке статей:
           <ul className="list">
             {refs.map((r) => (
               <li key={r.kbrag_id}>
@@ -92,8 +92,8 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
         </div>
       )}
       <p className="muted">
-        Чтобы опереться на статью, найдите её в <Link to="/knowledge">базе знаний</Link> и нажмите «Предложить
-        гипотезу по этой статье».
+        Чтобы опереться на статью, найдите её в <Link to="/knowledge">банке статей</Link> и нажмите «Предложить
+        идею по этой статье».
       </p>
       {m.isError && (
         <p className="error" role="alert">
@@ -145,9 +145,9 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
           </Link>
         )}
         <span className={`badge ${H_BADGE[h.status]}`}>{H_STATUS_LABEL[h.status]}</span>
-        {h.source === "qwen" && <span className="badge st-running">предложила Qwen</span>}
+        {h.source === "qwen" && <span className="badge st-running">предложил ИИ-помощник</span>}
         <span className="muted">
-          {h.source === "qwen" ? "по статьям и графу базы знаний" : h.author ? `предложил ${h.author}` : "автор не записан"},{" "}
+          {h.source === "qwen" ? "по статьям банка" : h.author ? `предложил ${h.author}` : "автор не записан"},{" "}
           {new Date(h.created_at).toLocaleDateString("ru-RU")}
         </span>
       </div>
@@ -158,7 +158,7 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
         action={
           h.status === "accepted" && canRun(role) ? (
             <Link to={`/run?h=${encodeURIComponent(h.code)}`} className="btn-primary">
-              Проверить экспериментом
+              Проверить идею
             </Link>
           ) : undefined
         }
@@ -181,7 +181,7 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
       )}
       {h.refs.length > 0 && (
         <details open={h.status === "proposed"}>
-          <summary>Опоры в базе знаний ({h.refs.length})</summary>
+          <summary>Источники в банке статей ({h.refs.length})</summary>
           <ul className="list muted">
             {h.refs.map((r) => (
               <li key={r.kbrag_id}>
@@ -225,7 +225,7 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
           </button>
         </div>
       )}
-      {/* править и одобрять предложение Qwen — в мастере на странице запуска; здесь только история */}
+      {/* править и одобрять предложение ИИ-помощника — в мастере на странице расчёта; здесь только история */}
       {h.status !== "accepted" && <ProposalPanel code={h.code} status={h.status} />}
       {error && (
         <p className="error" role="alert">
@@ -240,7 +240,7 @@ type HFilter = HStatus | "all" | "qwen" | "mine";
 const FILTERS: Array<{ key: HFilter; label: string }> = [
   { key: "mine", label: "Ждут моего действия" },
   { key: "all", label: "Все" },
-  { key: "qwen", label: "От Qwen" },
+  { key: "qwen", label: "От ИИ-помощника" },
   { key: "proposed", label: "Ждут решения" },
   { key: "accepted", label: "Приняты" },
   { key: "testing", label: "Проверяются" },
@@ -276,22 +276,22 @@ export function Hypotheses() {
   return (
     <>
       <section className="page-head">
-        <span className="eyebrow">ШАГ 2 · ГИПОТЕЗЫ</span>
-        <h1 className="page-title">Гипотезы</h1>
+        <span className="eyebrow">ИДЕИ ДЛЯ ПРОВЕРКИ</span>
+        <h1 className="page-title">Идеи для проверки</h1>
         <p className="lead">
-          Начало цикла: база знаний подсказывает гипотезу, рецензент принимает её к проверке, эксперимент
-          подтверждает или отклоняет, а результат становится основанием изменения методологии.
+          Идея, или гипотеза, это утверждение, которое можно проверить расчётом. Её предлагает человек или ИИ-помощник, а
+          рецензент решает, стоит ли проверять.
         </p>
         {!proposing && (
           <div>
             <button type="button" className="btn-primary" onClick={() => setProposing(true)}>
-              Предложить гипотезу
+              Предложить идею
             </button>
           </div>
         )}
       </section>
       {proposing && <ProposeForm initialRef={initialRef} onDone={close} />}
-      <div className="filters" role="group" aria-label="Статус гипотезы">
+      <div className="filters" role="group" aria-label="Статус идеи">
         {FILTERS.map((f) => (
           <button
             key={f.key}
@@ -317,7 +317,7 @@ export function Hypotheses() {
           <HypothesisCard key={h.code} h={h} role={me.data?.role} />
         ))}
         {q.isSuccess && shown.length === 0 && (
-          <p className="muted">{all.length === 0 ? "Гипотез пока нет — предложите первую." : "С таким статусом гипотез нет."}</p>
+          <p className="muted">{all.length === 0 ? "Идей пока нет — предложите первую." : "С таким статусом идей нет."}</p>
         )}
       </div>
     </>

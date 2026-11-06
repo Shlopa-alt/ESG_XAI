@@ -15,7 +15,7 @@ import { AuditLog } from "./AuditLog";
 
 const ROLES: Array<{ value: Role; label: string }> = [
   { value: "reader", label: "reader — чтение" },
-  { value: "researcher", label: "researcher — эксперименты, CR" },
+  { value: "researcher", label: "researcher — проверки, предложение" },
   { value: "reviewer", label: "reviewer — рецензии" },
   { value: "owner", label: "owner — всё и доступы" },
 ];

@@ -83,7 +83,7 @@ export const scanTables = (docId = "") =>
 
 export const DRAFT_STATUS: Record<DraftStatus, string> = {
   proposed: "ждёт решения",
-  approved: "датасет создан",
+  approved: "набор данных создан",
   rejected: "отклонён",
 };
 
@@ -95,7 +95,7 @@ export const DRAFT_BADGE: Record<DraftStatus, string> = {
 
 export const JOB_STATUS: Record<DraftJob["status"], string> = {
   queued: "в очереди",
-  running: "Qwen думает",
+  running: "ИИ-помощник думает",
   done: "готово",
   failed: "ошибка",
   cancelled: "снята",

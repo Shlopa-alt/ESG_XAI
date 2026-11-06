@@ -17,6 +17,7 @@ import { ChangePassword, Users } from "./pages/UsersPage";
 import {
   Knowledge,
   Overview,
+  Data,
 } from "./pages/sections";
 
 // Cytoscape (~400 КБ) нужен только графу — грузится, когда граф открыли
@@ -35,8 +36,9 @@ export function App() {
       <Route element={<Layout user={user} />}>
         <Route index element={<Overview />} />
         <Route path="knowledge" element={<Knowledge />} />
-        <Route path="knowledge/graph" element={<Suspense fallback={<p className="muted">Загрузка графа…</p>}><Graph /></Suspense>} />
+        <Route path="knowledge/graph" element={<Suspense fallback={<p className="muted">Загрузка карты…</p>}><Graph /></Suspense>} />
         <Route path="knowledge/import" element={<Import />} />
+        <Route path="data" element={<Data />} />
         <Route path="datasets/:code" element={<DatasetPage />} />
         <Route path="data-drafts" element={<DataDrafts />} />
         <Route path="data-drafts/:id" element={<DataDraftPage />} />
@@ -44,7 +46,8 @@ export function App() {
         <Route path="hypotheses" element={<Hypotheses />} />
         <Route path="experiments" element={<Experiments />} />
         <Route path="experiments/:code" element={<Experiment />} />
-        <Route path="run" element={<Run />} />
+        <Route path="run" element={<Run view="new" />} />
+        <Route path="runs" element={<Run view="list" />} />
         <Route path="run/:id" element={<RunDetail />} />
         <Route path="methodology" element={<Methodology />} />
         <Route path="password" element={<ChangePassword />} />

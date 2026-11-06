@@ -12,7 +12,7 @@ import type { RunRow, RunStatus } from "./pages/RunPage";
 const USER = { id: 1, login: "[researcher]", full_name: "", email: "", role: "researcher", nda_access: false };
 const HYP = {
   code: "H-001",
-  title: "[гипотеза]",
+  title: "[идея]",
   statement: "[утверждение]",
   rationale: "",
   direction: "",
@@ -32,11 +32,11 @@ const PROPOSAL = {
   hypothesis: "H-001",
   status: "proposed",
   from_qwen: true,
-  title: "[эксперимент]",
+  title: "[проверка]",
   method: "rank-agreement",
   method_title: "[метод]",
   snapshot_id: 1,
-  snapshot: "DS-01 · [срез]",
+  snapshot: "DS-01 · [версия данных]",
   params: {},
   setup: [],
   expected: "",
@@ -48,7 +48,7 @@ const PROPOSAL = {
   run_id: null,
   created_at: "2026-11-01T00:00:00Z",
 };
-const SNAPSHOTS = [{ id: 1, dataset: "DS-01", version: "[срез]", sha256: "", row_count: 10 }];
+const SNAPSHOTS = [{ id: 1, dataset: "DS-01", version: "[версия данных]", sha256: "", row_count: 10 }];
 const GENERIC = {
   key: "predictive-check",
   title: "[общий метод]",
@@ -102,6 +102,7 @@ function api({
   templates = [GENERIC, REPEAT] as unknown[],
   hypotheses = [HYP] as unknown[] | Response,
   posts = {} as Record<string, () => Response>,
+  me = USER,
 } = {}) {
   const sent: Sent[] = [];
   const answer = (v: unknown[] | Response) => (v instanceof Response ? v.clone() : json(v));
@@ -113,7 +114,7 @@ function api({
         const rule = Object.entries(posts).find(([k]) => url.includes(k));
         return Promise.resolve(rule ? rule[1]() : json({ detail: "нет правила" }, 500));
       }
-      if (url.includes("/auth/me")) return Promise.resolve(json(USER));
+      if (url.includes("/auth/me")) return Promise.resolve(json(me));
       if (url.includes("/run-templates")) return Promise.resolve(json(templates));
       if (url.includes("/columns")) return Promise.resolve(json({ columns: ["roa"], numeric: ["roa"], sheets: [], sheet: "" }));
       if (url.includes("/experiment-proposals/wait")) return Promise.resolve(json(wait));
@@ -141,12 +142,12 @@ function renderAt(path: string) {
 }
 
 const APPROVE = "Одобрить предложение и запустить";
-const MANUAL = "Создать эксперимент и запустить";
+const MANUAL = "Создать проверку и запустить";
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("Мастер запуска: предложение Qwen", () => {
-  it("показывает предложение, одобряет его и ведёт на страницу запуска", async () => {
+describe("Мастер расчёта: предложение ИИ-помощника", () => {
+  it("показывает предложение, одобряет его и ведёт на страницу расчёта", async () => {
     const sent = api({
       proposals: [PROPOSAL],
       posts: { "/approve": () => json({ ...PROPOSAL, status: "approved", experiment: "EXP-009", run_id: 5 }) },
@@ -187,11 +188,11 @@ describe("Мастер запуска: предложение Qwen", () => {
   });
 });
 
-describe("Мастер запуска: предложения нет", () => {
+describe("Мастер расчёта: предложения нет", () => {
   it("в очереди — объясняет ожидание и предлагает задать вручную", async () => {
     api();
     renderAt("/run");
-    expect(await screen.findByText(/стоит в очереди Qwen/)).toBeInTheDocument();
+    expect(await screen.findByText(/стоит в очереди ИИ-помощника/)).toBeInTheDocument();
     expect(screen.queryByText(/не на связи/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: APPROVE })).toBeDisabled();
     await userEvent.click(screen.getByRole("radio", { name: "Задам сам" }));
@@ -211,8 +212,8 @@ describe("Мастер запуска: предложения нет", () => {
     });
     renderAt("/run");
     expect(await screen.findByText(/не смогла подготовить предложение/)).toBeInTheDocument();
-    expect(screen.queryByText(/Qwen готовит/)).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Попросить Qwen ещё раз" }));
+    expect(screen.queryByText(/ИИ-помощник готовит/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Попросить ИИ-помощника ещё раз" }));
     await waitFor(() => expect(sent[0]).toEqual({ url: "/api/experiment-proposals/request", body: { hypothesis: "H-001" } }));
   });
 
@@ -229,18 +230,18 @@ describe("Мастер запуска: предложения нет", () => {
     api({ proposals: json({ detail: "[сбой предложений]" }, 500) });
     renderAt("/run");
     expect((await screen.findByRole("alert")).textContent).toContain("[сбой предложений]");
-    expect(screen.queryByText(/очереди Qwen/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/очереди ИИ-помощника/)).not.toBeInTheDocument();
   });
 
-  it("ошибка списка гипотез — не «нет гипотез»", async () => {
-    api({ hypotheses: json({ detail: "[сбой гипотез]" }, 500) });
+  it("ошибка списка идей — не «нет идей»", async () => {
+    api({ hypotheses: json({ detail: "[сбой идей]" }, 500) });
     renderAt("/run");
-    expect((await screen.findByRole("alert")).textContent).toContain("Не удалось загрузить гипотезы");
-    expect(screen.queryByText(/Нет гипотез, принятых к проверке/)).not.toBeInTheDocument();
+    expect((await screen.findByRole("alert")).textContent).toContain("Не удалось загрузить идеи");
+    expect(screen.queryByText(/Нет идей, принятых к проверке/)).not.toBeInTheDocument();
   });
 });
 
-describe("Мастер запуска: задам сам", () => {
+describe("Мастер расчёта: задам сам", () => {
   async function fillManual() {
     await userEvent.click(await screen.findByRole("radio", { name: "Задам сам" }));
     await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Метод" }), "predictive-check");
@@ -260,7 +261,7 @@ describe("Мастер запуска: задам сам", () => {
     expect(go).toBeEnabled();
   });
 
-  it("расчёт и эксперимент — один запрос; отказ сервера оставляет форму, можно повторить", async () => {
+  it("расчёт и проверка — один запрос; отказ сервера оставляет форму, можно повторить", async () => {
     let answers = 0;
     const sent = api({
       posts: {
@@ -289,38 +290,44 @@ describe("Мастер запуска: задам сам", () => {
     await userEvent.click(screen.getByRole("button", { name: "Создать только карточку, без расчёта" }));
     await waitFor(() => expect(sent.map((s) => s.url)).toEqual(["/api/hypotheses/H-001/experiment"]));
   });
+});
 
-  it("смена вкладки не теряет введённое", async () => {
+describe("Раздел «Проверки»", () => {
+  it("вкладка «Расчёты» открывается своим адресом", async () => {
     api();
+    renderAt("/runs");
+    expect(await screen.findByRole("heading", { name: "Расчёты" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Новая проверка" })).toHaveAttribute("href", "/run");
+    expect(screen.getByText("Расчётов пока нет.")).toBeInTheDocument();
+  });
+
+  it("читателя с новой проверки ведёт к списку расчётов", async () => {
+    api({ me: { ...USER, role: "reader" } });
     renderAt("/run");
-    await userEvent.click(await screen.findByRole("radio", { name: "Задам сам" }));
-    const criterion = screen.getByRole("textbox", { name: /Что подтвердит/ });
-    await userEvent.type(criterion, "критерий");
-    await userEvent.click(screen.getByRole("tab", { name: /Все запуски/ }));
-    await userEvent.click(screen.getByRole("tab", { name: "Проверить гипотезу" }));
-    expect(screen.getByRole("textbox", { name: /Что подтвердит/ })).toHaveValue("критерий");
+    expect(await screen.findByRole("heading", { name: "Расчёты" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Новая проверка" })).not.toBeInTheDocument();
   });
 });
 
-describe("Подсказка на карточке эксперимента", () => {
+describe("Подсказка на карточке проверки", () => {
   const run = (status: RunStatus) => ({ ...RUN, status }) as RunRow;
 
-  it("смотрит на последний расчёт, а не только на статус эксперимента", () => {
+  it("смотрит на последний расчёт, а не только на статус проверки", () => {
     expect(experimentNext("planned", [])).toMatch(/Расчёта ещё нет/);
     expect(experimentNext("planned", [run("running")])).toMatch(/Идёт расчёт/);
     expect(experimentNext("running", [run("done")])).toMatch(/Расчёт завершён/);
     expect(experimentNext("running", [run("failed"), run("done")])).toMatch(/не удался/);
-    expect(experimentNext("done", [run("done")])).toMatch(/Эксперимент завершён/);
+    expect(experimentNext("done", [run("done")])).toMatch(/Проверка завершена/);
   });
 });
 
-describe("Карточка гипотезы", () => {
-  it("у предложенной гипотезы опоры раскрыты: они нужны для решения", async () => {
+describe("Карточка идеи", () => {
+  it("у предложенной идеи источники раскрыты: они нужны для решения", async () => {
     const refs = [{ kind: "article", kbrag_id: "d", title: "[статья]", doi: "", quote: "[цитата]" }];
     api({ hypotheses: [{ ...HYP, status: "proposed", refs }, { ...HYP, code: "H-002", title: "[вторая]", status: "testing", refs }] });
     renderAt("/hypotheses");
-    await screen.findByText("[гипотеза]");
-    const [first] = screen.getAllByText(/Опоры в базе знаний/).map((el) => el.closest("details"));
+    await screen.findByText("[идея]");
+    const [first] = screen.getAllByText(/Источники в банке статей/).map((el) => el.closest("details"));
     expect(first).toHaveAttribute("open");
   });
 });

@@ -36,26 +36,26 @@ function PickHypothesis({
   if (list.length === 0) {
     return (
       <div className="wizard-empty">
-        <p>Нет гипотез, принятых к проверке.</p>
+        <p>Нет идей, принятых к проверке.</p>
         <p className="muted">
-          Гипотезу сначала предлагают (человек или Qwen), затем рецензент принимает её — после этого она появится здесь.
+          Идею сначала предлагают (человек или ИИ-помощник), затем рецензент принимает её — после этого она появится здесь.
         </p>
         <Link to="/hypotheses" className="btn-ghost">
-          Перейти к гипотезам
+          Перейти к идеям
         </Link>
       </div>
     );
   }
   return (
     <fieldset className="choice-list">
-      <legend className="sr-only">Гипотеза для проверки</legend>
+      <legend className="sr-only">Идея для проверки</legend>
       {list.map((h) => (
         <label key={h.code} className={value === h.code ? "choice active" : "choice"} aria-label={`${h.code} ${h.title}`}>
           <input type="radio" name="wizard-h" value={h.code} checked={value === h.code} onChange={() => onChange(h.code)} />
           <span className="choice-body">
             <span className="choice-title">
               <span className="mono">{h.code}</span> {h.title}
-              {h.source === "qwen" && <span className="badge st-running">от Qwen</span>}
+              {h.source === "qwen" && <span className="badge st-running">от ИИ-помощника</span>}
             </span>
             <span className="muted">{h.statement}</span>
           </span>
@@ -71,7 +71,7 @@ function ProposalSummary({ p }: { p: Proposal }) {
   return (
     <div className="proposal-summary">
       <dl className="dl">
-        <dt>Эксперимент</dt>
+        <dt>Проверка</dt>
         <dd>{p.title}</dd>
         <dt>Метод</dt>
         <dd>{p.method_title || <span className="error">не выбран</span>}</dd>
@@ -130,9 +130,9 @@ function ProposalMissing({
         <span className="spinner" aria-hidden="true" />
         <span>
           {wait.job === "running"
-            ? "Qwen готовит предложение эксперимента."
-            : "Задача стоит в очереди Qwen. Очередь идёт по порядку: если модель занята, например, графом, ждать можно долго."}{" "}
-          {!wait.worker && "Обработчик Qwen сейчас не на связи: работа продолжится, когда он вернётся. "}
+            ? "ИИ-помощник готовит предложение проверки."
+            : "Задача стоит в очереди ИИ-помощника. Очередь идёт по порядку: если модель занята, например, картой связей, ждать можно долго."}{" "}
+          {!wait.worker && "ИИ-помощник сейчас не на связи: работа продолжится, когда он вернётся. "}
           Страница обновится сама. Не хотите ждать — выберите «Задам сам».
         </span>
       </div>
@@ -142,14 +142,14 @@ function ProposalMissing({
     <div className="proposal-missing" role="status">
       <p>
         {rejected
-          ? `Предложение Qwen «${rejected.title}» отклонено (${rejected.decided_by}): ${rejected.note}.`
+          ? `Предложение ИИ-помощника «${rejected.title}» отклонено (${rejected.decided_by}): ${rejected.note}.`
           : wait.job === "failed"
             ? "Qwen не смогла подготовить предложение. Подробности — у владельца на странице «Задачи Qwen»."
-            : "Предложения нет: Qwen его не готовит."}{" "}
+            : "Предложения нет: ИИ-помощник его не готовит."}{" "}
         Попросите модель ещё раз или выберите «Задам сам».
       </p>
       <button type="button" className="btn-ghost" disabled={retrying} onClick={onRetry}>
-        {retrying ? "Ставлю в очередь…" : "Попросить Qwen ещё раз"}
+        {retrying ? "Ставлю в очередь…" : "Попросить ИИ-помощника ещё раз"}
       </button>
     </div>
   );
@@ -279,26 +279,26 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
           ...(t?.params ?? [])
             .filter((p) => p.required && p.kind !== "int" && isEmpty(params[p.name]))
             .map((p) => p.label.toLowerCase()),
-          ...(expected.trim().length < 3 ? ["что подтвердит или опровергнет гипотезу"] : []),
+          ...(expected.trim().length < 3 ? ["что подтвердит или опровергнет идею"] : []),
         ];
-  if (replication && !confirmed) missing.push("подтверждение, что повтор проверяет эту гипотезу");
+  if (replication && !confirmed) missing.push("подтверждение, что повтор проверяет эту идею");
   const ready = mode === "model" ? Boolean(open && !open.problems) && missing.length === 0 : missing.length === 0;
   const step = !h ? 0 : mode === "model" && !open ? 1 : 2;
 
   return (
     <section className="card wizard" aria-labelledby="wizard-title">
       <h2 className="h2" id="wizard-title">
-        Проверить гипотезу экспериментом
+        Проверить идею
       </h2>
-      <Stepper steps={["Гипотеза", "Как проверить", "Запуск"]} current={step} label="Шаги запуска" />
+      <Stepper steps={["Идея", "Как проверить", "Расчёт"]} current={step} label="Шаги расчёта" />
 
       <div className="wizard-step">
-        <h3 className="h3">1. Какую гипотезу проверяем</h3>
+        <h3 className="h3">1. Какую идею проверяем</h3>
         {hyps.isPending ? (
           <p className="muted">Загрузка…</p>
         ) : hyps.isError ? (
           <p className="error" role="alert">
-            Не удалось загрузить гипотезы: {hyps.error.message}
+            Не удалось загрузить идеи: {hyps.error.message}
           </p>
         ) : (
           <PickHypothesis list={accepted} value={code} onChange={setCode} />
@@ -307,13 +307,13 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
 
       {h && (
         <div className="wizard-step">
-          <h3 className="h3">2. Как построить эксперимент</h3>
+          <h3 className="h3">2. Как построить проверку</h3>
           <div className="mode-switch" role="radiogroup" aria-label="Кто выбирает метод и данные">
-            <label className={mode === "model" ? "mode active" : "mode"} aria-label="Взять предложение Qwen">
+            <label className={mode === "model" ? "mode active" : "mode"} aria-label="Взять предложение ИИ-помощника">
               <input type="radio" name="wizard-mode" checked={mode === "model"} onChange={() => setMode("model")} />
               <span>
-                <strong>Взять предложение Qwen</strong>
-                <span className="muted">Модель подбирает метод, срез и параметры по гипотезе и её опорам. Решение за вами: проверьте и одобрите или отклоните.</span>
+                <strong>Взять предложение ИИ-помощника</strong>
+                <span className="muted">Модель подбирает метод, данные и параметры по идее и её источникам. Решение за вами: проверьте и одобрите или отклоните.</span>
               </span>
             </label>
             <label className={mode === "manual" ? "mode active" : "mode"} aria-label="Задам сам">
@@ -321,7 +321,7 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
               <span>
                 <strong>Задам сам</strong>
                 <span className="muted">
-                  Вы выбираете метод, данные и параметры{open ? " — предложение Qwen подставлено как заготовка" : ""}.
+                  Вы выбираете метод, данные и параметры{open ? " — предложение ИИ-помощника подставлено как заготовка" : ""}.
                 </span>
               </span>
             </label>
@@ -371,7 +371,7 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
                 </p>
               )}
               <label className="field">
-                Название эксперимента
+                Название проверки
                 <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={512} />
               </label>
               <div className="form-grid">
@@ -388,9 +388,9 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
                   </select>
                 </label>
                 <label className="field">
-                  Данные (срез датасета)
+                  Данные
                   <select value={snapshot} onChange={(e) => setSnapshot(e.target.value ? Number(e.target.value) : "")} disabled={!t}>
-                    <option value="">{t ? "— выберите срез —" : "сначала выберите метод"}</option>
+                    <option value="">{t ? "— выберите версию данных —" : "сначала выберите метод"}</option>
                     {(t?.snapshots ?? []).map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.dataset} · {s.version}
@@ -403,8 +403,7 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
               {t && <p className="muted">{t.description}</p>}
               {t && t.snapshots.length === 0 && (
                 <p className="blockers">
-                  Для этого метода нет подходящих срезов — загрузите данные на странице датасета в{" "}
-                  <Link to="/knowledge">базе знаний</Link>.
+                  Для этого метода нет подходящих версий данных — загрузите их в разделе <Link to="/data">«Данные»</Link>.
                 </p>
               )}
               {t && (
@@ -417,7 +416,7 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
                 />
               )}
               <label className="field">
-                Что подтвердит или опровергнет гипотезу (записывается до расчёта)
+                Что подтвердит или опровергнет идею (записывается до расчёта)
                 <textarea rows={2} value={expected} onChange={(e) => setExpected(e.target.value)} />
               </label>
               <label className="field">
@@ -431,21 +430,21 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
 
       {h && (
         <div className="wizard-step">
-          <h3 className="h3">3. Запуск</h3>
+          <h3 className="h3">3. Расчёт</h3>
           <NextStep>
-            Будет создан эксперимент по гипотезе <span className="mono">{h.code}</span> и поставлен расчёт на сервер лаборатории
-            {chosen ? ` (лимит — ${chosen.limit_min} мин)` : ""}. Вы попадёте на страницу запуска с ходом расчёта; по готовности
-            Qwen напишет отчёт на странице эксперимента.
+            Будет создана проверка идеи <span className="mono">{h.code}</span> и поставлен расчёт на сервер лаборатории
+            {chosen ? ` (лимит — ${chosen.limit_min} мин)` : ""}. Вы увидите ход расчёта, а по готовности
+            ИИ-помощник напишет отчёт на странице проверки.
           </NextStep>
           {replication && chosen && (
             <div className="blockers" role="status">
               <p>
                 «{chosen.title}» — повтор опубликованного расчёта как есть: {chosen.description} Новых показателей он не считает,
-                поэтому гипотезу о другом результате или других данных он не проверит.
+                поэтому идею о другом результате или других данных он не проверит.
               </p>
               <label className="check">
                 <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
-                Понимаю: этот повтор действительно проверяет гипотезу {h.code}
+                Понимаю: этот повтор действительно проверяет идею {h.code}
               </label>
             </div>
           )}
@@ -457,7 +456,7 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
           {mode === "manual" && missing.length > 0 && <p className="muted">Чтобы запустить, укажите: {missing.join(", ")}.</p>}
           <div className="review-form">
             <button type="button" className="btn-primary" disabled={!ready || busy} onClick={() => go.mutate()}>
-              {go.isPending ? "Создаю и запускаю…" : mode === "model" ? "Одобрить предложение и запустить" : "Создать эксперимент и запустить"}
+              {go.isPending ? "Создаю и считаю…" : mode === "model" ? "Одобрить предложение и запустить" : "Создать проверку и запустить"}
             </button>
             {mode === "manual" && (
               <button type="button" className="btn-ghost" disabled={busy} onClick={() => cardOnly.mutate()}>
@@ -467,7 +466,7 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
           </div>
           {mode === "manual" && (
             <p className="muted">
-              Карточка без расчёта нужна, если подходящего метода или данных пока нет: гипотеза перейдёт в «проверяется», а расчёт
+              Карточка без расчёта нужна, если подходящего метода или данных пока нет: идея перейдёт в «проверяется», а расчёт
               добавите позже.
             </p>
           )}

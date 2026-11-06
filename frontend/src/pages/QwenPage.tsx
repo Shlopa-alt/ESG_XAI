@@ -48,10 +48,10 @@ const MODEL_BADGE: Record<QwenStatus["model"], string> = { off: "st-planned", st
 export const QWEN_KIND: Record<string, string> = {
   graph: "граф фактов по новым статьям",
   ping: "проверка модели",
-  hypotheses: "гипотезы по заданиям методики",
-  experiment: "эксперимент для принятой гипотезы",
-  report: "текст отчёта об эксперименте",
-  cr: "CR по одобренному отчёту",
+  hypotheses: "идеи по заданиям методики",
+  experiment: "проверка для принятой идеи",
+  report: "текст отчёта о проверке",
+  cr: "изменение методики по одобренному отчёту",
   tables: "поиск таблиц с данными в статьях",
   table_edit: "правка таблицы по команде",
 };
@@ -69,7 +69,7 @@ const BADGE: Record<QwenJob["status"], string> = {
   failed: "st-failed",
   cancelled: "st-planned",
 };
-const TRIGGER: Record<string, string> = { manual: "вручную", import: "после импорта", snapshot: "новый срез", run: "после запуска", graph: "после графа" };
+const TRIGGER: Record<string, string> = { manual: "вручную", import: "после импорта", snapshot: "новая версия данных", run: "после расчёта", graph: "после графа" };
 const when = (s: string | null) => (s ? new Date(s).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" }) : "—");
 
 function took(j: QwenJob): string {
@@ -99,10 +99,10 @@ export function Qwen() {
   return (
     <>
       <section className="page-head">
-        <span className="eyebrow">БАЗА ЗНАНИЙ · QWEN</span>
+        <span className="eyebrow">БАНК СТАТЕЙ · QWEN</span>
         <h1 className="page-title">Задачи Qwen</h1>
         <p className="lead">
-          Qwen достраивает граф базы знаний и предлагает гипотезы по заданиям методики, а дальше — эксперименты и отчёты. Модель
+          Qwen достраивает граф банка статей и предлагает идеи по заданиям методики, а дальше — проверки и отчёты. Модель
           занимает почти всю видеокарту, поэтому работает по требованию: поднимается, когда в очереди есть задача, и
           выключается через 10 минут простоя. Задачи ставятся сами (например, после импорта статьи) или кнопкой.
         </p>
@@ -143,7 +143,7 @@ export function Qwen() {
               Достроить граф по новым статьям
             </button>
             <button type="button" className="btn-ghost" disabled={add.isPending} onClick={() => add.mutate("hypotheses")}>
-              Предложить гипотезы
+              Предложить идеи
             </button>
             <button type="button" className="btn-ghost" disabled={add.isPending} onClick={() => add.mutate("ping")}>
               Проверить модель

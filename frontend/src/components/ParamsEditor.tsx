@@ -81,7 +81,7 @@ export function ParamsEditor({
           {cols.error.message}
         </p>
       )}
-      {needColumns && snapshotId === null && <p className="muted">Выберите срез — появятся его столбцы.</p>}
+      {needColumns && snapshotId === null && <p className="muted">Выберите версию данных — появятся его столбцы.</p>}
       <div className="form-grid">
         {params.map((p) => {
           const id = `${idPrefix}-${p.name}`;

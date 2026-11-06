@@ -22,6 +22,7 @@ import {
   STABILITY_LABEL,
 } from "../api/methodology";
 import { useMe } from "../auth/useAuth";
+import { plural } from "../components/Ux";
 
 const VERDICTS = { approve: "одобрено", changes: "нужны правки", reject: "отклонено" } as const;
 const CR_BADGE = { proposed: "st-planned", review: "st-review", accepted: "st-done", rejected: "st-planned" } as const;
@@ -53,7 +54,7 @@ function CrTextEditor({ cr, onDone }: { cr: ChangeRequest; onDone: () => void })
       </label>
       {cr.action === "add" && (
         <label className="field">
-          Заголовок нового узла
+          Название нового пункта
           <input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
         </label>
       )}
@@ -62,7 +63,7 @@ function CrTextEditor({ cr, onDone }: { cr: ChangeRequest; onDone: () => void })
         <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
       </label>
       <label className="field">
-        {cr.action === "add" ? "Текст нового узла" : "Новый текст узла — целиком"}
+        {cr.action === "add" ? "Текст нового пункта" : "Новый текст пункта целиком"}
         <textarea rows={8} value={content} onChange={(e) => setContent(e.target.value)} />
       </label>
       {m.isError && (
@@ -111,7 +112,7 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
         {cr.action === "add" ? (
           <>
             добавить {cr.new_kind && KIND_LABEL[cr.new_kind]} в{" "}
-            {cr.section ? <span className="mono">{cr.section}</span> : "корень методики"}
+            {cr.section ? <span className="mono">{cr.section}</span> : "всю методику"}
           </>
         ) : (
           <>
@@ -122,7 +123,7 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
         {cr.target_version && <span className="muted">→ версия {cr.target_version}</span>}
         {cr.source === "qwen" && (
           <span className="muted">
-            · черновик Qwen по отчёту{" "}
+            · черновик ИИ-помощника по отчёту{" "}
             {cr.report_experiment ? <Link to={`/experiments/${cr.report_experiment}`}>{cr.report}</Link> : cr.report}
           </span>
         )}
@@ -133,7 +134,7 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
       ) : (
         <>
           <h3 className="h3">{cr.title}</h3>
-          {cr.action === "add" && cr.new_title && <p>Новый узел: «{cr.new_title}»</p>}
+          {cr.action === "add" && cr.new_title && <p>Новый пункт: «{cr.new_title}»</p>}
           {cr.description && <p className="muted pre-line">{cr.description}</p>}
         </>
       )}
@@ -147,7 +148,7 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
       )}
       {!editing && cr.proposed_content && (
         <details>
-          <summary>{cr.action === "add" ? "Текст нового узла" : "Предлагаемый текст"}</summary>
+          <summary>{cr.action === "add" ? "Текст нового пункта" : "Предлагаемый текст"}</summary>
           <p className="pre-line">{cr.proposed_content}</p>
         </details>
       )}
@@ -165,7 +166,7 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
                 ) : (
                   <span className="mono">{b.ref}</span>
                 )}{" "}
-                {b.valid ? "✓" : "(не годится, пока не завершён или без источника)"}
+                {b.valid ? "✓" : "(не подходит, пока проверка не завершена или нет источника)"}
               </span>
             ))}
       </div>
@@ -181,21 +182,24 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
       )}
       {open && cr.blockers.length > 0 && <p className="blockers">Принять нельзя: {cr.blockers.join("; ")}.</p>}
       {open && (role === "reviewer" || role === "owner") && (
-        <div className="review-form">
-          <label className="field inline grow">
-            Комментарий рецензента
-            <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} />
-          </label>
-          <button type="button" className="btn-ghost" disabled={review.isPending} onClick={() => review.mutate("approve")}>
-            Одобрить
-          </button>
-          <button type="button" className="btn-ghost" disabled={review.isPending} onClick={() => review.mutate("changes")}>
-            Нужны правки
-          </button>
-          <button type="button" className="btn-ghost" disabled={review.isPending} onClick={() => review.mutate("reject")}>
-            Отклонить
-          </button>
-        </div>
+        <details>
+          <summary>Написать рецензию</summary>
+          <div className="review-form">
+            <label className="field inline grow">
+              Комментарий рецензента
+              <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} />
+            </label>
+            <button type="button" className="btn-ghost" disabled={review.isPending} onClick={() => review.mutate("approve")}>
+              Одобрить
+            </button>
+            <button type="button" className="btn-ghost" disabled={review.isPending} onClick={() => review.mutate("changes")}>
+              Нужны правки
+            </button>
+            <button type="button" className="btn-ghost" disabled={review.isPending} onClick={() => review.mutate("reject")}>
+              Отклонить
+            </button>
+          </div>
+        </details>
       )}
       {open && role === "owner" && (
         <div className="review-form">
@@ -208,7 +212,7 @@ function CrCard({ cr, role }: { cr: ChangeRequest; role: string | undefined }) {
             Принять
           </button>
           <button type="button" className="btn-ghost" disabled={decide.isPending} onClick={() => decide.mutate("rejected")}>
-            Отклонить CR
+            Отклонить предложение
           </button>
         </div>
       )}
@@ -233,7 +237,7 @@ function CrForm({ draft, onDone }: { draft: Draft; onDone: () => void }) {
   const [description, setDescription] = useState("");
   const [proposed, setProposed] = useState(original);
   const [basis, setBasis] = useState("");
-  const [created, setCreated] = useState(""); // CR создан, а основание не добавилось — не создавать дубль
+  const [created, setCreated] = useState(""); // предложение создано, а основание не добавилось — не создавать дубль
   const m = useMutation({
     mutationFn: async () => {
       const cr = await createCr(
@@ -272,7 +276,7 @@ function CrForm({ draft, onDone }: { draft: Draft; onDone: () => void }) {
   const where =
     draft.action === "edit"
       ? `${KIND_LABEL[draft.node.kind]} ${draft.node.number} «${draft.node.title}»`
-      : `${KIND_LABEL[draft.kind]} в ${draft.parent ? `${draft.parent.number} «${draft.parent.title}»` : "корень методики"}`;
+      : `${KIND_LABEL[draft.kind]} в ${draft.parent ? `${draft.parent.number} «${draft.parent.title}»` : "всю методику"}`;
   const unchanged = draft.action === "edit" && proposed.trim() === original.trim();
   return (
     <form className="card propose" onSubmit={submit}>
@@ -280,12 +284,12 @@ function CrForm({ draft, onDone }: { draft: Draft; onDone: () => void }) {
         {draft.action === "edit" ? "Изменить" : "Добавить"}: {where}
       </h3>
       <p className="muted">
-        Методика меняется только через CR: его принимает owner после одобряющей рецензии и если есть основание —
-        завершённый эксперимент, факт или статья базы знаний с источником.
+        Методика меняется только через предложение: его принимает руководитель после одобряющей рецензии и если есть основание —
+        завершённая проверка, факт или статья из банка с источником.
       </p>
       {draft.action === "add" && (
         <label className="field">
-          Заголовок нового узла
+          Название нового пункта
           <input
             value={newTitle}
             onChange={(ev) => setNewTitle(ev.target.value)}
@@ -301,15 +305,15 @@ function CrForm({ draft, onDone }: { draft: Draft; onDone: () => void }) {
         <input value={title} onChange={(ev) => setTitle(ev.target.value)} required minLength={3} />
       </label>
       <label className="field">
-        Зачем — что показали эксперименты или статьи
+        Зачем — что показали проверки или статьи
         <textarea rows={3} value={description} onChange={(ev) => setDescription(ev.target.value)} />
       </label>
       <label className="field">
-        {draft.action === "edit" ? "Новый текст" : "Текст нового узла"}
+        {draft.action === "edit" ? "Новый текст" : "Текст нового пункта"}
         <textarea rows={6} value={proposed} onChange={(ev) => setProposed(ev.target.value)} required />
       </label>
       <label className="field">
-        Основание — эксперимент (можно добавить позже)
+        Основание — проверка (можно добавить позже)
         <select value={basis} onChange={(ev) => setBasis(ev.target.value)}>
           <option value="">— без основания пока —</option>
           {(exps.data ?? []).map((e) => (
@@ -349,6 +353,7 @@ interface TreeCtx {
   setDraft: (d: Draft | null) => void;
   work: Map<string, { exps: string[]; hyps: string[] }>;
   openCrs: Map<string, string[]>;
+  openCr: (code: string) => void;
 }
 
 function NodeActions({ node, ctx }: { node: Section | null; ctx: TreeCtx }) {
@@ -358,12 +363,12 @@ function NodeActions({ node, ctx }: { node: Section | null; ctx: TreeCtx }) {
     <div className="node-actions">
       {node && (
         <button type="button" className="link-btn" onClick={() => ctx.setDraft({ action: "edit", node })}>
-          изменить
+          Предложить правку
         </button>
       )}
       {kinds.map((k) => (
         <button key={k} type="button" className="link-btn" onClick={() => ctx.setDraft({ action: "add", parent: node, kind: k })}>
-          + {KIND_LABEL[k]}
+          Добавить: {KIND_LABEL[k]}
         </button>
       ))}
     </div>
@@ -378,76 +383,90 @@ function DraftHere({ node, ctx }: { node: Section | null; ctx: TreeCtx }) {
   return <CrForm key={`${d.action}-${target}-${d.action === "add" ? d.kind : ""}`} draft={d} onDone={() => ctx.setDraft(null)} />;
 }
 
+/** Первая фраза текста — чтобы понять, о чём пункт, не раскрывая его. */
+function preview(text: string, limit = 170): string {
+  const flat = text.split(/\s+/).join(" ").trim();
+  const first = flat.split(/(?<=[.!?])\s/)[0] ?? "";
+  return first.length > limit ? `${first.slice(0, limit).replace(/\s+\S*$/, "")}…` : first;
+}
+
+const say = (n: number, one: string, few: string, many: string) => plural(n, one, few, many);
+
+/** Что внутри пункта: видно, не раскрывая его. */
+function inside(children: Section[], all: Section[]): string {
+  const count = (kind: NodeKind, list: Section[]) => list.filter((n) => n.kind === kind).length;
+  const variants = count("variant", children);
+  const under = children.flatMap((c) => all.filter((n) => n.parent === c.number));
+  const tasks = count("task", children) + count("task", under);
+  const parts = [];
+  if (variants) parts.push(say(variants, "вариант", "варианта", "вариантов"));
+  if (tasks) parts.push(say(tasks, "задание", "задания", "заданий"));
+  return parts.join(" · ");
+}
+
 function Node({ node, ctx }: { node: Section; ctx: TreeCtx }) {
   const children = ctx.nodes.filter((n) => n.parent === node.number);
   const sections = children.filter((n) => n.kind === "section");
   const nested = children.filter((n) => n.kind !== "section");
   const work = ctx.work.get(node.number);
   const crs = ctx.openCrs.get(node.number) ?? [];
-  const hasLinks = Boolean(work?.exps.length || work?.hyps.length || crs.length);
-  const head = (
-    <>
-      <span className="mono node-num">{node.number}</span> <strong>{node.title}</strong>{" "}
-      <span className={`badge stab-${node.stability}`}>{STABILITY_LABEL[node.stability]}</span>
-    </>
-  );
-  const body = (
-    <>
-      <p className="pre-line node-text">{node.content || <span className="muted">Текста нет.</span>}</p>
-      {hasLinks && (
-        <div className="node-links muted">
-          {work?.hyps.map((h) => (
-            <Link key={h} to="/hypotheses" className="mono">
-              {h}
-            </Link>
-          ))}
-          {work?.exps.map((e) => (
-            <Link key={e} to={`/experiments/${e}`} className="mono">
-              {e}
-            </Link>
-          ))}
-          {crs.map((c) => (
-            <a key={c} href={`#cr-${c}`} className="mono">
-              {c} (открыт)
-            </a>
-          ))}
-        </div>
-      )}
-      <NodeActions node={node} ctx={ctx} />
-      <DraftHere node={node} ctx={ctx} />
-      {sections.length > 0 && (
-        <div className="node-sections">
-          {sections.map((s) => (
-            <Node key={s.number} node={s} ctx={ctx} />
-          ))}
-        </div>
-      )}
-      {nested.map((n) => (
-        <Node key={n.number} node={n} ctx={ctx} />
-      ))}
-    </>
-  );
-  if (node.kind === "section") {
-    return (
-      <section className="node node-section" aria-label={`Раздел ${node.number}`}>
-        <div className="node-head">{head}</div>
-        {body}
-      </section>
-    );
-  }
+  const contents = inside(children, ctx.nodes);
+  const short = node.kind === "direction" || node.kind === "variant" ? preview(node.content) : "";
   return (
-    <details className={`node node-${node.kind}`} open>
+    <details className={`node node-${node.kind}`}>
       <summary className="node-head">
-        <span className="muted node-kind">{KIND_LABEL[node.kind]}</span> {head}
+        <span className="node-title">
+          {node.title}
+          {node.stability === "contested" && <span className={`badge stab-${node.stability}`}>{STABILITY_LABEL[node.stability]}</span>}
+          {crs.length > 0 && <span className="badge st-review">есть предложение</span>}
+        </span>
+        {short && <span className="muted node-preview">{short}</span>}
+        {contents && <span className="muted node-count">{contents}</span>}
       </summary>
-      {body}
+      <div className="node-body">
+        <p className="pre-line node-text">{node.content || <span className="muted">Текста пока нет.</span>}</p>
+        <p className="muted node-info">
+          {KIND_LABEL[node.kind]} <span className="mono">{node.number}</span> · {STABILITY_LABEL[node.stability]}
+        </p>
+        {(work?.hyps.length || work?.exps.length || crs.length) ? (
+          <div className="node-links">
+            {work?.hyps.map((h) => (
+              <Link key={h} to="/hypotheses" className="mono">
+                {h}
+              </Link>
+            ))}
+            {work?.exps.map((e) => (
+              <Link key={e} to={`/experiments/${e}`} className="mono">
+                {e}
+              </Link>
+            ))}
+            {crs.map((c) => (
+              <button key={c} type="button" className="link-btn mono" onClick={() => ctx.openCr(c)}>
+                {c}: открытое предложение
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <NodeActions node={node} ctx={ctx} />
+        <DraftHere node={node} ctx={ctx} />
+        {sections.map((s) => (
+          <Node key={s.number} node={s} ctx={ctx} />
+        ))}
+        {nested.map((n) => (
+          <Node key={n.number} node={n} ctx={ctx} />
+        ))}
+      </div>
     </details>
   );
 }
 
+type MethodTab = "method" | "changes" | "history";
+
 export function Methodology() {
   const me = useMe();
   const [draft, setDraft] = useState<Draft | null>(null);
+  // ссылка вида /methodology#cr-CR-02 (из отчёта) сразу открывает предложения
+  const [tab, setTab] = useState<MethodTab>(window.location.hash.startsWith("#cr-") ? "changes" : "method");
   const m = useQuery({ queryKey: ["methodology"], queryFn: getMethodology });
   const crs = useQuery({ queryKey: ["crs"], queryFn: listCrs });
   const versions = useQuery({ queryKey: ["versions"], queryFn: listVersions });
@@ -456,15 +475,18 @@ export function Methodology() {
   const nodes = Array.isArray(m.data?.sections) ? m.data.sections : [];
   const crList = Array.isArray(crs.data) ? crs.data : [];
   const versionList = Array.isArray(versions.data) ? versions.data : [];
-  // ссылка вида /methodology#cr-CR-02 (из отчёта): прокрутить к CR, когда список загрузился
   const crsLoaded = crs.isSuccess;
   useEffect(() => {
-    if (crsLoaded && window.location.hash.startsWith("#cr-")) {
+    if (tab === "changes" && crsLoaded && window.location.hash.startsWith("#cr-")) {
       document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: "start" });
     }
-  }, [crsLoaded]);
+  }, [crsLoaded, tab]);
+  const openCr = (code: string) => {
+    window.location.hash = `cr-${code}`;
+    setTab("changes");
+  };
   const canPropose = me.data?.role === "researcher" || me.data?.role === "owner";
-  // что относится к узлу: гипотезы, эксперименты, открытые CR
+  // что относится к пункту: идеи, проверки, открытые предложения
   const work = new Map<string, { exps: string[]; hyps: string[] }>();
   const slot = (n: string) => {
     const w = work.get(n) ?? { exps: [], hyps: [] };
@@ -477,68 +499,104 @@ export function Methodology() {
   for (const c of crList) {
     if (c.status === "proposed" || c.status === "review") openCrs.set(c.section, [...(openCrs.get(c.section) ?? []), c.code]);
   }
-  const ctx: TreeCtx = { nodes, canPropose, draft, setDraft, work, openCrs };
+  const openCount = crList.filter((c) => c.status === "proposed" || c.status === "review").length;
+  const ctx: TreeCtx = { nodes, canPropose, draft, setDraft, work, openCrs, openCr };
   const common = nodes.filter((n) => !n.parent && n.kind === "section");
   const directions = nodes.filter((n) => !n.parent && n.kind !== "section");
+  const tabs: Array<{ key: MethodTab; label: string }> = [
+    { key: "method", label: "Как мы исследуем" },
+    { key: "changes", label: `Предложения изменений${openCount ? ` · ${openCount}` : ""}` },
+    { key: "history", label: "История версий" },
+  ];
   return (
     <>
       <section className="page-head">
-        <span className="eyebrow">МЕТОДОЛОГИЯ · ВЕРСИЯ {m.data?.version ?? "…"}</span>
-        <h1 className="page-title">Методология</h1>
+        <span className="eyebrow">МЕТОДИКА · ВЕРСИЯ {m.data?.version ?? "…"}</span>
+        <h1 className="page-title">Методика</h1>
         <p className="lead">
-          Постановка лаборатории: направления, варианты и задания, у каждого — свои разделы. Общие разделы действуют на
-          всю методику, раздел варианта — на все его задания. Изменение и новый узел проходят через CR: нужно основание
-          (завершённый эксперимент, факт или статья базы знаний) и одобряющая рецензия.
+          Что изучает лаборатория и по каким правилам она это делает. Изменить методику можно только предложением с
+          основанием, и его должен одобрить рецензент.
         </p>
-        <div>
-          <a className="btn-ghost" href="/api/methodology/export.docx">
-            Скачать .docx
-          </a>
-        </div>
       </section>
       {m.isError && (
         <p className="error" role="alert">
           {m.error.message}
         </p>
       )}
-      <div className="methodology-layout">
-        <div className="tree">
-          <section className="card">
-            <div className="viz-head">
-              <h2 className="h2">Общие разделы</h2>
-              <NodeActions node={null} ctx={ctx} />
-            </div>
-            <DraftHere node={null} ctx={ctx} />
-            {m.isSuccess && common.length === 0 && <p className="muted">Общих разделов нет.</p>}
-            {common.map((s) => (
-              <Node key={s.number} node={s} ctx={ctx} />
-            ))}
-          </section>
+      <div className="tabs" role="tablist" aria-label="Разделы методики">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            className={tab === t.key ? "tab active" : "tab"}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "method" && (
+        <div className="tree" role="tabpanel">
+          {m.isPending && <p className="muted">Загрузка…</p>}
+          <p className="muted">Нажмите на пункт, чтобы прочитать его полностью.</p>
           {directions.map((d) => (
-            <div key={d.number} className="card">
+            <div key={d.number} className="card node-card">
               <Node node={d} ctx={ctx} />
             </div>
           ))}
+          {common.length > 0 && (
+            <section className="card node-card">
+              <h2 className="h3">Правила для всей методики</h2>
+              {common.map((s) => (
+                <Node key={s.number} node={s} ctx={ctx} />
+              ))}
+            </section>
+          )}
+          {m.isSuccess && nodes.length === 0 && <p className="muted">Методика пока пуста.</p>}
+          {canPropose && (
+            <div className="method-add">
+              <NodeActions node={null} ctx={ctx} />
+              <DraftHere node={null} ctx={ctx} />
+            </div>
+          )}
+          <p>
+            <a className="btn-ghost" href="/api/methodology/export.docx">
+              Скачать методику в Word
+            </a>
+          </p>
         </div>
-        <section className="cr-board">
-          <h2 className="h2">Предложения изменений</h2>
+      )}
+      {tab === "changes" && (
+        <section className="cr-board" role="tabpanel">
+          {crs.isPending && <p className="muted">Загрузка…</p>}
+          {crs.isError && (
+            <p className="error" role="alert">
+              {crs.error.message}
+            </p>
+          )}
           {crList.map((cr) => (
             <CrCard key={cr.code} cr={cr} role={me.data?.role} />
           ))}
-          {crs.isSuccess && crList.length === 0 && <p className="muted">Предложений нет.</p>}
+          {crs.isSuccess && crList.length === 0 && (
+            <p className="muted">Предложений пока нет. Чтобы предложить правку, откройте нужный пункт методики.</p>
+          )}
         </section>
-      </div>
-      <section className="card">
-        <h2 className="h2">История версий</h2>
-        <ul className="list">
-          {versionList.map((v) => (
-            <li key={v.version}>
-              <span className="mono">{v.version}</span> — {v.notes}{" "}
-              <span className="muted">{new Date(v.created_at).toLocaleDateString("ru-RU")}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      )}
+      {tab === "history" && (
+        <section className="card" role="tabpanel">
+          {versionList.length === 0 && <p className="muted">Версий пока нет.</p>}
+          <ul className="list">
+            {versionList.map((v) => (
+              <li key={v.version}>
+                <span className="mono">{v.version}</span> — {v.notes}{" "}
+                <span className="muted">{new Date(v.created_at).toLocaleDateString("ru-RU")}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   );
 }

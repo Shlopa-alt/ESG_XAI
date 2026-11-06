@@ -236,7 +236,7 @@ export function ExperimentEditor({ e, onClose }: { e: ExperimentDetail; onClose:
     <form className="card editor" onSubmit={submit}>
       <div className="editor-head">
         <h2 className="h2">Редактирование {e.code}</h2>
-        <div className="filters" role="tablist" aria-label="Разделы эксперимента">
+        <div className="filters" role="tablist" aria-label="Разделы проверки">
           {TABS.map(([k, label]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "chip active" : "chip"} onClick={() => setTab(k)}>
               {label}
@@ -256,7 +256,7 @@ export function ExperimentEditor({ e, onClose }: { e: ExperimentDetail; onClose:
             <NodeSelect id="exp-node" value={node} onChange={setNode} />
           </label>
           <label className="field span-2">
-            Гипотеза — что должно подтвердиться
+            Идея — что должно подтвердиться
             <textarea rows={3} value={hypothesis} onChange={(ev) => setHypothesis(ev.target.value)} />
           </label>
           <label className="field">
@@ -283,7 +283,7 @@ export function ExperimentEditor({ e, onClose }: { e: ExperimentDetail; onClose:
               <option value="planned">запланирован</option>
               <option value="running">в работе</option>
               <option value="review">на проверке</option>
-              <option value="done">завершён — нужна воспроизводимость</option>
+              <option value="done">завершена — нужна возможность повторить расчёт</option>
               <option value="failed">сбой</option>
             </select>
           </label>
@@ -291,8 +291,8 @@ export function ExperimentEditor({ e, onClose }: { e: ExperimentDetail; onClose:
             Итог
             <select value={outcome} onChange={(ev) => setOutcome(ev.target.value)}>
               <option value="">ещё нет</option>
-              <option value="confirmed">гипотеза подтверждена</option>
-              <option value="rejected">гипотеза отклонена</option>
+              <option value="confirmed">идея подтвердилась</option>
+              <option value="rejected">идея не подтвердилась</option>
               <option value="inconclusive">результат неоднозначен</option>
             </select>
           </label>
@@ -305,8 +305,8 @@ export function ExperimentEditor({ e, onClose }: { e: ExperimentDetail; onClose:
             <textarea rows={4} value={limitations} onChange={(ev) => setLimitations(ev.target.value)} />
           </label>
           <p className="muted span-2">
-            «Завершён» сохранится, только если у эксперимента есть коммит кода, срез данных, окружение и seed — их
-            заполняет зарегистрированный запуск.
+            «Завершена» сохранится, только если у проверки есть коммит кода, версия данных, окружение и seed — их
+            заполняет зарегистрированный расчёт.
           </p>
         </div>
       )}
@@ -393,7 +393,7 @@ export function ExperimentEditor({ e, onClose }: { e: ExperimentDetail; onClose:
               Добавить график
             </button>
           )}
-          <p className="muted">Графики, посчитанные самим расчётом, добавляются сюда автоматически при регистрации запуска.</p>
+          <p className="muted">Графики, посчитанные самим расчётом, добавляются сюда автоматически при регистрации расчёта.</p>
         </div>
       )}
 
