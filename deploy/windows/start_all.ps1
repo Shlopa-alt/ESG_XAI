@@ -13,6 +13,12 @@ New-Item -ItemType Directory -Force (Split-Path $Log) | Out-Null
 function Say($m) { "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $m" | Out-File $Log -Append -Encoding utf8 }
 
 Say "старт"
+# Docker Desktop сам после входа не стартует: запускаем его, если он ещё не отвечает
+& $Docker info *> $null
+if ($LASTEXITCODE -ne 0) {
+    $DockerApp = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+    if (Test-Path $DockerApp) { Start-Process $DockerApp; Say "запускаю Docker Desktop" }
+}
 for ($i = 0; $i -lt 60; $i++) {                       # до 10 минут ждём Docker Desktop
     & $Docker info *> $null
     if ($LASTEXITCODE -eq 0) { break }
