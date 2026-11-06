@@ -4,12 +4,13 @@ import { Link } from "react-router-dom";
 
 import { listDatasets, listExperiments, OUTCOME_LABEL } from "../api/experiments";
 import { listHypotheses } from "../api/hypotheses";
-import { kbDocuments, kbStats } from "../api/kb";
+import { kbDocuments, kbStats, kbTree } from "../api/kb";
 import { listCrs } from "../api/methodology";
 import { useMe } from "../auth/useAuth";
 import { NewDataset } from "./DatasetPage";
 import { KbLive } from "./KbLive";
 import { ORG, WITH_LAB } from "../org";
+import { EcoScene, GovScene, HeroArt, Icon, InvestArt, PeopleScene, RatingsArt } from "../components/Illustrations";
 import { BankTabs, DataTabs } from "../components/SectionTabs";
 import { canReview, canRun, plural } from "../components/Ux";
 
@@ -25,10 +26,13 @@ function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: 
 
 const fmt = (n: number | undefined) => (n ?? 0).toLocaleString("ru-RU");
 
-/** Плитка-счётчик: число и что оно значит, нажатие ведёт в раздел. */
-function Tile({ to, value, label, note }: { to: string; value: string; label: string; note?: string }) {
+/** Плитка-счётчик: значок, число и что оно значит; нажатие ведёт в раздел. */
+function Tile({ to, icon, value, label, note }: { to: string; icon: Parameters<typeof Icon>[0]["name"]; value: string; label: string; note?: string }) {
   return (
     <Link to={to} className="card tile">
+      <span className="tile-icon">
+        <Icon name={icon} />
+      </span>
       <span className="tile-value">{value}</span>
       <span className="tile-label">{label}</span>
       {note && <span className="muted tile-note">{note}</span>}
@@ -49,12 +53,28 @@ const GLOSSARY: Array<[string, string]> = [
   ["ИИ-помощник", "Языковая модель лаборатории. Предлагает идеи и пишет черновики отчётов, а решения принимают люди."],
 ];
 
+const STEPS: Array<{ icon: Parameters<typeof Icon>[0]["name"]; title: string; text: string; to: string; link: string }> = [
+  { icon: "article", title: "Изучаем статьи", text: "Собираем научные статьи и разбираем их. ИИ-помощник выписывает утверждения с цитатами.", to: "/knowledge", link: "Банк статей" },
+  { icon: "bulb", title: "Предлагаем идеи", text: "Человек или ИИ-помощник формулирует, что стоит проверить. Рецензент решает, брать ли идею в работу.", to: "/hypotheses", link: "Идеи для проверки" },
+  { icon: "chart", title: "Проверяем на данных", text: "Заранее записываем, что подтвердит идею, считаем и пишем отчёт. Рецензент его читает.", to: "/experiments", link: "Проверки" },
+  { icon: "edit", title: "Уточняем методику", text: "Если результат что-то меняет, появляется предложение изменить методику, и его тоже рецензируют.", to: "/methodology", link: "Методика" },
+];
+
+const TRUST: Array<{ icon: Parameters<typeof Icon>[0]["name"]; title: string; text: string }> = [
+  { icon: "quote", title: "У каждого утверждения есть цитата", text: "Его можно открыть в статье и проверить самому." },
+  { icon: "repeat", title: "Любой расчёт можно повторить", text: "Записаны версия данных, код и настройки, поэтому другой человек получит те же числа." },
+  { icon: "flag", title: "Что считать успехом, решаем заранее", text: "Критерий записывается до расчёта, чтобы результат нельзя было подогнать." },
+  { icon: "scale", title: "Отрицательные результаты публикуются", text: "Они важны наравне с положительными и не прячутся." },
+  { icon: "people", title: "Решают люди", text: "ИИ-помощник только предлагает: идеи, отчёты и изменения методики принимают рецензенты." },
+];
+
 export function Overview() {
   const exps = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
   const hyps = useQuery({ queryKey: ["hypotheses"], queryFn: listHypotheses });
   const crs = useQuery({ queryKey: ["crs"], queryFn: listCrs });
   const ds = useQuery({ queryKey: ["datasets"], queryFn: listDatasets });
   const kb = useQuery({ queryKey: ["kb", "stats", "esg"], queryFn: () => kbStats("esg") });
+  const tree = useQuery({ queryKey: ["kb", "kbs"], queryFn: () => kbTree("esg") });
   const lab = useQuery({ queryKey: ["kb", "docs", "esg.lab"], queryFn: () => kbDocuments("esg.lab") });
   const role = useMe().data?.role;
   const experiments = Array.isArray(exps.data) ? exps.data : [];
@@ -67,38 +87,46 @@ export function Overview() {
   const accepted = ideas.filter((h) => h.status === "accepted").length;
   const inReview = experiments.filter((e) => e.status === "review").length;
   const withFiles = datasets.filter((d) => (d.snapshots ?? 0) > 0).length;
+  const topics = (tree.data?.nodes ?? [])
+    .filter((n) => n.path.startsWith("esg.") && n.depth === 1 && (n.subtree ?? 0) > 0)
+    .sort((a, b) => (b.subtree ?? 0) - (a.subtree ?? 0))
+    .slice(0, 10);
+  const topicMax = topics[0]?.subtree ?? 1;
   return (
     <>
       <section className="hero">
-        <span className="hero-kicker">
-          {ORG} {WITH_LAB}
-        </span>
-        <h1 className="hero-title">Проверяем на данных, окупается ли забота о природе и людях</h1>
-        <p className="hero-lead">
-          Компании и регионы вкладываются в экологию, условия труда и честное управление. Мы собираем научные статьи,
-          формулируем идеи и считаем, что подтверждается, а что нет. Результат публикуем, даже если идея не подтвердилась.
-        </p>
-        <div className="hero-actions">
-          <a href="#found" className="btn-hero">
-            Что уже выяснили
-          </a>
-          <Link to="/methodology" className="btn-hero-ghost">
-            Как мы исследуем
-          </Link>
+        <div className="hero-text">
+          <span className="hero-kicker">
+            {ORG} {WITH_LAB}
+          </span>
+          <h1 className="hero-title">Проверяем на данных, окупается ли забота о природе и людях</h1>
+          <p className="hero-lead">
+            Компании и регионы вкладываются в экологию, условия труда и честное управление. Мы собираем научные статьи,
+            формулируем идеи и считаем, что подтверждается, а что нет. Результат публикуем, даже если идея не подтвердилась.
+          </p>
+          <div className="hero-actions">
+            <a href="#found" className="btn-hero">
+              Что уже выяснили
+            </a>
+            <Link to="/knowledge/graph" className="btn-hero-ghost">
+              Открыть карту связей
+            </Link>
+          </div>
         </div>
+        <HeroArt />
       </section>
 
       <section className="tiles" aria-label="Что уже есть на платформе">
-        <Tile to="/knowledge" value={kb.data ? fmt(kb.data.documents) : "—"} label={`${word(kb.data?.documents ?? 0, "статья", "статьи", "статей")} в банке`} note={kb.data?.year_from ? `${kb.data.year_from}–${kb.data.year_to} годы` : undefined} />
-        <Tile to="/knowledge/graph" value={kb.data?.facts !== undefined ? fmt(kb.data.facts) : "—"} label={`${word(kb.data?.facts ?? 0, "утверждение", "утверждения", "утверждений")} с цитатами`} note="на карте связей" />
-        <Tile to="/hypotheses" value={fmt(ideas.length)} label={`${word(ideas.length, "идея", "идеи", "идей")} для проверки`} note={waiting ? `ждут решения: ${waiting}` : undefined} />
-        <Tile to="/experiments" value={fmt(experiments.length)} label={word(experiments.length, "проверка", "проверки", "проверок")} note={inReview ? `на рецензии: ${inReview}` : undefined} />
-        <Tile to="/data" value={fmt(datasets.length)} label={`${word(datasets.length, "набор", "набора", "наборов")} данных`} note={datasets.length ? `с файлами: ${withFiles}` : undefined} />
-        <Tile to="/methodology" value={fmt(proposals.length)} label={word(proposals.length, "открытое предложение", "открытых предложения", "открытых предложений")} note="изменить методику" />
+        <Tile to="/knowledge" icon="article" value={kb.data ? fmt(kb.data.documents) : "—"} label={`${word(kb.data?.documents ?? 0, "статья", "статьи", "статей")} в банке`} note={kb.data?.year_from ? `${kb.data.year_from}–${kb.data.year_to} годы` : undefined} />
+        <Tile to="/knowledge/graph" icon="link" value={kb.data?.facts !== undefined ? fmt(kb.data.facts) : "—"} label={`${word(kb.data?.facts ?? 0, "утверждение", "утверждения", "утверждений")} с цитатами`} note="на карте связей" />
+        <Tile to="/hypotheses" icon="bulb" value={fmt(ideas.length)} label={`${word(ideas.length, "идея", "идеи", "идей")} для проверки`} note={waiting ? `ждут решения: ${waiting}` : undefined} />
+        <Tile to="/experiments" icon="chart" value={fmt(experiments.length)} label={word(experiments.length, "проверка", "проверки", "проверок")} note={inReview ? `на рецензии: ${inReview}` : undefined} />
+        <Tile to="/data" icon="data" value={fmt(datasets.length)} label={`${word(datasets.length, "набор", "набора", "наборов")} данных`} note={datasets.length ? `с файлами: ${withFiles}` : undefined} />
+        <Tile to="/methodology" icon="edit" value={fmt(proposals.length)} label={word(proposals.length, "открытое предложение", "открытых предложения", "открытых предложений")} note="изменить методику" />
       </section>
 
       <section className="overview-block" aria-labelledby="what-esg">
-        <h2 className="h2" id="what-esg">
+        <h2 className="section-title" id="what-esg">
           Что такое ESG
         </h2>
         <p className="overview-text">
@@ -107,34 +135,44 @@ export function Overview() {
           рейтинговые агентства, инвесторы и государство.
         </p>
         <ul className="esg-grid">
-          <li className="card">
-            <span className="esg-letter">E</span>
-            <strong>Экология</strong>
-            <span className="muted">Выбросы, энергия, вода, отходы, влияние на климат и природу вокруг</span>
+          <li className="card esg-card">
+            <EcoScene />
+            <div className="esg-body">
+              <span className="esg-letter esg-e">E</span>
+              <strong>Экология</strong>
+              <span className="muted">Выбросы, энергия, вода, отходы, влияние на климат и природу вокруг</span>
+            </div>
           </li>
-          <li className="card">
-            <span className="esg-letter">S</span>
-            <strong>Общество</strong>
-            <span className="muted">Условия и оплата труда, безопасность, отношения с клиентами и людьми вокруг</span>
+          <li className="card esg-card">
+            <PeopleScene />
+            <div className="esg-body">
+              <span className="esg-letter esg-s">S</span>
+              <strong>Общество</strong>
+              <span className="muted">Условия и оплата труда, безопасность, отношения с клиентами и людьми вокруг</span>
+            </div>
           </li>
-          <li className="card">
-            <span className="esg-letter">G</span>
-            <strong>Управление</strong>
-            <span className="muted">Прозрачная отчётность, борьба с коррупцией, работа совета директоров</span>
+          <li className="card esg-card">
+            <GovScene />
+            <div className="esg-body">
+              <span className="esg-letter esg-g">G</span>
+              <strong>Управление</strong>
+              <span className="muted">Прозрачная отчётность, борьба с коррупцией, работа совета директоров</span>
+            </div>
           </li>
         </ul>
-        <p className="overview-text">
+        <p className="overview-callout">
           Проблема в том, что разные агентства часто оценивают одну и ту же компанию по-разному, а компании и регионы не знают,
-          какие вложения действительно окупаются. Отзывы и обещания здесь не помогают: нужны расчёты на настоящих данных.
+          какие вложения действительно окупаются. Обещаний здесь мало: нужны расчёты на настоящих данных.
         </p>
       </section>
 
       <section className="overview-block" aria-labelledby="study-title">
-        <h2 className="h2" id="study-title">
+        <h2 className="section-title" id="study-title">
           Что мы изучаем
         </h2>
         <div className="two-grid">
           <article className="card study-card">
+            <InvestArt />
             <span className="eyebrow">НАПРАВЛЕНИЕ 1</span>
             <h3 className="h3">Какие ESG-вложения окупаются</h3>
             <p>
@@ -145,6 +183,7 @@ export function Overview() {
             <Link to="/methodology">Посмотреть задания</Link>
           </article>
           <article className="card study-card">
+            <RatingsArt />
             <span className="eyebrow">НАПРАВЛЕНИЕ 2</span>
             <h3 className="h3">Можно ли доверять ESG-рейтингам</h3>
             <p>
@@ -156,36 +195,52 @@ export function Overview() {
         </div>
       </section>
 
-      <section className="overview-block" aria-labelledby="how-title">
-        <h2 className="h2" id="how-title">
+      <section className="overview-band" aria-labelledby="how-title">
+        <h2 className="section-title" id="how-title">
           Как мы работаем
         </h2>
         <ol className="how-steps">
-          <li className="card">
-            <strong>Изучаем статьи</strong>
-            <span className="muted">Собираем научные статьи и разбираем их. ИИ-помощник выписывает утверждения с цитатами.</span>
-            <Link to="/knowledge">Банк статей</Link>
-          </li>
-          <li className="card">
-            <strong>Предлагаем идеи</strong>
-            <span className="muted">Человек или ИИ-помощник формулирует, что стоит проверить. Рецензент решает, брать ли идею в работу.</span>
-            <Link to="/hypotheses">Идеи для проверки</Link>
-          </li>
-          <li className="card">
-            <strong>Проверяем на данных</strong>
-            <span className="muted">Заранее записываем, что подтвердит идею, считаем и пишем отчёт. Рецензент его читает.</span>
-            <Link to="/experiments">Проверки</Link>
-          </li>
-          <li className="card">
-            <strong>Уточняем методику</strong>
-            <span className="muted">Если результат что-то меняет, появляется предложение изменить методику, и его тоже рецензируют.</span>
-            <Link to="/methodology">Методика</Link>
-          </li>
+          {STEPS.map((s) => (
+            <li key={s.title}>
+              <span className="how-icon">
+                <Icon name={s.icon} />
+              </span>
+              <strong>{s.title}</strong>
+              <span className="how-text">{s.text}</span>
+              <Link to={s.to}>{s.link}</Link>
+            </li>
+          ))}
         </ol>
       </section>
 
+      {topics.length > 0 && (
+        <section className="overview-block" aria-labelledby="topics-title">
+          <h2 className="section-title" id="topics-title">
+            Что в банке статей
+          </h2>
+          <p className="overview-text">
+            {kb.data ? `${fmt(kb.data.documents)} ${word(kb.data.documents ?? 0, "статья", "статьи", "статей")}, разложенных по темам. ` : ""}
+            Статья может входить в тему целиком, поэтому удобно начинать с самой близкой к вашему вопросу.
+          </p>
+          <ul className="card topic-chart">
+            {topics.map((t) => (
+              <li key={t.path}>
+                <span className="topic-name">{t.title}</span>
+                <span className="topic-bar" aria-hidden="true">
+                  <span style={{ width: `${Math.max(2, ((t.subtree ?? 0) / topicMax) * 100)}%` }} />
+                </span>
+                <span className="topic-count mono">{fmt(t.subtree ?? 0)}</span>
+              </li>
+            ))}
+          </ul>
+          <p>
+            <Link to="/knowledge">Открыть банк статей</Link>
+          </p>
+        </section>
+      )}
+
       <section className="overview-block" id="found" aria-labelledby="found-title">
-        <h2 className="h2" id="found-title">
+        <h2 className="section-title" id="found-title">
           Что уже выяснили
         </h2>
         {exps.isPending && <p className="muted">Загрузка…</p>}
@@ -215,31 +270,26 @@ export function Overview() {
       </section>
 
       <section className="overview-block" aria-labelledby="trust-title">
-        <h2 className="h2" id="trust-title">
+        <h2 className="section-title" id="trust-title">
           Почему этому можно доверять
         </h2>
         <ul className="trust-grid">
-          <li>
-            <strong>У каждого утверждения есть цитата.</strong> Его можно открыть в статье и проверить самому.
-          </li>
-          <li>
-            <strong>Любой расчёт можно повторить.</strong> Записаны версия данных, код и настройки, поэтому другой человек получит те же числа.
-          </li>
-          <li>
-            <strong>Что считать успехом, решаем заранее.</strong> Критерий записывается до расчёта, чтобы результат нельзя было подогнать.
-          </li>
-          <li>
-            <strong>Отрицательные результаты публикуются</strong> наравне с положительными, а не прячутся.
-          </li>
-          <li>
-            <strong>Решают люди.</strong> ИИ-помощник только предлагает: идеи, отчёты и изменения методики принимают рецензенты.
-          </li>
+          {TRUST.map((t) => (
+            <li key={t.title}>
+              <span className="trust-icon">
+                <Icon name={t.icon} />
+              </span>
+              <span>
+                <strong>{t.title}.</strong> {t.text}
+              </span>
+            </li>
+          ))}
         </ul>
       </section>
 
       {labDocs.length > 0 && (
         <section className="overview-block" aria-labelledby="lab-title">
-          <h2 className="h2" id="lab-title">
+          <h2 className="section-title" id="lab-title">
             Материалы лаборатории
           </h2>
           <ul className="list card">
@@ -254,7 +304,7 @@ export function Overview() {
       )}
 
       <section className="overview-block" aria-labelledby="words-title">
-        <h2 className="h2" id="words-title">
+        <h2 className="section-title" id="words-title">
           Основные слова
         </h2>
         <dl className="glossary card">
@@ -268,23 +318,35 @@ export function Overview() {
       </section>
 
       <section className="overview-block" aria-labelledby="start-title">
-        <h2 className="h2" id="start-title">
+        <h2 className="section-title" id="start-title">
           С чего начать
         </h2>
         <div className="start-grid">
           <Link to="/knowledge" className="card start-card">
+            <span className="tile-icon">
+              <Icon name="article" />
+            </span>
             <strong>Почитать, что известно</strong>
             <span className="muted">Спросите своими словами в банке статей: русский запрос найдёт и английские статьи</span>
           </Link>
           <Link to="/knowledge/graph" className="card start-card">
+            <span className="tile-icon">
+              <Icon name="link" />
+            </span>
             <strong>Посмотреть карту связей</strong>
             <span className="muted">Что влияет на стоимость компании, прибыль или рейтинги, и какие статьи это подтверждают</span>
           </Link>
           <Link to="/hypotheses" className="card start-card">
+            <span className="tile-icon">
+              <Icon name="bulb" />
+            </span>
             <strong>Предложить свою идею</strong>
             <span className="muted">Любой участник может предложить, что стоит проверить</span>
           </Link>
           <Link to="/experiments" className="card start-card">
+            <span className="tile-icon">
+              <Icon name="chart" />
+            </span>
             <strong>Посмотреть все проверки</strong>
             <span className="muted">Что считали, на каких данных и чем закончилось</span>
           </Link>

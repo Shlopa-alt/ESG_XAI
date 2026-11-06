@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import cytoscape, { type ElementDefinition } from "cytoscape";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { type KbNetwork, kbNetwork, kbTree } from "../api/kb";
@@ -18,7 +18,8 @@ const REL_GROUPS = [
 type RelKey = (typeof REL_GROUPS)[number]["key"];
 const groupOf = (rel: string): (typeof REL_GROUPS)[number] => REL_GROUPS.find((g) => g.match(rel)) ?? REL_GROUPS[3];
 
-const SIDE_ROWS = 8; // сколько связей с каждой стороны видно сразу
+const SIDE_ROWS = 6; // сколько связей с каждой стороны видно в панели сразу
+const NEIGHBOURS = 11; // сколько соседей с каждой стороны рисовать на графе: больше подписи не читаются
 type Fact = KbNetwork["edges"][number];
 type Concept = KbNetwork["nodes"][number];
 
@@ -189,51 +190,90 @@ function Side({
   );
 }
 
-/** Общая карта: самые связанные понятия одной картинкой, нажатие открывает понятие. */
-function Overview({ facts, nodes, size, onOpen }: { facts: Fact[]; nodes: Concept[]; size: number; onOpen: (id: string) => void }) {
-  const box = useRef<HTMLDivElement>(null);
-  const elements = useMemo(() => {
-    const degree = new Map<string, number>();
-    for (const e of facts) {
-      degree.set(e.source, (degree.get(e.source) ?? 0) + (e.weight ?? 1));
-      degree.set(e.target, (degree.get(e.target) ?? 0) + (e.weight ?? 1));
+/** Что нарисовать: вся карта или понятие в центре со связями по сторонам. */
+function overviewElements(facts: Fact[], nodes: Concept[], size: number): ElementDefinition[] {
+  const degree = new Map<string, number>();
+  for (const e of facts) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + (e.weight ?? 1));
+    degree.set(e.target, (degree.get(e.target) ?? 0) + (e.weight ?? 1));
+  }
+  const keep = new Set([...degree].sort((a, b) => b[1] - a[1]).slice(0, size).map(([id]) => id));
+  const pairs = new Map<string, Fact>();
+  for (const e of facts) {
+    if (!keep.has(e.source) || !keep.has(e.target) || e.source === e.target) continue;
+    const k = e.source < e.target ? `${e.source}|${e.target}` : `${e.target}|${e.source}`;
+    const was = pairs.get(k);
+    if (!was || (e.weight ?? 1) > (was.weight ?? 1)) pairs.set(k, e);
+  }
+  const drawn = [...pairs.values()].sort((a, b) => (b.weight ?? 1) - (a.weight ?? 1)).slice(0, size * 2);
+  const linked = new Set(drawn.flatMap((e) => [e.source, e.target]));
+  const out: ElementDefinition[] = [];
+  for (const n of nodes) {
+    if (linked.has(n.id)) {
+      out.push({ data: { id: n.id, label: label(n), size: Math.min(58, 18 + 4 * Math.log2(Math.max(1, n.facts ?? 1))) } });
     }
-    const keep = new Set([...degree].sort((a, b) => b[1] - a[1]).slice(0, size).map(([id]) => id));
-    const pairs = new Map<string, Fact>();
-    for (const e of facts) {
-      if (!keep.has(e.source) || !keep.has(e.target) || e.source === e.target) continue;
-      const k = e.source < e.target ? `${e.source}|${e.target}` : `${e.target}|${e.source}`;
-      const was = pairs.get(k);
-      if (!was || (e.weight ?? 1) > (was.weight ?? 1)) pairs.set(k, e);
-    }
-    const drawn = [...pairs.values()].sort((a, b) => (b.weight ?? 1) - (a.weight ?? 1)).slice(0, size * 2);
-    const linked = new Set(drawn.flatMap((e) => [e.source, e.target]));
-    const out: ElementDefinition[] = [];
-    for (const n of nodes) {
-      if (linked.has(n.id)) {
-        out.push({ data: { id: n.id, label: label(n), size: Math.min(50, 16 + 4 * Math.log2(Math.max(1, n.facts ?? 1))) } });
-      }
-    }
-    for (const e of drawn) {
+  }
+  for (const e of drawn) {
+    out.push({
+      data: {
+        id: `${e.source}>${e.target}>${e.label}`,
+        source: e.source,
+        target: e.target,
+        label: e.label ?? "",
+        color: groupOf(e.label ?? "").color,
+        width: Math.min(6, 1.5 + 1.5 * Math.log2(Math.max(1, e.weight ?? 1))),
+      },
+    });
+  }
+  return out;
+}
+
+function focusElements(concept: Concept, incoming: Link2[], outgoing: Link2[]): ElementDefinition[] {
+  const left = incoming.slice(0, NEIGHBOURS);
+  const taken = new Set(left.map((l) => l.other.id));
+  const right = outgoing.filter((l) => !taken.has(l.other.id)).slice(0, NEIGHBOURS);
+  const out: ElementDefinition[] = [
+    { data: { id: concept.id, label: label(concept), size: 76, place: "center" }, position: { x: 0, y: 0 } },
+  ];
+  const side = (links: Link2[], dir: -1 | 1) => {
+    links.forEach((l, i) => {
+      const t = links.length > 1 ? (i / (links.length - 1)) * 2 - 1 : 0; // −1…1 сверху вниз
+      const color = (REL_GROUPS.find((g) => g.key === l.group) ?? REL_GROUPS[3]).color;
+      out.push({
+        data: { id: l.other.id, label: label(l.other), size: 20 + Math.min(16, 2.5 * Math.log2(Math.max(1, l.other.facts ?? 1))), place: dir < 0 ? "left" : "right" },
+        // дуга: крайние ближе к центру — стрелки и подписи не пересекаются
+        position: { x: dir * (300 - 70 * t * t), y: t * Math.max(70, (links.length - 1) * 31) },
+      });
       out.push({
         data: {
-          id: `${e.source}>${e.target}>${e.label}`,
-          source: e.source,
-          target: e.target,
-          color: groupOf(e.label ?? "").color,
-          width: Math.min(6, 1 + 1.5 * Math.log2(Math.max(1, e.weight ?? 1))),
+          id: `${dir < 0 ? l.other.id : concept.id}>${dir < 0 ? concept.id : l.other.id}`,
+          source: dir < 0 ? l.other.id : concept.id,
+          target: dir < 0 ? concept.id : l.other.id,
+          other: l.other.id,
+          label: l.relation,
+          color,
+          width: Math.min(6, 2 + 1.5 * Math.log2(Math.max(1, l.articles))),
         },
       });
-    }
-    return out;
-  }, [facts, nodes, size]);
+    });
+  };
+  side(left, -1);
+  side(right, 1);
+  return out;
+}
+
+/** Холст графа: нажатие на понятие выводит его в центр, на связь — открывает цитаты. */
+function GraphCanvas({ elements, focused, onNode, onEdge }: { elements: ElementDefinition[]; focused: boolean; onNode: (id: string) => void; onEdge: (other: string) => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const cy = useRef<cytoscape.Core | null>(null);
   useEffect(() => {
     if (!box.current) return undefined;
     const instance = cytoscape({
       container: box.current,
       elements,
-      minZoom: 0.3,
-      maxZoom: 2.5,
+      minZoom: 0.2,
+      maxZoom: 3,
+      wheelSensitivity: 0.25,
       style: [
         {
           selector: "node",
@@ -242,46 +282,117 @@ function Overview({ facts, nodes, size, onOpen }: { facts: Fact[]; nodes: Concep
             label: "data(label)",
             width: "data(size)",
             height: "data(size)",
-            "font-size": 13,
+            // раскладка общей карты оставляет место под подписи такого размера, затем они приводятся к экрану
+            "font-size": focused ? 13 : 22,
+            "font-family": "IBM Plex Sans, sans-serif",
             color: "#17201b",
             "text-valign": "bottom",
             "text-margin-y": 4,
             "text-wrap": "wrap",
-            "text-max-width": "150px",
+            "text-max-width": "170px",
             "text-outline-color": "#ffffff",
-            "text-outline-width": 2,
+            "text-outline-width": 2.5,
+            "border-width": 2,
+            "border-color": "#ffffff",
           },
         },
-        { selector: "edge", style: { width: "data(width)", "line-color": "data(color)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "curve-style": "bezier", "arrow-scale": 0.7, opacity: 0.45 } },
+        { selector: 'node[place = "center"]', style: { "background-color": "#b5651d", "font-weight": "bold", "text-margin-y": 6, "text-background-color": "#ffffff", "text-background-opacity": 1, "text-background-padding": "3px", "text-background-shape": "roundrectangle" } },
+        { selector: 'node[place = "left"]', style: { "text-halign": "left", "text-valign": "center", "text-margin-x": -8, "text-margin-y": 0, "text-max-width": "190px" } },
+        { selector: 'node[place = "right"]', style: { "text-halign": "right", "text-valign": "center", "text-margin-x": 8, "text-margin-y": 0, "text-max-width": "190px" } },
+        {
+          selector: "edge",
+          style: { width: "data(width)", "line-color": "data(color)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "curve-style": "straight", "arrow-scale": 1, opacity: focused ? 0.85 : 0.45 },
+        },
+        { selector: "node.hot", style: { "border-color": "#b5651d", "border-width": 4 } },
         { selector: ".faded", style: { opacity: 0.12 } },
         { selector: "edge.near", style: { opacity: 1 } },
+        {
+          selector: "edge.tell",
+          style: { label: "data(label)", "font-size": 12, "font-family": "IBM Plex Sans, sans-serif", color: "#17201b", "text-background-color": "#ffffff", "text-background-opacity": 1, "text-background-padding": "3px", "text-border-color": "#dde3df", "text-border-width": 1, "text-border-opacity": 1, opacity: 1, "z-index": 10 },
+        },
       ],
-      layout: { name: "cose", animate: false, nodeDimensionsIncludeLabels: true, numIter: 1200, nodeRepulsion: () => 90000, idealEdgeLength: () => 140, nodeOverlap: 40, gravity: 0.25, componentSpacing: 80, padding: 40 },
+      layout: focused
+        ? { name: "preset", fit: true, padding: 24 }
+        : { name: "cose", animate: false, nodeDimensionsIncludeLabels: true, numIter: 1500, nodeRepulsion: () => 120000, idealEdgeLength: () => 170, nodeOverlap: 60, gravity: 0.3, componentSpacing: 70, padding: 20 },
     });
+    cy.current = instance;
+    if (instance.zoom() > 1.25) {
+      instance.zoom(1.25);
+      instance.center();
+    }
+    // подписи одного размера на экране: при большом графе масштаб мелкий, а читать всё равно надо
+    const readable = () => {
+      const k = Math.min(3, 1 / instance.zoom());
+      instance.nodes().style({ "font-size": 13 * k, "text-max-width": `${(focused ? 190 : 150) * k}px` });
+    };
+    readable();
+    if (focused) {
+      // подписи сбоку от кругов: вписываем вместе с ними, иначе длинные обрежутся по краю холста
+      instance.fit(undefined, 16);
+      readable();
+      instance.fit(undefined, 16);
+      if (instance.zoom() > 1.25) {
+        instance.zoom(1.25);
+        instance.center();
+      }
+      readable();
+    }
+    instance.on("zoom", readable);
     instance.on("mouseover", "node", (ev) => {
-      instance.elements().addClass("faded");
+      if (box.current) box.current.style.cursor = "pointer";
       const near = ev.target.closedNeighborhood();
-      near.removeClass("faded");
-      near.edges().addClass("near");
+      if (!focused) {
+        instance.elements().addClass("faded");
+        near.removeClass("faded");
+        near.edges().addClass("near");
+      }
+      ev.target.addClass("hot");
+      near.edges().addClass("tell");
     });
-    instance.on("mouseout", "node", () => {
-      instance.elements().removeClass("faded");
-      instance.edges().removeClass("near");
+    instance.on("mouseout", "node", (ev) => {
+      if (box.current) box.current.style.cursor = "";
+      instance.elements().removeClass("faded near tell");
+      ev.target.removeClass("hot");
     });
-    instance.on("tap", "node", (ev) => onOpen(ev.target.id() as string));
-    return () => instance.destroy();
-  }, [elements, onOpen]);
-  return <div ref={box} className="card graph-canvas" role="img" aria-label="Общая карта: самые связанные понятия банка статей" />;
+    instance.on("mouseover", "edge", (ev) => ev.target.addClass("tell"));
+    instance.on("mouseout", "edge", (ev) => ev.target.removeClass("tell"));
+    instance.on("tap", "node", (ev) => onNode(ev.target.id() as string));
+    instance.on("tap", "edge", (ev) => {
+      const other = ev.target.data("other") as string | undefined;
+      if (other) onEdge(other);
+    });
+    return () => {
+      cy.current = null;
+      instance.destroy();
+    };
+  }, [elements, focused, onNode, onEdge]);
+  const zoom = (k: number) => {
+    const c = cy.current;
+    if (c) c.zoom({ level: c.zoom() * k, renderedPosition: { x: c.width() / 2, y: c.height() / 2 } });
+  };
+  return (
+    <div className="card graph-stage">
+      <div ref={box} className="graph-canvas" role="img" aria-label={focused ? "Граф: выбранное понятие в центре, слева что на него влияет, справа на что влияет оно" : "Граф: самые связанные понятия банка статей"} />
+      <div className="graph-zoom" role="group" aria-label="Масштаб графа">
+        <button type="button" className="btn-ghost" aria-label="Крупнее" onClick={() => zoom(1.25)}>
+          +
+        </button>
+        <button type="button" className="btn-ghost" aria-label="Мельче" onClick={() => zoom(0.8)}>
+          −
+        </button>
+        <button type="button" className="btn-ghost" onClick={() => cy.current?.fit(undefined, 24)}>
+          Вписать
+        </button>
+      </div>
+    </div>
+  );
 }
-
-type Mode = "concept" | "map";
 
 export function Graph() {
   const [kb, setKb] = useState("esg");
-  const [mode, setMode] = useState<Mode>("concept");
   const [rels, setRels] = useState<Set<RelKey>>(new Set(["up", "down", "none", "other"]));
   const [size, setSize] = useState(30);
-  const [current, setCurrent] = useState<string | null>(null);
+  const [current, setCurrent] = useState<string | null>(null); // null — вся карта
   const [trail, setTrail] = useState<string[]>([]); // откуда пришли: можно вернуться назад
   const [evidence, setEvidence] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -305,23 +416,27 @@ export function Graph() {
     setEvidence(null);
     setFound(null);
   }, [kb]);
-  useEffect(() => {
-    if (current === null && popular[0]) setCurrent(popular[0].id);
-  }, [current, popular]);
 
-  const open = (id: string) => {
-    setMode("concept");
+  const open = useCallback((id: string) => {
     setFound(null);
     setEvidence(null);
-    setTrail((t) => (current && current !== id ? [...t, current] : t));
-    setCurrent(id);
-  };
+    setCurrent((was) => {
+      if (was === id) return was;
+      if (was) setTrail((t) => [...t, was]);
+      return id;
+    });
+  }, []);
   const back = () => {
     const last = trail[trail.length - 1];
     if (!last) return;
     setTrail(trail.slice(0, -1));
     setEvidence(null);
     setCurrent(last);
+  };
+  const toMap = () => {
+    setCurrent(null);
+    setTrail([]);
+    setEvidence(null);
   };
   const search = (e: FormEvent) => {
     e.preventDefault();
@@ -343,6 +458,10 @@ export function Graph() {
   const concept = current ? byId.get(current) : undefined;
   const incoming = useMemo(() => sideLinks(shownFacts, byId, (e) => (e.target === current && e.source !== current ? e.source : null)), [shownFacts, byId, current]);
   const outgoing = useMemo(() => sideLinks(shownFacts, byId, (e) => (e.source === current && e.target !== current ? e.target : null)), [shownFacts, byId, current]);
+  const elements = useMemo(
+    () => (concept ? focusElements(concept, incoming, outgoing) : overviewElements(shownFacts, nodes, size)),
+    [concept, incoming, outgoing, shownFacts, nodes, size],
+  );
   const evidenceNode = evidence ? byId.get(evidence) : undefined;
   const branches = (tree.data?.nodes ?? []).filter((n) => n.path === "esg" || n.path.startsWith("esg."));
   const toggle = (k: RelKey) => {
@@ -352,6 +471,8 @@ export function Graph() {
     setRels(next);
   };
   const previous = trail.length ? byId.get(trail[trail.length - 1] ?? "") : undefined;
+  const hiddenIn = Math.max(0, incoming.length - NEIGHBOURS);
+  const hiddenOut = Math.max(0, outgoing.length - NEIGHBOURS);
 
   return (
     <>
@@ -359,15 +480,15 @@ export function Graph() {
         <span className="eyebrow">БАНК СТАТЕЙ</span>
         <h1 className="page-title">Карта связей</h1>
         <p className="lead">
-          Из статей выписаны утверждения вида «одно влияет на другое», и каждое подтверждено цитатой. Выберите понятие и
-          посмотрите, что на него влияет и на что влияет оно.
+          Граф того, что говорят статьи: круги — понятия, стрелки — утверждения вида «одно влияет на другое», и каждое
+          подтверждено цитатой. Нажмите на понятие, чтобы вывести его в центр.
         </p>
       </section>
       <BankTabs />
       <div className="card graph-controls">
         <form className="search-row" role="search" onSubmit={search}>
           <label htmlFor="graph-q" className="sr-only">
-            Найти понятие на карте
+            Найти понятие на графе
           </label>
           <input id="graph-q" className="search" placeholder="Найти понятие: прибыльность, ESG-рейтинг, cost of capital…" value={query} onChange={(e) => setQuery(e.target.value)} />
           <button type="submit" className="btn-primary">
@@ -385,14 +506,22 @@ export function Graph() {
             ))}
           </select>
         </label>
-        <div className="filters" role="group" aria-label="Вид карты">
-          <button type="button" className={mode === "concept" ? "chip active" : "chip"} aria-pressed={mode === "concept"} onClick={() => setMode("concept")}>
-            По понятиям
-          </button>
-          <button type="button" className={mode === "map" ? "chip active" : "chip"} aria-pressed={mode === "map"} onClick={() => setMode("map")}>
-            Общая карта
-          </button>
-        </div>
+        {!concept && (
+          <label className="field inline">
+            Понятий на графе: {size}
+            <input type="range" min={15} max={100} step={5} value={size} onChange={(e) => setSize(Number(e.target.value))} />
+          </label>
+        )}
+        {net.isSuccess && facts.length > 0 && (
+          <div className="rel-legend" role="group" aria-label="Какие связи показывать">
+            {REL_GROUPS.map((g) => (
+              <button key={g.key} type="button" aria-pressed={rels.has(g.key)} className={rels.has(g.key) ? "chip active-rel" : "chip"} onClick={() => toggle(g.key)}>
+                <span className="rel-swatch" style={{ background: g.color }} aria-hidden="true" />
+                {g.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {net.isError && (
         <p className="error" role="alert">
@@ -401,21 +530,19 @@ export function Graph() {
       )}
       {net.isPending && (
         <p className="muted" role="status">
-          Загружаем карту с компьютера лаборатории. При первом открытии это может занять до минуты…
+          Загружаем граф с компьютера лаборатории. При первом открытии это может занять до минуты…
         </p>
       )}
       {net.isSuccess && facts.length === 0 && (
         <div className="card empty-state">
           <h2 className="h2">В этой теме связей пока нет</h2>
-          <p className="muted">ИИ-помощник выписывает их из статей темы, и они появятся по мере обработки. Попробуйте выбрать «Все темы».</p>
+          <p className="muted">ИИ-помощник выписывает их из статей темы, и они появятся по мере обработки. Попробуйте выбрать «Все».</p>
         </div>
       )}
       {found && (
         <section className="card concept-found" aria-label="Результаты поиска">
           {found.length === 0 ? (
-            <p>
-              Такого понятия нет. Попробуйте другое слово или английское название, ведь большинство статей написаны на английском.
-            </p>
+            <p>Такого понятия нет. Попробуйте другое слово или английское название: большинство статей написаны на английском.</p>
           ) : (
             <>
               <p>Похожие понятия: выберите нужное.</p>
@@ -431,62 +558,61 @@ export function Graph() {
         </section>
       )}
       {net.isSuccess && facts.length > 0 && (
-        <div className="rel-legend" role="group" aria-label="Какие связи показывать">
-          {REL_GROUPS.map((g) => (
-            <button key={g.key} type="button" aria-pressed={rels.has(g.key)} className={rels.has(g.key) ? "chip active-rel" : "chip"} onClick={() => toggle(g.key)}>
-              <span className="rel-swatch" style={{ background: g.color }} aria-hidden="true" />
-              {g.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {net.isSuccess && facts.length > 0 && mode === "concept" && (
         <>
-          <div className="concept-popular">
-            <span className="muted">С чего начать:</span>
-            <div className="chips-row">
-              {popular.map((n) => (
-                <button key={n.id} type="button" className={n.id === current ? "chip active" : "chip"} aria-pressed={n.id === current} onClick={() => open(n.id)}>
-                  {label(n)}
-                </button>
-              ))}
-            </div>
-          </div>
-          {previous && (
-            <button type="button" className="btn-ghost concept-back" onClick={back}>
-              ← Назад: {label(previous)}
-            </button>
-          )}
           {concept && (
-            <div className="concept-map">
-              <Side title="Что на это влияет" empty="В статьях таких связей не нашлось." links={incoming} arrow="in" active={evidence} onConcept={open} onQuotes={setEvidence} />
-              <div className="concept-center">
-                <span className="eyebrow">ПОНЯТИЕ</span>
-                <h2 className="concept-title">{label(concept)}</h2>
-                {originalName(keyName(concept)) && <span className="concept-orig">{originalName(keyName(concept))}</span>}
-                <p className="muted">
-                  Упоминается в {plural(concept.facts ?? 0, "утверждении", "утверждениях", "утверждениях")} из статей. Нажмите на
-                  соседнее понятие, чтобы перейти к нему, или на число статей, чтобы увидеть цитаты.
-                </p>
-              </div>
-              <Side title="На что это влияет" empty="В статьях таких связей не нашлось." links={outgoing} arrow="out" active={evidence} onConcept={open} onQuotes={setEvidence} />
+            <div className="graph-bar">
+              {previous && (
+                <button type="button" className="btn-ghost" onClick={back}>
+                  ← Назад: {label(previous)}
+                </button>
+              )}
+              <button type="button" className="btn-ghost" onClick={toMap}>
+                Вся карта
+              </button>
             </div>
           )}
-          {concept && evidenceNode && (
-            <Quotes name={keyName(concept)} otherName={keyName(evidenceNode)} kb={kb} onOpen={() => open(evidenceNode.id)} onClose={() => setEvidence(null)} />
-          )}
-        </>
-      )}
-      {net.isSuccess && facts.length > 0 && mode === "map" && (
-        <>
-          <div className="map-size">
-            <label className="field inline">
-              Понятий на карте: {size}
-              <input type="range" min={15} max={80} step={5} value={size} onChange={(e) => setSize(Number(e.target.value))} />
-            </label>
-            <p className="muted">Самые связанные понятия: чем больше круг, тем чаще о понятии пишут. Наведите, чтобы выделить связи, и нажмите, чтобы открыть.</p>
+          <div className="graph-layout with-panel">
+            <GraphCanvas elements={elements} focused={Boolean(concept)} onNode={open} onEdge={setEvidence} />
+            <aside className="graph-panel" aria-label={concept ? `Понятие: ${label(concept)}` : "Как читать граф"}>
+              {concept ? (
+                <>
+                  <div className="concept-center">
+                    <span className="eyebrow">ПОНЯТИЕ</span>
+                    <h2 className="concept-title">{label(concept)}</h2>
+                    {originalName(keyName(concept)) && <span className="concept-orig">{originalName(keyName(concept))}</span>}
+                    <p className="muted">Упоминается в {plural(concept.facts ?? 0, "утверждении", "утверждениях", "утверждениях")} из статей.</p>
+                  </div>
+                  {evidenceNode ? (
+                    <Quotes name={keyName(concept)} otherName={keyName(evidenceNode)} kb={kb} onOpen={() => open(evidenceNode.id)} onClose={() => setEvidence(null)} />
+                  ) : (
+                    <>
+                      {(hiddenIn > 0 || hiddenOut > 0) && <p className="muted">На графе самые весомые связи, остальные в списках ниже.</p>}
+                      <Side title="Что на это влияет" empty="В статьях таких связей не нашлось." links={incoming} arrow="in" active={evidence} onConcept={open} onQuotes={setEvidence} />
+                      <Side title="На что это влияет" empty="В статьях таких связей не нашлось." links={outgoing} arrow="out" active={evidence} onConcept={open} onQuotes={setEvidence} />
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="card graph-help">
+                  <h2 className="h3">Как читать граф</h2>
+                  <ul className="list">
+                    <li>Чем больше круг, тем чаще о понятии пишут.</li>
+                    <li>Цвет стрелки показывает связь: повышает, снижает, не влияет.</li>
+                    <li>Наведите на круг, чтобы выделить его связи.</li>
+                    <li>Нажмите на круг, чтобы вывести понятие в центр и прочитать цитаты.</li>
+                  </ul>
+                  <h3 className="h3">С чего начать</h3>
+                  <div className="chips-row">
+                    {popular.map((n) => (
+                      <button key={n.id} type="button" className="chip" onClick={() => open(n.id)}>
+                        {label(n)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </aside>
           </div>
-          <Overview facts={shownFacts} nodes={nodes} size={size} onOpen={open} />
         </>
       )}
     </>

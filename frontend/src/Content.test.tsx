@@ -1,10 +1,31 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+
+// В jsdom нет холста: граф подменён, события нажатий вызываются напрямую
+const graph = vi.hoisted(() => ({ handlers: new Map<string, (ev: unknown) => void>(), elements: [] as Array<{ data: Record<string, unknown> }> }));
+vi.mock("cytoscape", () => ({
+  default: (config: { elements: Array<{ data: Record<string, unknown> }> }) => {
+    graph.elements = config.elements;
+    const self: Record<string, unknown> = {
+      nodes: () => ({ style: () => undefined }),
+      on: (event: string, selector: unknown, fn: (ev: unknown) => void) => {
+        if (typeof selector === "string") graph.handlers.set(`${event} ${selector}`, fn);
+      },
+      zoom: () => 1,
+      center: () => undefined,
+      width: () => 800,
+      height: () => 600,
+      fit: () => undefined,
+      destroy: () => undefined,
+    };
+    return self;
+  },
+}));
 
 // Заглушки — не реальные данные: проверяется только поведение экранов
 const user = (role: string) => ({ id: 1, login: "[логин]", full_name: "", email: "", role, nda_access: false });
@@ -97,7 +118,7 @@ describe("Обзор", () => {
   it("объясняет, что изучаем, как работаем и почему можно доверять", async () => {
     stub("reader");
     renderAt("/");
-    for (const name of ["Что такое ESG", "Что мы изучаем", "Как мы работаем", "Почему этому можно доверять", "Основные слова", "С чего начать"]) {
+    for (const name of ["Что такое ESG", "Что мы изучаем", "Как мы работаем", "Что в банке статей", "Почему этому можно доверять", "Основные слова", "С чего начать"]) {
       expect(await screen.findByRole("heading", { name })).toBeInTheDocument();
     }
   });
@@ -138,35 +159,68 @@ describe("Банк статей", () => {
 });
 
 describe("Карта связей", () => {
-  it("открывает понятное понятие: что влияет слева, на что влияет справа, по-русски", async () => {
+  const openConcept = async (name: string) => {
+    await userEvent.click(await screen.findByRole("button", { name }));
+    return screen.findByRole("heading", { name });
+  };
+  const graphLabels = () => graph.elements.map((e) => e.data.label).filter(Boolean);
+
+  it("сразу показывает граф и объясняет, как его читать", async () => {
     stub("reader");
     renderAt("/knowledge/graph");
+    expect(await screen.findByRole("img", { name: /Граф: самые связанные понятия/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Как читать граф" })).toBeInTheDocument();
+    expect(graphLabels()).toEqual(expect.arrayContaining(["ESG-показатели", "Стоимость компании"]));
+  });
+
+  it("нажатие на круг выводит понятие в центр: слева что влияет, справа на что влияет", async () => {
+    stub("reader");
+    renderAt("/knowledge/graph");
+    await screen.findByRole("img", { name: /Граф: самые связанные/ });
+    act(() => graph.handlers.get("tap node")?.({ target: { id: () => "e:esg performance" } }));
     expect(await screen.findByRole("heading", { name: "ESG-показатели" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /выбранное понятие в центре/ })).toBeInTheDocument();
+    const place = (id: string) => graph.elements.find((e) => e.data.id === id)?.data.place;
+    expect(place("e:esg performance")).toBe("center");
+    expect(place("e:corporate governance")).toBe("left");
+    expect(place("e:firm value")).toBe("right");
     expect(screen.getByRole("heading", { name: "Что на это влияет" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Корпоративное управление\s*corporate governance/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Стоимость компании\s*firm value/ })).toBeInTheDocument();
   });
 
-  it("нажатие на соседа открывает его, а «Назад» возвращает", async () => {
+  it("нажатие на стрелку открывает цитаты по этой связи", async () => {
     stub("reader");
     renderAt("/knowledge/graph");
-    await userEvent.click(await screen.findByRole("button", { name: /^Стоимость компании\s*firm value$/ }));
+    await openConcept("ESG-показатели");
+    act(() => graph.handlers.get("tap edge")?.({ target: { data: () => "e:firm value" } }));
+    expect(await screen.findByText(/\[цитата из статьи\]/)).toBeInTheDocument();
+  });
+
+  it("переход к соседу, «Назад» и «Вся карта»", async () => {
+    stub("reader");
+    renderAt("/knowledge/graph");
+    await openConcept("ESG-показатели");
+    await userEvent.click(screen.getByRole("button", { name: /^Стоимость компании\s*firm value$/ }));
     expect(await screen.findByRole("heading", { name: "Стоимость компании" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "← Назад: ESG-показатели" }));
     expect(await screen.findByRole("heading", { name: "ESG-показатели" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Вся карта" }));
+    expect(await screen.findByRole("heading", { name: "Как читать граф" })).toBeInTheDocument();
   });
 
-  it("число статей открывает цитаты по этой связи", async () => {
+  it("число статей в панели открывает цитаты", async () => {
     stub("reader");
     renderAt("/knowledge/graph");
-    await userEvent.click(await screen.findByRole("button", { name: /повышает\s*12 статей/ }));
+    await openConcept("ESG-показатели");
+    await userEvent.click(screen.getByRole("button", { name: /повышает\s*12 статей/ }));
     expect(await screen.findByText(/\[цитата из статьи\]/)).toBeInTheDocument();
   });
 
   it("находит понятие и по-русски", async () => {
     stub("reader");
     renderAt("/knowledge/graph");
-    await userEvent.type(await screen.findByLabelText("Найти понятие на карте"), "рентабельность активов");
+    await userEvent.type(await screen.findByLabelText("Найти понятие на графе"), "рентабельность активов");
     await userEvent.keyboard("{Enter}");
     expect(await screen.findByRole("heading", { name: "Рентабельность активов (ROA)" })).toBeInTheDocument();
   });
@@ -174,22 +228,21 @@ describe("Карта связей", () => {
   it("если ничего не найдено, говорит об этом", async () => {
     stub("reader");
     renderAt("/knowledge/graph");
-    await userEvent.type(await screen.findByLabelText("Найти понятие на карте"), "нет такого");
+    await userEvent.type(await screen.findByLabelText("Найти понятие на графе"), "нет такого");
     await userEvent.keyboard("{Enter}");
     expect(await screen.findByText(/Такого понятия нет/)).toBeInTheDocument();
   });
 
-  it("фильтр связей убирает лишние строки", async () => {
+  it("фильтр связей убирает лишние стрелки и строки", async () => {
     stub("reader");
     renderAt("/knowledge/graph");
-    await screen.findByRole("button", { name: /Стоимость компании\s*firm value/ });
+    await openConcept("ESG-показатели");
     await userEvent.click(screen.getByRole("button", { name: "повышает" }));
     expect(screen.queryByRole("button", { name: /повышает\s*12 статей/ })).not.toBeInTheDocument();
+    expect(graph.elements.find((e) => e.data.id === "e:firm value")).toBeUndefined();
   });
-});
 
-describe("Карта связей: большие списки", () => {
-  it("при равном числе статей выше понятие, о котором пишут чаще, а список раскрывается порциями", async () => {
+  it("при равном числе статей выше понятие, о котором пишут чаще; на графе не больше 11 с каждой стороны", async () => {
     const many = Array.from({ length: 40 }, (_, i) => entity(`[сосед ${i}]`, i));
     stub("reader", {
       "/kb/network": {
@@ -198,15 +251,18 @@ describe("Карта связей: большие списки", () => {
       },
     });
     renderAt("/knowledge/graph");
-    const more = await screen.findByRole("button", { name: "Показать ещё 20 из 32" });
-    const rows = () => document.querySelectorAll(".concept-open");
+    await userEvent.click(await screen.findByRole("button", { name: "ESG-показатели" }));
+    await screen.findByRole("heading", { name: "ESG-показатели" });
+    expect(graph.elements.filter((e) => e.data.place === "right")).toHaveLength(11);
+    const more = await screen.findByRole("button", { name: "Показать ещё 20 из 34" });
+    const rows = () => document.querySelectorAll(".concept-out .concept-open");
     expect(rows()[0]).toHaveTextContent("[сосед 39]");
-    expect(rows()).toHaveLength(8);
+    expect(rows()).toHaveLength(6);
     await userEvent.click(more);
-    expect(rows()).toHaveLength(28);
+    expect(rows()).toHaveLength(26);
   });
 
-  it("русское понятие из базы показано с заглавной буквы", async () => {
+  it("если в теме нет связей, говорит об этом", async () => {
     stub("reader", { "/kb/network": { nodes: [entity("стоимость капитала", 5)], edges: [] } });
     renderAt("/knowledge/graph");
     expect(await screen.findByText(/В этой теме связей пока нет/)).toBeInTheDocument();

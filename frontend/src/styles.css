@@ -604,11 +604,6 @@ a.btn-ghost.active { border-color: var(--accent); }
 .rel-filters { display: flex; flex-wrap: wrap; gap: 6px; }
 .rel-swatch { display: inline-block; width: 12px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 .chip.active-rel { border-color: var(--text); background: var(--surface); font-weight: 500; }
-.graph-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-.graph-layout.with-panel { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
-@media (max-width: 1023px) { .graph-layout.with-panel { grid-template-columns: minmax(0, 1fr); } }
-.graph-canvas { height: min(70vh, 640px); min-height: 380px; padding: 0; overflow: hidden; }
-.graph-panel { max-height: min(70vh, 640px); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
 .fact-line { line-height: 1.5; }
 .rel-tag { display: inline-block; padding: 0 8px; border: 2px solid; border-radius: 999px; font-size: 13px; }
@@ -755,7 +750,6 @@ a.btn-ghost.active { border-color: var(--accent); }
 .nav-low { margin-top: 18px; padding: 0 12px 2px; font-size: 12px; color: var(--nav-muted); }
 
 /* --- обзор --- */
-.hero { background: var(--sidebar); color: var(--on-accent); border-radius: 14px; padding: clamp(24px, 4vw, 44px); display: flex; flex-direction: column; gap: 14px; }
 .hero-kicker { font: 500 12px/1.4 "IBM Plex Mono", monospace; color: var(--nav-muted); }
 .hero-title { margin: 0; font-size: clamp(26px, 3.6vw, 40px); line-height: 1.15; letter-spacing: -0.01em; max-width: 22em; text-wrap: balance; }
 .hero-lead { margin: 0; font-size: 17px; line-height: 1.55; max-width: 62ch; color: var(--nav-muted); }
@@ -765,12 +759,9 @@ a.btn-ghost.active { border-color: var(--accent); }
 .btn-hero-ghost { color: var(--on-accent); border: 1px solid var(--nav-muted); }
 .btn-hero:hover { background: var(--ok-bg); color: var(--sidebar); }
 .btn-hero-ghost:hover { color: var(--on-accent); background: var(--accent); }
-.overview-block { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; scroll-margin-top: 80px; }
 .overview-text { margin: 0; max-width: 66ch; line-height: 1.55; }
 .esg-grid, .found-grid, .start-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .esg-grid { list-style: none; margin: 0; padding: 0; }
-.esg-grid .card { display: flex; flex-direction: column; gap: 4px; }
-.esg-letter { font: 500 32px/1 "IBM Plex Mono", monospace; color: var(--accent); }
 .found-card { display: flex; flex-direction: column; gap: 8px; }
 .found-card p { margin: 0; }
 .start-card { display: flex; flex-direction: column; gap: 4px; color: inherit; text-decoration: none; }
@@ -804,16 +795,11 @@ details[open] > .node-head .node-preview { display: none; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
 .tile { display: flex; flex-direction: column; gap: 2px; color: inherit; text-decoration: none; }
 .tile:hover { border-color: var(--accent); color: inherit; }
-.tile-value { font: 600 28px/1.15 "IBM Plex Sans", sans-serif; color: var(--accent); font-variant-numeric: tabular-nums; }
 .tile-label { font-weight: 500; font-size: 14px; }
 .tile-note { font-size: 13px; }
 .two-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
 .study-card { display: flex; flex-direction: column; gap: 8px; }
 .study-card p { margin: 0; line-height: 1.55; }
-.how-steps { list-style: none; margin: 0; padding: 0; counter-reset: how; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
-.how-steps li { counter-increment: how; display: flex; flex-direction: column; gap: 6px; }
-.how-steps li::before { content: counter(how); display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font: 600 13px "IBM Plex Sans", sans-serif; }
-.trust-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px 24px; line-height: 1.5; }
 .glossary { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px 24px; }
 .glossary dt { font-weight: 600; }
 .glossary dd { margin: 2px 0 0; line-height: 1.45; }
@@ -831,13 +817,9 @@ details[open] > .node-head .node-preview { display: none; }
 .kb-more { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; }
 
 /* --- карта связей: понятие в центре, слева что на него влияет, справа на что влияет оно --- */
-.concept-popular { display: flex; flex-direction: column; gap: 6px; }
 .rel-legend { display: flex; flex-wrap: wrap; gap: 6px; }
-.concept-back { align-self: flex-start; }
 .concept-found { display: flex; flex-direction: column; gap: 8px; }
 .concept-found p { margin: 0; }
-.concept-map { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px) minmax(0, 1fr); gap: 16px; align-items: start; }
-.concept-center { position: sticky; top: 84px; background: var(--sidebar); color: var(--on-accent); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 6px; }
 .concept-center .eyebrow { color: var(--nav-muted); }
 .concept-center .muted { color: var(--nav-muted); margin: 6px 0 0; font-size: 13.5px; line-height: 1.45; }
 .concept-title { margin: 0; font-size: 21px; line-height: 1.2; }
@@ -859,11 +841,84 @@ details[open] > .node-head .node-preview { display: none; }
 .concept-count { color: var(--accent); font-weight: 500; white-space: nowrap; }
 .concept-quotes { display: flex; flex-direction: column; gap: 8px; }
 .concept-quotes .h3, .concept-quotes p { margin: 0; }
-.map-size { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
-.map-size p { margin: 0; flex: 1 1 280px; }
-@media (max-width: 1023px) {
-  .concept-map { grid-template-columns: minmax(0, 1fr); }
-  .concept-center { position: static; order: -1; }
-}
 .kb-year { width: 72px; }
 .concept-more { display: flex; flex-wrap: wrap; gap: 14px; }
+
+/* --- обзор: обложка и иллюстрации --- */
+.hero { position: relative; overflow: hidden; background: radial-gradient(120% 140% at 85% 20%, #24513c 0%, var(--sidebar) 58%); color: var(--on-accent); border-radius: 18px; padding: clamp(24px, 4vw, 48px); display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px 32px; align-items: center; }
+.hero-text { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.hero-art { width: 100%; max-width: 440px; height: auto; justify-self: center; }
+.art-glow { fill: none; stroke: #ffffff; stroke-opacity: 0.09; stroke-width: 1.5; }
+.art-line { stroke: #9fd0b4; stroke-opacity: 0.55; stroke-width: 1.8; }
+.art-dot { fill: #9fd0b4; }
+.art-node { fill: #3b6a53; stroke: #9fd0b4; stroke-width: 1.5; }
+.art-e circle { fill: var(--ok-bg); }
+.art-s > circle:first-child { fill: var(--info-bg); }
+.art-g circle { fill: var(--warn-bg); }
+.art-stroke { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.art-stroke-soft { fill: none; stroke: #dcefe3; stroke-width: 2.4; stroke-linecap: round; }
+.art-s .art-fill { fill: var(--info-text); }
+.art-g .art-fill { fill: var(--warn-text); }
+.art-center circle { fill: var(--on-accent); }
+.art-bars { fill: none; stroke: var(--accent); stroke-width: 7; stroke-linecap: round; opacity: 0.45; }
+.art-trend { fill: none; stroke: var(--warn); stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+.section-title { margin: 0; font-size: clamp(21px, 2.6vw, 27px); line-height: 1.2; letter-spacing: -0.005em; }
+.overview-block { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; scroll-margin-top: 80px; }
+.overview-band { display: flex; flex-direction: column; gap: 18px; margin-top: 20px; padding: clamp(20px, 3vw, 32px); border-radius: 18px; background: var(--ok-bg); }
+.overview-callout { margin: 0; padding: 14px 18px; max-width: 80ch; border-radius: 12px; background: var(--warn-bg); color: var(--warn-text); line-height: 1.55; }
+.tile { transition: transform 0.12s, border-color 0.12s; }
+.tile:hover { transform: translateY(-2px); }
+.tile-icon, .how-icon, .trust-icon { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--ok-bg); color: var(--accent); }
+.tile-value { margin-top: 6px; font: 600 30px/1.15 "IBM Plex Sans", sans-serif; color: var(--text); font-variant-numeric: tabular-nums; }
+.icon { width: 22px; height: 22px; }
+.esg-card { padding: 0; overflow: hidden; }
+.esg-grid .esg-card { gap: 0; }
+.scene { display: block; width: 100%; height: 120px; }
+.esg-body { display: flex; flex-direction: column; gap: 4px; padding: 14px 18px 18px; }
+.esg-letter { font: 600 30px/1 "IBM Plex Mono", monospace; }
+.esg-e { color: var(--accent); }
+.esg-s { color: var(--info-text); }
+.esg-g { color: var(--warn-text); }
+.study-art { width: 150px; height: auto; max-width: 100%; }
+.how-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; position: relative; }
+.how-steps li { display: flex; flex-direction: column; gap: 6px; }
+.how-icon { background: var(--accent); color: var(--on-accent); margin-bottom: 4px; }
+.how-text { color: var(--ok-text); line-height: 1.45; font-size: 14.5px; }
+.overview-band a { color: var(--ok-text); font-weight: 600; }
+.topic-chart { list-style: none; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.topic-chart li { display: grid; grid-template-columns: minmax(150px, 280px) minmax(0, 1fr) 56px; gap: 12px; align-items: center; }
+.topic-name { font-size: 14px; line-height: 1.3; }
+.topic-bar { height: 12px; border-radius: 6px; background: var(--bg); overflow: hidden; }
+.topic-bar > span { display: block; height: 100%; border-radius: 6px; background: var(--accent); }
+.topic-count { text-align: right; font-size: 13px; }
+.trust-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px 24px; line-height: 1.5; }
+.trust-grid li { display: flex; gap: 12px; align-items: flex-start; }
+.start-card .tile-icon { margin-bottom: 4px; }
+@media (max-width: 760px) {
+  .hero { grid-template-columns: minmax(0, 1fr); }
+  .hero-art { max-width: 300px; }
+  .topic-chart li { grid-template-columns: minmax(0, 1fr) 52px; }
+  .topic-name { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { .tile { transition: none; } .tile:hover { transform: none; } }
+
+/* --- граф: большой холст и панель понятия --- */
+.graph-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.graph-controls .rel-legend { flex: 1 1 100%; }
+.graph-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.graph-layout.with-panel { grid-template-columns: minmax(0, 1fr) minmax(300px, 370px); }
+.graph-stage { position: relative; padding: 0; overflow: hidden; }
+.graph-canvas { height: clamp(460px, 74vh, 760px); width: 100%; }
+.graph-zoom { position: absolute; right: 12px; top: 12px; display: flex; gap: 6px; }
+.graph-zoom .btn-ghost { min-height: 36px; min-width: 36px; padding: 0 10px; background: var(--surface); }
+.graph-panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; max-height: clamp(460px, 74vh, 760px); overflow-y: auto; padding-right: 2px; }
+.graph-help { display: flex; flex-direction: column; gap: 10px; }
+.graph-help .h3 { margin: 0; }
+.concept-center { background: var(--sidebar); color: var(--on-accent); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+.concept-quotes { padding: 14px; }
+.concept-quotes .viz-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+@media (max-width: 1023px) {
+  .graph-layout.with-panel { grid-template-columns: minmax(0, 1fr); }
+  .graph-canvas { height: 62vh; min-height: 380px; }
+  .graph-panel { max-height: none; overflow: visible; }
+}
