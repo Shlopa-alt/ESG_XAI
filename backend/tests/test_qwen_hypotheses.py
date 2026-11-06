@@ -96,6 +96,8 @@ def test_paraphrase_of_existing_is_a_repeat(make_client, tree) -> None:  # type:
         _h(title="ESG-инвестиции снижают [показатель бета]"),  # другая идея
     ])
     assert len(job["result"]["created"]) == 1
+    assert len(job["result"]["repeats"]) == 2  # отброшенное видно в итоге задачи
+    assert "отброшено как повтор: 2" in job["message"]
     kept = c.get(f"/api/hypotheses/{job['result']['created'][0]}").json()
     assert kept["title"].endswith("[показатель бета]")
 
@@ -110,6 +112,11 @@ def test_paraphrase_of_existing_is_a_repeat(make_client, tree) -> None:  # type:
     ("ESG-инвестиции повышают эффективность энергопотребления в регионах",
      ["ESG-инвестиции улучшают экологические показатели региона"], False),
     ("ESG-инвестиции влияют на бюджет региона", [], False),  # первая по заданию — не повтор
+    # другая буква ESG при тех же остальных словах — другая идея
+    ("Экологические затраты связаны со стоимостью капитала",
+     ["Социальные затраты связаны со стоимостью капитала"], False),
+    ("Экологические затраты снижают стоимость капитала",
+     ["Экологические затраты связаны со стоимостью капитала"], True),
 ])
 def test_repeats(title: str, existing: list[str], same: bool) -> None:
     """Названия — из стресс-теста генерации гипотез на пилотном корпусе ESG (ноябрь 2026)."""

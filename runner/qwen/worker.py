@@ -280,7 +280,9 @@ HYP_SYSTEM = """Ты — исследователь НИЦ ИИ (Универс�
 3. Не повторяй гипотезы, которые уже есть.
 4. "dataset" — код датасета из списка, только если в его описании есть нужные показатели; иначе "" и в
    "data_needed" — какие данные нужны и где их взять. Датасет и "data_needed" вместе не бывают.
-5. "method" — ключ метода из списка, только если этот метод считается на выбранном датасете; иначе
+5. "method" — ключ метода из списка, только если этот метод считается на выбранном датасете и действительно
+   проверяет утверждение. Метод «Повтор …» пересчитывает опубликованную работу как есть: бери его, только
+   если гипотеза о воспроизведении именно этой работы; иначе
    коротко словами: каким методом проверять.
 6. Пиши по-русски; названия показателей и терминов из статей можно оставить как в статье.
 7. Горизонт — ровно тот, что в задании: в задании 3 года — пиши 3 года, не «3–5 лет».
@@ -297,7 +299,7 @@ HYP_SYSTEM = """Ты — исследователь НИЦ ИИ (Универс�
 
 Ответ — только JSON: {"hypotheses": [{"title": "коротко, до 120 знаков", "statement": "проверяемое
 утверждение", "rationale": "почему так думаем, со ссылками [n] на фрагменты", "fragments": [1, 3],
-"dataset": "DS-04", "method": "exp007-hsu", "data_needed": ""}]}"""
+"dataset": "код из списка или пусто", "method": "ключ из списка или словами", "data_needed": "пусто, если датасет выбран"}]}"""
 
 DOI = re.compile(r"10\.\d{4,9}/\S+")
 
@@ -338,7 +340,18 @@ def _is_prose(text: str) -> bool:
             and not TABLE_HEAD.match(t))
 
 
-def _evidence(target: dict[str, Any], token: str) -> list[dict[str, Any]]:
+def _own_reports(token: str) -> set[str]:
+    """Отчёты лаборатории в базе знаний: их текст писала сама Qwen, поэтому опорой он быть не может —
+    иначе гипотеза опиралась бы на собственный пересказ."""
+    try:
+        docs = kbrag_get("documents", {"kb": "esg.experiments"}, token, timeout_s=30).get("documents") or []
+    except (TimeoutError, URLError, OSError, ValueError) as exc:
+        log(f"  список отчётов лаборатории не получен ({exc}) — опоры без этого фильтра")
+        return set()
+    return {str(d.get("doc_id")) for d in docs if d.get("doc_id")}
+
+
+def _evidence(target: dict[str, Any], token: str, exclude: frozenset[str] | set[str] = frozenset()) -> list[dict[str, Any]]:
     """Опоры по заданию: фрагменты статей по коротким запросам и факты графа о ключевых сущностях
     (у каждого факта — дословная цитата из статьи). Материалы лаборатории (lab_*) — сама
     постановка, не опора.
@@ -354,7 +367,8 @@ def _evidence(target: dict[str, Any], token: str) -> list[dict[str, Any]]:
         except (TimeoutError, URLError, OSError) as exc:
             log(f"  поиск «{q[:60]}» не ответил ({exc}) — пропускаю запрос")
             continue
-        ranked.append([h for h in found if not h["doc_id"].startswith("lab_") and _is_prose(h["text"])][:PER_QUERY])
+        ranked.append([h for h in found if not h["doc_id"].startswith("lab_") and h["doc_id"] not in exclude
+                       and _is_prose(h["text"])][:PER_QUERY])
     items: list[dict[str, Any]] = []
     seen: set[int] = set()
     for rank in range(PER_QUERY):
@@ -381,7 +395,7 @@ def _evidence(target: dict[str, Any], token: str) -> list[dict[str, Any]]:
             q = (f.get("quotes") or [{}])[0]
             a, b = (f["other"], f["about"]) if f.get("direction") == "←" else (f["about"], f["other"])
             key = f"{a}|{f['relation']}|{b}".lower()  # один и тот же факт приходит от разных сущностей
-            if not q.get("doc_id") or q["doc_id"].startswith("lab_") or key in known:
+            if not q.get("doc_id") or q["doc_id"].startswith("lab_") or q["doc_id"] in exclude or key in known:
                 continue
             known.add(key)
             taken += 1
@@ -529,7 +543,9 @@ def _verify(h: dict[str, Any], cited: list[dict[str, Any]],
             f" (в опорах: {d['refs_direction']})" if d["refs_direction"] != direction else " (нет цитаты)"))
         # опровергнуть знак может только цитата с другим знаком; без неё знак просто не установлен
         sign_only = not (d["refs_direction"] in ("рост", "снижение") and _quoted(d["direction_quote"], texts))
-    extra = _years(h["statement"]) - _years(target["content"]) - set().union(*map(_years, texts))
+    # четырёхзначное — календарный год («в 2021 году»), а не срок
+    extra = {y for y in _years(h["statement"]) - _years(target["content"]) - set().union(*map(_years, texts))
+             if len(y) < 4}
     if extra:
         failed.append(f"горизонт {', '.join(sorted(extra, key=int))} лет — ни в задании, ни в опорах")
     comment = str(d.get("comment") or "")[:200]
@@ -629,6 +645,8 @@ def job_hypotheses(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     skipped: list[str] = []
     answers: dict[str, str] = {}
     rejected: list[dict[str, str]] = []  # отброшенные проверкой опор — в итог задачи
+    own = _own_reports(ctx["kbrag_token"])
+    asked = failed = 0
     for target in context["targets"]:
         if target["pending_qwen"] >= context["limits"]["pending"]:
             skipped.append(f"{target['number']}: ждут рецензии {target['pending_qwen']}")
@@ -636,11 +654,20 @@ def job_hypotheses(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
         # гипотезы этого прохода по другим заданиям — тоже «уже есть»: без повторов между заданиями
         target = {**target, "existing": target["existing"] + [
             {"code": f"новая ({x['node']})", "title": x["title"], "status": "предложена сейчас"} for x in out]}
-        items = _evidence(target, ctx["kbrag_token"])
+        items = _evidence(target, ctx["kbrag_token"], own)
         if not items:
             skipped.append(f"{target['number']}: в базе нет опор")
             continue
-        answer = json.dumps(ask_json(_prompt(target, context, items), 1800, HYP_SYSTEM, HYP_SCHEMA), ensure_ascii=False)
+        asked += 1
+        try:
+            answer = json.dumps(ask_json(_prompt(target, context, items), 1800, HYP_SYSTEM, HYP_SCHEMA),
+                                ensure_ascii=False)
+        except (ValueError, TimeoutError, URLError, OSError) as exc:
+            # сбой по одному заданию не должен стоить гипотез по остальным
+            failed += 1
+            log(f"  {target['number']}: модель не ответила ({exc})")
+            skipped.append(f"{target['number']}: модель не ответила ({exc})"[:300])
+            continue
         answers[target["number"]] = answer[:4000]
         before = len(out)
         for item in _parse(answer)[: context["limits"]["per_run"]]:
@@ -660,6 +687,8 @@ def job_hypotheses(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
         log(f"  {target['number']}: опор {len(items)} (фактов {facts}), гипотез {len(out) - before}")
         if len(out) == before:
             skipped.append(f"{target['number']}: модель не нашла обоснованной гипотезы")
+    if asked and failed == asked:
+        raise RuntimeError(f"модель не ответила ни по одному из заданий ({failed}): {skipped[-1]}")
     # ответы модели — в журнал задачи: по ним видно, почему по заданию ничего не предложено
     (ctx["logs"] / f"qwen-hypotheses-{job['id']}.json").write_text(
         json.dumps(answers, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -670,7 +699,8 @@ EXP_SYSTEM = """Ты — исследователь НИЦ ИИ (Универс�
 эксперимент, который её подтвердит или опровергнет.
 
 Правила:
-1. "method" — ключ метода ТОЛЬКО из библиотеки. Повтор (scope replication) — только на своём датасете.
+1. "method" — ключ метода ТОЛЬКО из библиотеки. Повтор (scope replication) — только на своём датасете и только
+   если гипотеза о воспроизведении этой работы: новых показателей он не считает.
    Если ни один метод не проверяет гипотезу, верни "method": "" и в "rationale" опиши, какой метод нужен.
 2. "snapshot_id" — номер среза из списка, на котором есть нужные показатели (смотри числовые столбцы);
    нет подходящего — 0, и в "rationale" напиши, каких данных не хватает.

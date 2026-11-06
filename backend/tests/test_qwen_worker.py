@@ -350,3 +350,84 @@ def test_cjk_is_rejected_without_asking_model(model: dict[str, Any], field: str)
     checked, comment = W._review(h, CITED, TARGET)
     assert checked is None and "иероглифы" in comment
     assert model["calls"] == []
+
+
+def test_calendar_year_is_not_a_horizon(model: dict[str, Any]) -> None:
+    ok, comment, *_ = W._verify(
+        {**H, "statement": "Фактор альфа повышает показатель бета в 2021 году"}, CITED, TARGET
+    )
+    assert ok, comment
+
+
+def test_prompt_example_names_no_real_method() -> None:
+    """Значения из примера модель копировала в ответы."""
+    assert "exp007-hsu" not in W.HYP_SYSTEM and "DS-04" not in W.HYP_SYSTEM
+
+
+class _Platform:
+    def __init__(self, targets: list[dict[str, Any]]) -> None:
+        self.targets = targets
+
+    def post(self, path: str, body: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+        return 200, {"targets": self.targets, "datasets": [], "methods": [], "limits": {"pending": 3, "per_run": 3}}
+
+
+def _targets(n: int) -> list[dict[str, Any]]:
+    return [{**TARGET, "number": f"Т{i}", "path": [], "sections": [], "existing": [], "pending_qwen": 0} for i in range(n)]
+
+
+@pytest.fixture
+def job_ctx(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> dict[str, Any]:
+    item = {"kind": "fragment", "doc_id": "[d]", "title": "[т]", "year": 2020, "url": "", "pages": [], "text": PROSE}
+    monkeypatch.setattr(W, "log", lambda *a: None)
+    monkeypatch.setattr(W, "_own_reports", lambda token: {"[отчёт]"})
+    monkeypatch.setattr(W, "_evidence", lambda target, token, exclude=frozenset(): [item])
+    monkeypatch.setattr(W, "_review", lambda h, cited, target: (h, "[ок]"))
+    return {"kbrag_token": "", "logs": tmp_path}
+
+
+def _reply(n: int = 0) -> dict[str, Any]:
+    return {"hypotheses": [{"title": f"[гипотеза {n}]", "statement": "[утверждение]", "rationale": "", "fragments": [1],
+                            "dataset": "", "method": "", "data_needed": ""}]}
+
+
+def test_one_model_failure_keeps_other_targets(monkeypatch: pytest.MonkeyPatch, job_ctx: dict[str, Any]) -> None:
+    calls = {"n": 0}
+
+    def fake(*a: Any, **k: Any) -> dict[str, Any]:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise TimeoutError("[сбой]")
+        return _reply(calls["n"])
+
+    monkeypatch.setattr(W, "ask_json", fake)
+    out = W.job_hypotheses({"id": 1}, {**job_ctx, "platform": _Platform(_targets(3))})
+    assert [h["node"] for h in out["hypotheses"]] == ["Т0", "Т2"]
+    assert any("Т1: модель не ответила" in x for x in out["skipped"])
+
+
+def test_model_down_for_all_targets_fails_the_job(monkeypatch: pytest.MonkeyPatch, job_ctx: dict[str, Any]) -> None:
+    def fake(*a: Any, **k: Any) -> dict[str, Any]:
+        raise OSError("[модель недоступна]")
+
+    monkeypatch.setattr(W, "ask_json", fake)
+    with pytest.raises(RuntimeError, match="ни по одному"):
+        W.job_hypotheses({"id": 1}, {**job_ctx, "platform": _Platform(_targets(2))})
+
+
+def test_own_reports_are_not_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    hit = {"chunk_id": 1, "doc_id": "[отчёт]", "title": "[т]", "text": PROSE}
+    monkeypatch.setattr(W, "_plan", lambda t: (["q"], []))
+    monkeypatch.setattr(W, "log", lambda *a: None)
+    monkeypatch.setattr(W, "kbrag_get", lambda *a, **k: {"hits": [hit]})
+    assert W._evidence(TARGET, "t", {"[отчёт]"}) == []
+    assert len(W._evidence(TARGET, "t")) == 1
+
+
+def test_own_reports_unavailable_does_not_stop_the_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(*a: Any, **k: Any) -> Any:
+        raise TimeoutError("[нет ответа]")
+
+    monkeypatch.setattr(W, "kbrag_get", fail)
+    monkeypatch.setattr(W, "log", lambda *a: None)
+    assert W._own_reports("t") == set()

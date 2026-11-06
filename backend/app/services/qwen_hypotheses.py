@@ -94,6 +94,8 @@ TEMPLATE_STEMS = (
     "компан", "регион", "бюдже", "федер", "рейти", "показ", "резул", "эконом",
 )
 SAME_IDEA = 0.5  # доля общих слов (от меньшего названия), с которой гипотеза — повтор
+# E, S и G — разные идеи при тех же остальных словах: «экологические затраты» и «социальные затраты»
+PILLARS = {"эколог", "социал", "управл"}
 
 
 def idea(title: str) -> set[str]:
@@ -114,6 +116,8 @@ def repeats(title: str, existing: list[str]) -> str | None:
         if title.strip().lower() == old_title.strip().lower():
             return old_title
         old = idea(old_title)
+        if new & PILLARS and old & PILLARS and not new & old & PILLARS:
+            continue
         if not new or (old and len(new & old) / min(len(new), len(old)) >= SAME_IDEA):
             return old_title
     return None
@@ -141,7 +145,10 @@ def create_from_result(db: Session, job: QwenJob, result: dict[str, Any]) -> lis
         # и отклонённые: заново предлагать то, что рецензент уже отклонил, — лишняя работа
         existing = list(db.scalars(
             select(Hypothesis.title).where(Hypothesis.methodology_node_id == node.id)))
-        if repeats(title, existing) is not None:
+        same_as = repeats(title, existing)
+        if same_as is not None:
+            # в итог задачи: отброшенное как повтор должно быть видно, порог может ошибиться
+            result.setdefault("repeats", []).append({"node": number, "title": title, "same_as": same_as})
             continue
         dataset = str(item.get("dataset") or "")
         dataset = dataset if dataset in datasets else ""
