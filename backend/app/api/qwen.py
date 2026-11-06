@@ -100,6 +100,14 @@ def _worker(settings: Annotated[Settings, Depends(get_settings)],
 Worker = Depends(_worker)
 
 
+def worker_online(settings: Settings) -> bool:
+    """Обработчик отмечался недавно: задачи из очереди сейчас кто-то разбирает."""
+    try:
+        return _redis(settings).get(HEARTBEAT) is not None
+    except redis.RedisError:
+        return False
+
+
 @router.get("/status", response_model=StatusOut, dependencies=[Owner])
 def qwen_status(db: Annotated[Session, Depends(get_db)],
                 settings: Annotated[Settings, Depends(get_settings)]) -> StatusOut:

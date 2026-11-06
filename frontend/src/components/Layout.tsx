@@ -4,18 +4,45 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import type { User } from "../api/auth";
 import { useLogout } from "../auth/useAuth";
 import { ORG, WITH_LAB } from "../org";
+import { ROLE_LABEL } from "./Ux";
 
-const NAV = [
-  { to: "/", label: "Обзор", end: true },
-  { to: "/knowledge", label: "База знаний", end: false },
-  { to: "/knowledge/graph", label: "Граф связей", end: false },
-  { to: "/knowledge/import", label: "Импорт статей", end: false },
-  { to: "/data-drafts", label: "Данные из статей", end: false },
-  { to: "/hypotheses", label: "Гипотезы", end: false },
-  { to: "/experiments", label: "Эксперименты", end: false },
-  { to: "/run", label: "Запуск экспериментов", end: false },
-  { to: "/methodology", label: "Методология", end: false },
+interface NavItem {
+  to: string;
+  label: string;
+  end: boolean;
+}
+
+// Меню сгруппировано по шагам исследовательского цикла — сразу видно, откуда куда идти
+const NAV_GROUPS: Array<{ title: string; step?: number; items: NavItem[] }> = [
+  { title: "", items: [{ to: "/", label: "Обзор", end: true }] },
+  {
+    title: "Знания",
+    step: 1,
+    items: [
+      { to: "/knowledge", label: "База знаний", end: true },
+      { to: "/knowledge/graph", label: "Граф связей", end: false },
+      { to: "/knowledge/import", label: "Импорт статей", end: false },
+      { to: "/data-drafts", label: "Данные из статей", end: false },
+    ],
+  },
+  { title: "Гипотезы", step: 2, items: [{ to: "/hypotheses", label: "Гипотезы", end: false }] },
+  {
+    title: "Эксперименты",
+    step: 3,
+    items: [
+      { to: "/run", label: "Запуск экспериментов", end: false },
+      { to: "/experiments", label: "Эксперименты", end: false },
+    ],
+  },
+  { title: "Методология", step: 4, items: [{ to: "/methodology", label: "Методология", end: false }] },
 ];
+const OWNER_GROUP = {
+  title: "Служебное",
+  items: [
+    { to: "/qwen", label: "Задачи Qwen", end: false },
+    { to: "/users", label: "Пользователи", end: false },
+  ],
+};
 
 function initials(user: User): string {
   const source = user.full_name.trim() || user.login;
@@ -33,10 +60,8 @@ export function Layout({ user }: { user: User }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
   // Служебное — только владельцу: пользователи и очередь Qwen
-  const nav =
-    user.role === "owner"
-      ? [...NAV, { to: "/qwen", label: "Задачи Qwen", end: false }, { to: "/users", label: "Пользователи", end: false }]
-      : NAV;
+  const groups = user.role === "owner" ? [...NAV_GROUPS, OWNER_GROUP] : NAV_GROUPS;
+  const role = ROLE_LABEL[user.role];
 
   // На узком экране меню закрывается после перехода и по Escape
   useEffect(() => setMenuOpen(false), [location.pathname]);
@@ -78,20 +103,36 @@ export function Layout({ user }: { user: User }) {
           </div>
         </div>
         <div className="nav">
-          {nav.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end || item.to === "/knowledge"}
-              className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
-            >
-              {item.label}
-            </NavLink>
+          {groups.map((g) => (
+            <div key={g.title || "home"} className="nav-group">
+              {g.title && (
+                <span className="nav-group-title">
+                  {"step" in g && typeof g.step === "number" ? (
+                    <span className="nav-step" aria-hidden="true">
+                      {g.step}
+                    </span>
+                  ) : null}
+                  {g.title}
+                </span>
+              )}
+              {g.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </div>
         <div className="sidebar-foot">
-          <span>Вход по учётной записи</span>
-          <small>Пользователей заводит owner; вычисления — на компьютере лаборатории</small>
+          <span>
+            {user.full_name || user.login} · {role?.name ?? user.role}
+          </span>
+          {role && <small>Вам можно: {role.can}</small>}
         </div>
       </nav>
       <button type="button" className="scrim" aria-label="Закрыть меню" onClick={() => setMenuOpen(false)} />

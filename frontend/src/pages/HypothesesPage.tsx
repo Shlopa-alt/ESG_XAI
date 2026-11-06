@@ -1,10 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
   decideHypothesis,
-  experimentFromHypothesis,
   H_BADGE,
   H_STATUS_LABEL,
   type HStatus,
@@ -16,6 +15,7 @@ import {
 import { useMe } from "../auth/useAuth";
 import { NodeSelect } from "../components/NodeSelect";
 import { ProposalPanel } from "../components/ProposalPanel";
+import { canReview, canRun, HypothesisPath, hypothesisNext, NextStep } from "../components/Ux";
 
 /** Опора, переданная со страницы базы знаний («Предложить гипотезу по этой статье»). */
 export interface ProposeState {
@@ -112,26 +112,28 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
   );
 }
 
+/** Ждёт ли гипотеза действия именно от этой роли. */
+const needsMe = (h: Hypothesis, role: string | undefined) =>
+  (h.status === "proposed" && canReview(role)) || (h.status === "accepted" && canRun(role));
+
 function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }) {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const [note, setNote] = useState("");
+  const [noteError, setNoteError] = useState(false);
   const refresh = () => void qc.invalidateQueries({ queryKey: ["hypotheses"] });
   const decide = useMutation({
     mutationFn: (s: "accepted" | "rejected") => decideHypothesis(h.code, s, note),
     onSuccess: refresh,
   });
-  const start = useMutation({
-    mutationFn: () => experimentFromHypothesis(h.code),
-    onSuccess: (r) => {
-      refresh();
-      void qc.invalidateQueries({ queryKey: ["experiments"] });
-      navigate(`/experiments/${r.experiment}`);
-    },
-  });
-  const canDecide = role === "reviewer" || role === "owner";
-  const canTest = role === "researcher" || role === "owner";
-  const error = decide.error ?? start.error;
+  const canDecide = canReview(role);
+  const error = decide.error;
+  const rejectWithNote = () => {
+    if (!note.trim()) {
+      setNoteError(true);
+      return;
+    }
+    decide.mutate("rejected");
+  };
   return (
     <article className="card cr">
       <div className="kb-meta">
@@ -151,6 +153,18 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
       </div>
       <h3 className="h3">{h.title}</h3>
       <p>{h.statement}</p>
+      <HypothesisPath status={h.status} />
+      <NextStep
+        action={
+          h.status === "accepted" && canRun(role) ? (
+            <Link to={`/run?h=${encodeURIComponent(h.code)}`} className="btn-primary">
+              Проверить экспериментом
+            </Link>
+          ) : undefined
+        }
+      >
+        {hypothesisNext(h.status, role, h.code, h.experiment)}
+      </NextStep>
       {h.rationale && <p className="muted">Обоснование: {h.rationale}</p>}
       {h.source === "qwen" && (h.suggested.dataset || h.suggested.method || h.suggested.data_needed) && (
         <p className="muted">
@@ -166,52 +180,53 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
         </p>
       )}
       {h.refs.length > 0 && (
-        <ul className="list muted">
-          {h.refs.map((r) => (
-            <li key={r.kbrag_id}>
-              {r.kind === "article" ? (
-                <Link to={`/knowledge/article/${encodeURIComponent(r.kbrag_id)}`}>{r.title || r.kbrag_id}</Link>
-              ) : (
-                r.title || r.kbrag_id
-              )}{" "}
-              {r.doi && <span className="mono">· DOI {r.doi}</span>}
-              {r.quote && <q> {r.quote}</q>}
-            </li>
-          ))}
-        </ul>
+        <details open={h.status === "proposed"}>
+          <summary>Опоры в базе знаний ({h.refs.length})</summary>
+          <ul className="list muted">
+            {h.refs.map((r) => (
+              <li key={r.kbrag_id}>
+                {r.kind === "article" ? (
+                  <Link to={`/knowledge/article/${encodeURIComponent(r.kbrag_id)}`}>{r.title || r.kbrag_id}</Link>
+                ) : (
+                  r.title || r.kbrag_id
+                )}{" "}
+                {r.doi && <span className="mono">· DOI {r.doi}</span>}
+                {r.quote && <q> {r.quote}</q>}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {h.decision_note && (
         <p className="muted">
           Решение{h.decided_by ? ` (${h.decided_by})` : ""}: {h.decision_note}
         </p>
       )}
-      {h.experiment && (
-        <p>
-          Проверяется в <Link to={`/experiments/${h.experiment}`} className="mono">{h.experiment}</Link>
-        </p>
-      )}
       {h.status === "proposed" && canDecide && (
         <div className="review-form">
           <label className="field inline grow">
-            Комментарий (обязателен при отклонении)
-            <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+            Комментарий (обязателен при отклонении — его увидит автор)
+            <textarea
+              rows={2}
+              value={note}
+              aria-invalid={noteError}
+              onChange={(e) => {
+                setNote(e.target.value);
+                setNoteError(false);
+              }}
+            />
+            {noteError && <span className="error">Напишите, почему отклоняете.</span>}
           </label>
           <button type="button" className="btn-primary" disabled={decide.isPending} onClick={() => decide.mutate("accepted")}>
             Принять к проверке
           </button>
-          <button type="button" className="btn-ghost" disabled={decide.isPending} onClick={() => decide.mutate("rejected")}>
+          <button type="button" className="btn-ghost" disabled={decide.isPending} onClick={rejectWithNote}>
             Отклонить
           </button>
         </div>
       )}
-      <ProposalPanel code={h.code} status={h.status} canDecide={canTest} />
-      {h.status === "accepted" && canTest && (
-        <div className="review-form">
-          <button type="button" className="btn-ghost" onClick={() => start.mutate()} disabled={start.isPending}>
-            Создать эксперимент вручную
-          </button>
-        </div>
-      )}
+      {/* править и одобрять предложение Qwen — в мастере на странице запуска; здесь только история */}
+      {h.status !== "accepted" && <ProposalPanel code={h.code} status={h.status} />}
       {error && (
         <p className="error" role="alert">
           {error.message}
@@ -221,7 +236,9 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
   );
 }
 
-const FILTERS: Array<{ key: HStatus | "all" | "qwen"; label: string }> = [
+type HFilter = HStatus | "all" | "qwen" | "mine";
+const FILTERS: Array<{ key: HFilter; label: string }> = [
+  { key: "mine", label: "Ждут моего действия" },
   { key: "all", label: "Все" },
   { key: "qwen", label: "От Qwen" },
   { key: "proposed", label: "Ждут решения" },
@@ -237,10 +254,20 @@ export function Hypotheses() {
   const navigate = useNavigate();
   const initialRef = (location.state as ProposeState | null)?.ref;
   const [proposing, setProposing] = useState(Boolean(initialRef));
-  const [filter, setFilter] = useState<HStatus | "all" | "qwen">("all");
+  const [filter, setFilter] = useState<HFilter>("all");
   const q = useQuery({ queryKey: ["hypotheses"], queryFn: listHypotheses });
   const all = Array.isArray(q.data) ? q.data : [];
-  const match = (h: Hypothesis, f: HStatus | "all" | "qwen") => f === "all" || (f === "qwen" ? h.source === "qwen" : h.status === f);
+  const role = me.data?.role;
+  const match = (h: Hypothesis, f: HFilter) =>
+    f === "all" || (f === "qwen" ? h.source === "qwen" : f === "mine" ? needsMe(h, role) : h.status === f);
+  // если что-то ждёт пользователя — сразу показываем это
+  const mineCount = all.filter((h) => needsMe(h, role)).length;
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (touched) return;
+    // решил последнюю — не оставляем пустой список
+    setFilter((f) => (mineCount > 0 ? "mine" : f === "mine" ? "all" : f));
+  }, [mineCount, touched]);
   const shown = all.filter((h) => match(h, filter));
   const close = () => {
     setProposing(false);
@@ -249,7 +276,7 @@ export function Hypotheses() {
   return (
     <>
       <section className="page-head">
-        <span className="eyebrow">ГИПОТЕЗЫ</span>
+        <span className="eyebrow">ШАГ 2 · ГИПОТЕЗЫ</span>
         <h1 className="page-title">Гипотезы</h1>
         <p className="lead">
           Начало цикла: база знаний подсказывает гипотезу, рецензент принимает её к проверке, эксперимент
@@ -271,7 +298,10 @@ export function Hypotheses() {
             type="button"
             className={filter === f.key ? "chip active" : "chip"}
             aria-pressed={filter === f.key}
-            onClick={() => setFilter(f.key)}
+            onClick={() => {
+              setTouched(true);
+              setFilter(f.key);
+            }}
           >
             {f.label} ({all.filter((h) => match(h, f.key)).length})
           </button>

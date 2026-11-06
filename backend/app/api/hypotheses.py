@@ -14,7 +14,7 @@ from app.api.experiments import node_id, node_number
 from app.db import get_db
 from app.models import Experiment, Hypothesis, HypothesisRef, KbRef, User
 from app.services.codes import next_code
-from app.services.qwen_experiments import experiment_from_hypothesis
+from app.services.qwen_experiments import close_open_proposals, experiment_from_hypothesis
 from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/hypotheses", tags=["hypotheses"])
@@ -180,5 +180,6 @@ def start_experiment(
     if h.status != "accepted":
         raise HTTPException(status.HTTP_409_CONFLICT, "Проверять экспериментом можно принятую гипотезу")
     experiment_from_hypothesis(db, h, user.id)
+    close_open_proposals(db, h, user.id)
     db.commit()
     return _out(db, h)
