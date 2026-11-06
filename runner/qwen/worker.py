@@ -197,12 +197,20 @@ HYP_SCHEMA = {"type": "object", "required": ["hypotheses"], "properties": {"hypo
         "dataset": _S, "method": _S, "data_needed": _S}}}}}
 LEVELS = ["компания", "бюджет региона", "федеральный бюджет", "регион (не бюджет)", "ESG-рейтинг", "другое"]
 DIRECTIONS = ["рост", "снижение", "связь без знака", "не сказано"]
+INVESTMENT = "объём ESG-инвестиций или затрат"
+FACTORS = [INVESTMENT, "ESG-рейтинг или балл", "раскрытие ESG-информации", "ESG-практики или политика", "другое"]
+# чем заменён объём инвестиций — для пометки в названии: «… (по ESG-рейтингу)»
+PROXY_SHORT = {"ESG-рейтинг или балл": "ESG-рейтингу", "раскрытие ESG-информации": "раскрытию ESG",
+               "ESG-практики или политика": "ESG-практикам"}
+PROXY_SAID = re.compile(r"замен|вместо|прокси|приближ", re.I)
 # порядок полей — порядок вывода: сначала разбор и цитаты, решения принимает код (_verify)
 CHECK_SCHEMA = {"type": "object", "required": [
-    "task_level", "factor", "outcome", "level", "refs_level", "direction", "link_quote", "refs_direction",
-    "direction_quote", "comment"], "properties": {
-    "task_level": {"type": "string", "enum": LEVELS}, "factor": _S, "outcome": _S,
+    "task_level", "factor", "factor_kind", "outcome", "level", "refs_level", "refs_factor_kind", "direction",
+    "link_quote", "refs_direction", "direction_quote", "comment"], "properties": {
+    "task_level": {"type": "string", "enum": LEVELS}, "factor": _S,
+    "factor_kind": {"type": "string", "enum": FACTORS}, "outcome": _S,
     "level": {"type": "string", "enum": LEVELS}, "refs_level": {"type": "string", "enum": LEVELS},
+    "refs_factor_kind": {"type": "string", "enum": FACTORS},
     "direction": {"type": "string", "enum": DIRECTIONS}, "link_quote": _S,
     "refs_direction": {"type": "string", "enum": DIRECTIONS}, "direction_quote": _S, "comment": _S}}
 
@@ -417,8 +425,12 @@ CHECK_SYSTEM = """Ты — строгий рецензент лаборатор�
 пронумерованные опоры (цитаты из статей). Разбери, не оценивая заранее:
 - "task_level": о чьём результате задание (компания, бюджет региона, федеральный бюджет, регион (не бюджет),
   ESG-рейтинг, другое);
-- "factor": что в утверждении влияет; "outcome": на какой показатель; "level": чей это показатель
-  (из того же списка); "refs_level": о чьих показателях говорят САМИ ОПОРЫ;
+- "factor": что в утверждении влияет; "factor_kind": чем этот фактор выражен в утверждении (объём
+  ESG-инвестиций или затрат, ESG-рейтинг или балл, раскрытие ESG-информации, ESG-практики или политика,
+  другое); "outcome": на какой показатель; "level": чей это показатель (из списка уровней);
+- "refs_level": о чьих показателях говорят САМИ ОПОРЫ; "refs_factor_kind": чем фактор выражен В ОПОРАХ
+  (тот же список): статья про ESG-балл компаний — это «ESG-рейтинг или балл», даже если в ней есть слово
+  «инвестиции»;
 - "direction": какую связь утверждает гипотеза;
 - "link_quote": ДОСЛОВНО скопируй из опор (на языке опоры, без перевода, 5–30 слов) место, где сказано, что
   ИМЕННО этот фактор связан ИМЕННО с этим показателем. Нет такого места — пустая строка "";
@@ -459,18 +471,22 @@ def _years(text: str) -> set[str]:
     return {n for m in YEARS.finditer(text) for n in m.groups() if n}
 
 
-def _verify(h: dict[str, Any], cited: list[dict[str, Any]], target: dict[str, Any]) -> tuple[bool, str]:
+def _verify(h: dict[str, Any], cited: list[dict[str, Any]], target: dict[str, Any]) -> tuple[bool, str, str]:
     """Вторая пара глаз: гипотеза отвечает заданию и следует из процитированных опор (видна только им).
 
     Модель только разбирает утверждение и выписывает цитаты; решает код. Обоснование генератора проверке
-    не показывается — это уговоры, а не опоры (с ним проверка пропускала 16 из 28 испорченных гипотез)."""
+    не показывается — это уговоры, а не опоры (с ним проверка пропускала 16 из 28 испорченных гипотез).
+
+    Третье значение — чем опоры заменяют объём ESG-инвестиций, если утверждение о нём, а опоры — об
+    ESG-рейтинге, раскрытии или практиках, и утверждение этого не говорит (иначе ""). Гипотезу это не
+    отклоняет — почти все статьи о рейтингах, — но об этом должно быть написано в ней самой."""
     texts = [f"{it.get('fact', '')} {it['text'][:700]}".strip() for it in cited]
     refs = "\n".join(f"[{i}] {t} («{it['title']}»)" for i, (t, it) in enumerate(zip(texts, cited, strict=True), start=1))
     prompt = f"ЗАДАНИЕ: {target['title']}\n{target['content'][:1200]}\n\nУТВЕРЖДЕНИЕ: {h['statement']}\n\nОПОРЫ:\n{refs}"
     try:
         d = ask_json(prompt, 500, CHECK_SYSTEM, CHECK_SCHEMA, temperature=0)
     except (ValueError, TimeoutError, URLError, OSError):
-        return False, "проверка опор не ответила"
+        return False, "проверка опор не ответила", ""
     failed = []
     task = d["task_level"]
     if task != "другое" and d["level"] != task:
@@ -493,8 +509,20 @@ def _verify(h: dict[str, Any], cited: list[dict[str, Any]], target: dict[str, An
         failed.append(f"горизонт {', '.join(sorted(extra, key=int))} лет — ни в задании, ни в опорах")
     comment = str(d.get("comment") or "")[:200]
     if failed:
-        return False, "; ".join(failed) + (f" — {comment}" if comment else "")
-    return True, f"связь в опорах: «{d['link_quote'][:200]}»" + (f"; {comment}" if comment else "")
+        return False, "; ".join(failed) + (f" — {comment}" if comment else ""), ""
+    proxy = (d["refs_factor_kind"] if d["factor_kind"] == INVESTMENT and d["refs_factor_kind"] in PROXY_SHORT
+             and not PROXY_SAID.search(h["statement"]) else "")
+    return True, f"связь в опорах: «{d['link_quote'][:200]}»" + (f"; {comment}" if comment else ""), proxy
+
+
+def _mark_proxy(h: dict[str, Any], proxy: str) -> dict[str, Any]:
+    """Правило 8 — кодом: модель пишет «объём ESG-инвестиций», когда опоры об ESG-рейтинге, даже если
+    её об этом прямо просят. Пометка — в названии (видна в списке) и в утверждении (что проверять)."""
+    if not proxy:
+        return h
+    return {**h, "title": f"{h['title']} (по {PROXY_SHORT[proxy]})"[:300],
+            "statement": f"{h['statement'].rstrip()} Мера фактора — {proxy} как замена объёма "
+                         "ESG-инвестиций: об объёме вложений в опорах данных нет."}
 
 
 def _numbers(value: Any, top: int) -> list[int]:
@@ -537,10 +565,11 @@ def job_hypotheses(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
                 continue  # без опоры из найденного — не гипотеза
             h = {k: str(item.get(k) or "") for k in ("title", "statement", "rationale", "dataset", "method",
                                                      "data_needed")}
-            ok, comment = _verify(h, [items[n - 1] for n in nums], target)
+            ok, comment, proxy = _verify(h, [items[n - 1] for n in nums], target)
             if not ok:
                 rejected.append({"node": target["number"], "title": h["title"], "why": comment})
                 continue
+            h = _mark_proxy(h, proxy)
             h["rationale"] = f"{h['rationale']}\nПроверка опор (Qwen): {comment}".strip()
             out.append({**h, "node": target["number"], "refs": [_ref(items[n - 1]) for n in nums]})
         facts = sum(1 for it in items if it["kind"] == "fact")

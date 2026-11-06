@@ -38,6 +38,8 @@ def answer(**kw: Any) -> dict[str, Any]:
         "outcome": "бета",
         "level": "компания",
         "refs_level": "компания",
+        "factor_kind": "другое",
+        "refs_factor_kind": "другое",
         "direction": "рост",
         "link_quote": "фактор альфа заметно повышает показатель бета",
         "refs_direction": "рост",
@@ -96,7 +98,7 @@ def test_years() -> None:
 
 
 def test_grounded_hypothesis_passes_at_zero_temperature(model: dict[str, Any]) -> None:
-    ok, comment = W._verify(H, CITED, TARGET)
+    ok, comment, _ = W._verify(H, CITED, TARGET)
     assert ok, comment
     assert "связь в опорах" in comment
     call = model["calls"][0]
@@ -119,7 +121,7 @@ def test_grounded_hypothesis_passes_at_zero_temperature(model: dict[str, Any]) -
 )
 def test_verifier_decides_in_code(model: dict[str, Any], kw: dict[str, Any], why: str) -> None:
     model["answer"] = answer(**kw)
-    ok, comment = W._verify(H, CITED, TARGET)
+    ok, comment, _ = W._verify(H, CITED, TARGET)
     assert not ok
     assert why in comment
 
@@ -130,13 +132,13 @@ def test_sign_taken_from_statement_words(model: dict[str, Any]) -> None:
     model["answer"] = answer(
         direction="связь без знака", refs_direction="не сказано", direction_quote=""
     )
-    ok, comment = W._verify(H, CITED, TARGET)
+    ok, comment, _ = W._verify(H, CITED, TARGET)
     assert not ok
     assert "направление «рост»" in comment
 
 
 def test_horizon_not_in_task_or_refs(model: dict[str, Any]) -> None:
-    ok, comment = W._verify(
+    ok, comment, _ = W._verify(
         {**H, "statement": "Фактор альфа повышает показатель бета через 3–5 лет"}, CITED, TARGET
     )
     assert not ok
@@ -149,7 +151,9 @@ def test_quote_from_table_does_not_count(model: dict[str, Any]) -> None:
         "фактор альфа повышает показатель бета"
     )
     model["answer"] = answer(link_quote="фактор альфа повышает показатель бета")
-    ok, comment = W._verify(H, [{"kind": "fragment", "title": "[таблица]", "text": table}], TARGET)
+    ok, comment, _ = W._verify(
+        H, [{"kind": "fragment", "title": "[таблица]", "text": table}], TARGET
+    )
     assert not ok
     assert "в опорах нет связи" in comment
 
@@ -195,3 +199,28 @@ def test_evidence_takes_every_query_and_title_last(monkeypatch: pytest.MonkeyPat
     assert len(frags) == W.FRAGMENTS
     assert not any(d.endswith("-t") for d in frags)
     assert [it["fact"] for it in items if it["kind"] == "fact"] == ["[a] — повышает — [b]"]
+
+
+def test_rating_instead_of_investment_is_marked(model: dict[str, Any]) -> None:
+    """Правило 8: утверждение об объёме ESG-инвестиций, опоры — об ESG-рейтинге, модель молчит —
+    гипотеза проходит, но с пометкой в названии и утверждении."""
+    model["answer"] = answer(factor_kind=W.INVESTMENT, refs_factor_kind="ESG-рейтинг или балл")
+    ok, _, proxy = W._verify(H, CITED, TARGET)
+    assert ok
+    assert proxy == "ESG-рейтинг или балл"
+    marked = W._mark_proxy(H, proxy)
+    assert marked["title"] == "[гипотеза] (по ESG-рейтингу)"
+    assert "ESG-рейтинг или балл как замена объёма ESG-инвестиций" in marked["statement"]
+    assert marked["rationale"] == H["rationale"]
+
+
+def test_replacement_already_said_is_not_marked_twice(model: dict[str, Any]) -> None:
+    model["answer"] = answer(factor_kind=W.INVESTMENT, refs_factor_kind="ESG-рейтинг или балл")
+    said = {**H, "statement": f"{H['statement']} (ESG-рейтинг как замена объёма инвестиций)"}
+    assert W._verify(said, CITED, TARGET)[2] == ""
+    assert W._mark_proxy(said, "") is said
+
+
+def test_investment_in_refs_is_not_marked(model: dict[str, Any]) -> None:
+    model["answer"] = answer(factor_kind=W.INVESTMENT, refs_factor_kind=W.INVESTMENT)
+    assert W._verify(H, CITED, TARGET)[2] == ""
