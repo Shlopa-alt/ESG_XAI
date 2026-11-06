@@ -11,6 +11,7 @@ import { useMe } from "../auth/useAuth";
 import { NewDataset } from "./DatasetPage";
 import { KbLive } from "./KbLive";
 import { LAB } from "../org";
+import { canReview, canRun, CYCLE, plural } from "../components/Ux";
 
 function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: string }) {
   return (
@@ -19,15 +20,6 @@ function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: 
       <h1 className="page-title">{title}</h1>
       <p className="lead">{lead}</p>
     </section>
-  );
-}
-
-function Stat({ value, label }: { value: string | number; label: string }) {
-  return (
-    <div className="card stat">
-      <span className="stat-value">{value}</span>
-      <span className="stat-label">{label}</span>
-    </div>
   );
 }
 
@@ -43,7 +35,11 @@ export function Overview() {
   const experiments = Array.isArray(exps.data) ? exps.data : [];
   const sections = Array.isArray(meth.data?.sections) ? meth.data.sections : [];
   const openCrs = Array.isArray(crs.data) ? crs.data.filter((c) => c.status === "proposed" || c.status === "review") : [];
-  const waiting = Array.isArray(hyps.data) ? hyps.data.filter((h) => h.status === "proposed").length : 0;
+  const hypList = Array.isArray(hyps.data) ? hyps.data : [];
+  const waiting = hypList.filter((h) => h.status === "proposed").length;
+  const acceptedCount = hypList.filter((h) => h.status === "accepted").length;
+  const inReview = experiments.filter((e) => e.status === "review").length;
+  const role = useMe().data?.role;
   const labDocs = Array.isArray(lab.data) ? lab.data : [];
   return (
     <>
@@ -52,12 +48,63 @@ export function Overview() {
         title="Открытые исследования ESG"
         lead="Методология дорабатывается по циклу: источник в базе знаний порождает гипотезу, гипотеза проверяется экспериментом, а результат становится обоснованием изменения методологии."
       />
-      <div className="stats">
-        <Stat value={kb.data ? fmt(kb.data.documents) : "—"} label="статей в базе знаний" />
-        <Stat value={waiting} label="гипотез ждут решения" />
-        <Stat value={experiments.length} label="экспериментов в реестре" />
-        <Stat value={openCrs.length} label="открытых предложений изменения методологии" />
-      </div>
+      <nav className="cycle" aria-label="Исследовательский цикл">
+        {CYCLE.map((s, i) => (
+          <Link key={s.n} to={s.to} className="cycle-step card">
+            <span className="cycle-n" aria-hidden="true">
+              {s.n}
+            </span>
+            <span className="cycle-title">{s.title}</span>
+            <span className="cycle-value mono">
+              {[kb.data ? fmt(kb.data.documents) : "—", hypList.length, experiments.length, openCrs.length][i]}
+            </span>
+            <span className="muted">
+              {
+                [
+                  "статей в базе знаний",
+                  `гипотез, ${waiting} ждут решения`,
+                  "экспериментов в реестре",
+                  "открытых изменений методологии",
+                ][i]
+              }
+            </span>
+            <span className="muted cycle-text">{s.text}</span>
+          </Link>
+        ))}
+      </nav>
+      <section className="card todo">
+        <h2 className="h2">Что можно сделать сейчас</h2>
+        <ul className="todo-list">
+          {canReview(role) && waiting > 0 && (
+            <li>
+              <Link to="/hypotheses">Ждут решения: {plural(waiting, "гипотеза", "гипотезы", "гипотез")}</Link>
+              <span className="muted"> — принять к проверке или отклонить</span>
+            </li>
+          )}
+          {canRun(role) && acceptedCount > 0 && (
+            <li>
+              <Link to="/run">
+                Проверить экспериментом: {plural(acceptedCount, "принятая гипотеза", "принятые гипотезы", "принятых гипотез")}
+              </Link>
+              <span className="muted"> — модель предложит метод и данные</span>
+            </li>
+          )}
+          {inReview > 0 && (
+            <li>
+              <Link to="/experiments">На проверке: {plural(inReview, "эксперимент", "эксперимента", "экспериментов")}</Link>
+              <span className="muted"> — результаты ждут рецензии</span>
+            </li>
+          )}
+          <li>
+            <Link to="/hypotheses">Предложить свою гипотезу</Link>
+            <span className="muted"> — или найдите статью в базе знаний и предложите по ней</span>
+          </li>
+          <li>
+            <Link to="/knowledge">Поискать в базе знаний</Link>
+            <span className="muted"> — поиск по смыслу, русский запрос находит и английские статьи</span>
+          </li>
+        </ul>
+      </section>
       <div className="grid-2">
         <section className="card">
           <h2 className="h2">Последние эксперименты</h2>

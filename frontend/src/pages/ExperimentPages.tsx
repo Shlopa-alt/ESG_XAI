@@ -5,7 +5,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   addReview,
   createExperiment,
+  type Experiment as ExperimentRow,
   type ExpStatus,
+  type Outcome,
   getExperiment,
   listExperiments,
   OUTCOME_LABEL,
@@ -16,6 +18,7 @@ import { useMe } from "../auth/useAuth";
 import { experimentRuns, RunsTable } from "./RunPage";
 import { Chart } from "../components/Charts";
 import { ReportPanel } from "../components/ReportPanel";
+import { NextStep } from "../components/Ux";
 import { ExperimentEditor, toReport } from "./ExperimentEditor";
 
 /** Пустой раздел: что в нём должно быть и откуда это возьмётся. */
@@ -37,6 +40,19 @@ const BADGE: Record<ExpStatus, string> = {
   done: "st-done",
   failed: "st-review",
 };
+
+// отрицательный итог — нормальный исход, поэтому не «красный», а нейтральный
+const OUTCOME_BADGE: Record<Outcome, string> = { confirmed: "st-done", rejected: "st-planned", inconclusive: "st-review" };
+
+type ExpFilter = "all" | "active" | "review" | "confirmed" | "rejected" | "inconclusive";
+const EXP_FILTERS: Array<{ key: ExpFilter; label: string; test: (e: ExperimentRow) => boolean }> = [
+  { key: "all", label: "Все", test: () => true },
+  { key: "active", label: "В работе", test: (e) => ["draft", "planned", "running"].includes(e.status) },
+  { key: "review", label: "На проверке", test: (e) => e.status === "review" },
+  { key: "confirmed", label: "Подтвердили гипотезу", test: (e) => e.outcome === "confirmed" },
+  { key: "rejected", label: "Отклонили гипотезу", test: (e) => e.outcome === "rejected" },
+  { key: "inconclusive", label: "Неоднозначно", test: (e) => e.outcome === "inconclusive" },
+];
 
 function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: string }) {
   return (
@@ -123,7 +139,16 @@ export function Experiments() {
   const q = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
   const me = useMe();
   const [creating, setCreating] = useState(false);
+  const [filter, setFilter] = useState<ExpFilter>("all");
+  const [text, setText] = useState("");
   const canCreate = me.data?.role === "researcher" || me.data?.role === "owner";
+  const all = Array.isArray(q.data) ? q.data : [];
+  const needle = text.trim().toLowerCase();
+  const shown = all.filter(
+    (e) =>
+      (EXP_FILTERS.find((f) => f.key === filter)?.test(e) ?? true) &&
+      (!needle || `${e.code} ${e.title} ${e.hypothesis} ${e.data_summary}`.toLowerCase().includes(needle)),
+  );
   return (
     <>
       <Head
@@ -132,13 +157,42 @@ export function Experiments() {
         lead="Воспроизводимые запуски: версия данных, код, окружение, метрики. Отрицательные результаты публикуются наравне с положительными."
       />
       {canCreate && !creating && (
-        <div>
-          <button type="button" className="btn-primary" onClick={() => setCreating(true)}>
-            Новый эксперимент
+        <div className="exp-actions">
+          <Link to="/run" className="btn-primary">
+            Проверить гипотезу экспериментом
+          </Link>
+          <button type="button" className="btn-ghost" onClick={() => setCreating(true)}>
+            Создать карточку без гипотезы
           </button>
         </div>
       )}
       {creating && <NewExperiment onDone={() => setCreating(false)} />}
+      <div className="toolbar">
+        <div className="filters" role="group" aria-label="Итог эксперимента">
+          {EXP_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className={filter === f.key ? "chip active" : "chip"}
+              aria-pressed={filter === f.key}
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label} ({all.filter(f.test).length})
+            </button>
+          ))}
+        </div>
+        <label className="sr-only" htmlFor="exp-search">
+          Найти эксперимент
+        </label>
+        <input
+          id="exp-search"
+          type="search"
+          className="search toolbar-search"
+          placeholder="Найти по коду, названию, данным…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+      </div>
       {q.isError && (
         <p className="error" role="alert">
           {q.error.message}
@@ -157,7 +211,7 @@ export function Experiments() {
             </tr>
           </thead>
           <tbody>
-            {q.data?.map((e) => (
+            {shown.map((e) => (
               <tr key={e.code}>
                 <td>
                   <Link to={`/experiments/${e.code}`} className="mono">
@@ -170,12 +224,15 @@ export function Experiments() {
                   <span className={`badge ${BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>
                 </td>
                 <td>{e.data_summary}</td>
-                <td>{e.outcome ? OUTCOME_LABEL[e.outcome] : "—"}</td>
+                <td>
+                  {e.outcome ? <span className={`badge ${OUTCOME_BADGE[e.outcome]}`}>{OUTCOME_LABEL[e.outcome]}</span> : "—"}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
         {q.isPending && <p className="muted">Загрузка…</p>}
+        {q.isSuccess && shown.length === 0 && <p className="muted">Ничего не нашлось — смените фильтр или запрос.</p>}
       </div>
     </>
   );
@@ -280,6 +337,18 @@ export function Experiment() {
           </button>
         )}
       </div>
+      <NextStep>
+        {
+          {
+            draft: "Черновик: заполните постановку и запустите расчёт на странице «Запуск экспериментов».",
+            planned: "Эксперимент создан, расчёта ещё нет — запустите его на странице «Запуск экспериментов».",
+            running: "Идёт расчёт — ход виден в разделе «Запуски» внизу. Отчёт Qwen появится сам после расчёта.",
+            review: "Результат посчитан и ждёт рецензии: отчёт и рецензии — внизу страницы.",
+            done: "Эксперимент завершён. Если результат меняет методику — по одобренному отчёту предлагается изменение (CR).",
+            failed: "Расчёт не удался — откройте запуск внизу, посмотрите лог и перезапустите.",
+          }[e.status]
+        }
+      </NextStep>
       {editing && <ExperimentEditor e={e} onClose={() => setEditing(false)} />}
       {report.kpis.length > 0 ? (
         <div className="kpis">
