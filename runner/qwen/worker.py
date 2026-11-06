@@ -936,11 +936,15 @@ def job_tables(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
 
     want = str(job["payload"].get("doc_id") or "")
     docs = kbrag_get("documents", {"kb": "esg"}, ctx["kbrag_token"], timeout_s=60).get("documents") or []
-    docs = [d for d in docs if not want or d.get("doc_id") == want]
+    # материалы и отчёты лаборатории — не данные из чужих статей: их таблицы посчитаны у нас
+    own = _own_reports(ctx["kbrag_token"])
+    docs = [d for d in docs if (not want or d.get("doc_id") == want)
+            and d.get("doc_id") not in own and not str(d.get("doc_id") or "").startswith("lab_")]
     known = {(d, n) for d, n in ctx["platform"].post("tables-context")[1].get("known") or []}
     acquired = Path(ctx["kbrag"]) / ".local" / "acquired"
     drafts: list[dict[str, Any]] = []
     skipped: list[str] = []
+    asked = failed = 0
     for meta in docs:
         doc_id = str(meta.get("doc_id") or "")
         path = acquired / f"{doc_id}.docling.json"
@@ -957,10 +961,13 @@ def job_tables(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
                       + (f" (с. {x['page']})" if x["page"] else "") + f": {x['caption'] or 'без подписи'}\n"
                       f"ЧТО СДЕЛАЛ КОД: {'; '.join(t.notes) or 'ничего'}\n"
                       f"СТОЛБЦЫ: {' | '.join(t.columns)}\nСТРОК: {len(t.rows)}\nПЕРВЫЕ СТРОКИ:\n{_cells(t.rows, 12)}")
+            asked += 1
             try:
                 d = ask_json(prompt, 700, TABLE_SYSTEM, TABLE_SCHEMA)
-            except ValueError as exc:
-                skipped.append(f"{doc_id} т{x['number']}: модель не ответила ({exc})")
+            except (ValueError, TimeoutError, URLError, OSError) as exc:
+                # сбой на одной таблице не должен стоить черновиков по остальным
+                failed += 1
+                skipped.append(f"{doc_id} т{x['number']}: модель не ответила ({exc})"[:300])
                 continue
             if not d.get("observations"):
                 skipped.append(f"{doc_id} т{x['number']}: не наблюдения — {d.get('why', '')}")
@@ -971,6 +978,8 @@ def job_tables(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
                            "description": _describe(d),
                            "columns": t.columns, "rows": t.rows[:5000], "notes": t.notes})
             log(f"  {doc_id} т{x['number']}: черновик «{d.get('title', '')}» ({len(t.rows)}×{len(t.columns)})")
+    if asked and failed == asked:
+        raise RuntimeError(f"модель не ответила ни по одной таблице ({failed}): {skipped[-1]}")
     return {"drafts": drafts, "skipped": skipped[:200], "docs": len(docs)}
 
 

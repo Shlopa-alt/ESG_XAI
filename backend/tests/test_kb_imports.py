@@ -4,7 +4,7 @@ import pytest
 
 import app.api.kb_imports as kb_imports
 from app.config import Settings
-from app.models import QwenJob
+from app.models import KbImport, QwenJob, User
 from app.services.article_fetch import FetchError, _check_public, doc_id_for_doi, normalize_doi
 
 PDF = b"%PDF-1.7\n%test\n"
@@ -89,6 +89,20 @@ def test_worker_cycle(make_client, db_session) -> None:  # type: ignore[no-untyp
     # новая статья — Qwen поищет в ней таблицы-наблюдения для черновиков датасетов
     kinds = {(j.kind, j.payload.get("doc_id")) for j in db_session.query(QwenJob)}
     assert ("tables", "10.3390_abc.1") in kinds
+
+
+def test_own_report_does_not_queue_tables(make_client, db_session) -> None:  # type: ignore[no-untyped-def]
+    """Одобренный отчёт лаборатории в базе знаний — не чужие данные: черновиков из него нет."""
+    make_client("res", "researcher")
+    user = db_session.query(User).one()
+    imp = KbImport(kb_path="esg.experiments", source="report", filename="[отчёт].pdf", sha256="a" * 64,
+                   bytes_len=1, title="[отчёт]", status="processing", created_by=user.id)
+    db_session.add(imp)
+    db_session.commit()
+    c = make_client("res2", "researcher")
+    r = c.post(f"/api/kb-imports/worker/{imp.id}/result", headers=TOKEN, json={"status": "done", "doc_id": "[отчёт]"})
+    assert r.status_code == 200, r.text
+    assert "tables" not in {j.kind for j in db_session.query(QwenJob)}
 
 
 def test_by_doi(make_client, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]

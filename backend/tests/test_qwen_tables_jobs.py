@@ -63,7 +63,7 @@ def kbrag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(
         W,
         "kbrag_get",
-        lambda path, params, token, timeout_s=20: {
+        lambda path, params, token, timeout_s=20: {"documents": []} if params.get("kb") == "esg.experiments" else {
             "documents": [
                 {"doc_id": "[статья]", "title": "[название]", "url": "https://doi.org/10.0000/[x]"},
                 {"doc_id": "[без разметки]", "title": "[название 2]", "url": ""},
@@ -102,6 +102,26 @@ def test_tables_asks_model_only_about_new_data_tables(
         {"platform": Platform([["[статья]", 1]]), "kbrag": kbrag, "kbrag_token": ""},
     )
     assert again["drafts"] == [] and len(asked) == 1  # уже разобранная — не спрашивать снова
+
+
+def _ok(*a: Any, **k: Any) -> dict[str, Any]:
+    return {"row_is": "[объект]", "observations": True, "why": "", "title": "[название]", "description": "[столбцы]"}
+
+
+def test_lab_reports_are_not_scanned(kbrag: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(W, "_own_reports", lambda token: {"[статья]"})
+    monkeypatch.setattr(W, "ask_json", _ok)
+    out = W.job_tables({"id": 1, "payload": {}}, {"platform": Platform([]), "kbrag": kbrag, "kbrag_token": ""})
+    assert out["drafts"] == [] and out["docs"] == 1
+
+
+def test_all_tables_failed_fails_the_job(kbrag: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def down(*a: Any, **k: Any) -> dict[str, Any]:
+        raise TimeoutError("[нет ответа]")
+
+    monkeypatch.setattr(W, "ask_json", down)
+    with pytest.raises(RuntimeError, match="ни по одной"):
+        W.job_tables({"id": 1, "payload": {}}, {"platform": Platform([]), "kbrag": kbrag, "kbrag_token": ""})
 
 
 def test_model_says_not_observations(kbrag: Path, monkeypatch: pytest.MonkeyPatch) -> None:

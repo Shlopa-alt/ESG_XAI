@@ -63,8 +63,16 @@ def _finish(c: Any, job_id: int, result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _scan(c: Any, drafts: list[dict[str, Any]]) -> dict[str, Any]:
-    job = c.post("/api/data-drafts/scan", json={}).json()["job"]
+    job = c.post("/api/data-drafts/scan", json={"doc_id": "[статья]"}).json()["job"]
     return _finish(c, job, {"drafts": drafts})
+
+
+def test_scan_of_all_articles_is_for_owner(make_client) -> None:  # type: ignore[no-untyped-def]
+    """Поиск по всем статьям занимает очередь Qwen надолго, по одной статье — нет."""
+    res = make_client("res", "researcher")
+    assert res.post("/api/data-drafts/scan", json={}).status_code == 403
+    assert res.post("/api/data-drafts/scan", json={"doc_id": "[статья]"}).status_code == 202
+    assert make_client("own", "owner").post("/api/data-drafts/scan", json={}).status_code == 202
 
 
 # --- операции ---
@@ -236,6 +244,9 @@ def test_approve_creates_dataset_with_provenance(
     ds = db_session.query(Dataset).one()
     assert ds.source_url == "https://doi.org/10.0000/[x]"
     assert "Таблица 3 (с. 7)" in ds.description and "[разбор: пометка]" in ds.description
+    # правило 8: таблица — производные данные, условия задаёт статья
+    assert "Условия использования определяет статья" in ds.description
+    assert "требует источника" not in ds.description
     snap = db_session.query(DatasetSnapshot).one()
     files = list(Path(settings.esg_data_dir).rglob("*.csv"))
     assert len(files) == 1 and files[0].read_text(encoding="utf-8").startswith(

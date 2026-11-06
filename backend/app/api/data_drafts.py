@@ -297,6 +297,11 @@ def scan(
     body: ScanIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Researcher]
 ) -> dict[str, int]:
     """Поискать таблицы-наблюдения: в одной статье (doc_id) или во всех статьях ветки esg."""
+    if not body.doc_id and user.role != "owner":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Поиск по всем статьям может занять часы и задержать другие задачи Qwen: его запускает владелец",
+        )
     job = enqueue(
         db,
         "tables",

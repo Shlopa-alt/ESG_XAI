@@ -281,6 +281,10 @@ def provenance(draft: DataDraft) -> str:
     src += f" статьи «{draft.article_title}»" if draft.article_title else f" статьи {draft.doc_id}"
     src += f", DOI {draft.doi}" if draft.doi else ""
     lines = [f"Источник: {src}; KBRAG {draft.kb_path}/{draft.doc_id}."]
+    if not draft.doi:
+        lines.append("DOI нет — требует источника: найдите ссылку на статью, прежде чем опираться на эти данные.")
+    # таблица из статьи — производные данные (правило 8): условия задаёт сама статья
+    lines.append("Условия использования определяет статья: при публикации результатов ссылайтесь на неё и проверьте её лицензию.")
     if draft.caption:
         lines.append(f"Подпись в статье: {draft.caption[:500]}")
     steps = [

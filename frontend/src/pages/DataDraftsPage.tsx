@@ -38,7 +38,8 @@ function useCanEdit(): boolean {
 
 export function DataDrafts() {
   const [filter, setFilter] = useState<DraftStatus | "all">("proposed");
-  const canEdit = useCanEdit();
+  // поиск по всем статьям занимает очередь Qwen надолго — его запускает владелец
+  const isOwner = useMe().data?.role === "owner";
   const q = useQuery({ queryKey: ["data-drafts", filter], queryFn: () => listDrafts(filter) });
   const scan = useMutation({ mutationFn: () => scanTables() });
   return (
@@ -53,11 +54,12 @@ export function DataDrafts() {
           таблицу, поправьте руками или командой Qwen — и создайте датасет, на котором можно запустить метод
           лаборатории.
         </p>
-        {canEdit && (
+        {isOwner && (
           <div className="run-head">
             <button type="button" className="btn-ghost" disabled={scan.isPending || scan.isSuccess} onClick={() => scan.mutate()}>
               Поискать таблицы во всех статьях
             </button>
+            {!scan.isSuccess && <span className="muted">Может занять часы и задержать другие задачи Qwen.</span>}
             {scan.isSuccess && <span className="muted">Задача Qwen №{scan.data.job} в очереди — черновики появятся здесь.</span>}
             {scan.isError && <span className="error" role="alert">{scan.error.message}</span>}
           </div>

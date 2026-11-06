@@ -52,6 +52,8 @@ export const QWEN_KIND: Record<string, string> = {
   experiment: "эксперимент для принятой гипотезы",
   report: "текст отчёта об эксперименте",
   cr: "CR по одобренному отчёту",
+  tables: "поиск таблиц с данными в статьях",
+  table_edit: "правка таблицы по команде",
 };
 const STATUS: Record<QwenJob["status"], string> = {
   queued: "в очереди",
