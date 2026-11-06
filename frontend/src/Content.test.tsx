@@ -199,11 +199,11 @@ describe("Карта связей: большие списки", () => {
     });
     renderAt("/knowledge/graph");
     const more = await screen.findByRole("button", { name: "Показать ещё 20 из 32" });
-    const rows = screen.getAllByRole("button", { name: /^\[сосед/ });
-    expect(rows[0]).toHaveTextContent("[сосед 39]");
-    expect(rows).toHaveLength(8);
+    const rows = () => document.querySelectorAll(".concept-open");
+    expect(rows()[0]).toHaveTextContent("[сосед 39]");
+    expect(rows()).toHaveLength(8);
     await userEvent.click(more);
-    expect(screen.getAllByRole("button", { name: /^\[сосед/ })).toHaveLength(28);
+    expect(rows()).toHaveLength(28);
   });
 
   it("русское понятие из базы показано с заглавной буквы", async () => {
