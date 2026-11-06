@@ -1,11 +1,15 @@
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+import app.api.proposals as proposals_api
 import app.api.runs as runs_api
 from app.config import Settings
-from app.models import Dataset, DatasetSnapshot, ExperimentProposal, Hypothesis, QwenJob
+from app.models import Dataset, DatasetSnapshot, Experiment, ExperimentProposal, Hypothesis, QwenJob
+from app.services.data_files import Table
+from app.services.qwen_reports import facts
 from app.services.run_templates import TEMPLATES, ParamError, check_params
 
 TOKEN = {"X-Qwen-Token": "tok"}
@@ -70,7 +74,7 @@ def test_approve_creates_experiment_and_run(make_client, snapshot: int, sent: li
                                             db_session: Session) -> None:
     c = make_client("res", "researcher")
     pid = _proposal(db_session, snapshot)
-    r = c.post(f"/api/experiment-proposals/{pid}/approve", json={"title": "Повтор Hsu на DS-04"})
+    r = c.post(f"/api/experiment-proposals/{pid}/approve", json={"title": "Повтор Hsu на DS-04", "confirm_replication": True})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["status"] == "approved" and body["experiment"] == "EXP-001" and body["run_id"]
@@ -94,3 +98,115 @@ def test_approve_refuses_problems_and_reject_needs_note(make_client, snapshot: i
 def test_reader_cannot_approve(make_client, snapshot: int, sent: list, db_session: Session) -> None:  # type: ignore[no-untyped-def,type-arg]
     pid = _proposal(db_session, snapshot)
     assert make_client("r", "reader").post(f"/api/experiment-proposals/{pid}/approve", json={}).status_code == 403
+
+
+def test_approve_replication_needs_confirmation(make_client, snapshot: int, sent: list,  # type: ignore[no-untyped-def,type-arg]
+                                                db_session: Session) -> None:
+    c = make_client("res", "researcher")
+    pid = _proposal(db_session, snapshot)
+    r = c.post(f"/api/experiment-proposals/{pid}/approve", json={})
+    assert r.status_code == 422 and "повтор" in r.json()["detail"]
+    assert sent == []
+    db_session.rollback()
+    assert c.get("/api/hypotheses/H-001").json()["status"] == "accepted"
+
+
+MANUAL = {"hypothesis": "H-001", "template": "predictive-check",
+          "params": {"target": "roa", "features": ["x1", "x2"]}, "setup": ["шаг"], "expected": "R² выше плацебо — подтвердит"}
+
+
+def _accepted(db: Session) -> Hypothesis:
+    h = db.query(Hypothesis).filter_by(code="H-001").one()
+    h.status = "accepted"
+    db.commit()
+    return h
+
+
+@pytest.fixture
+def table(monkeypatch: pytest.MonkeyPatch) -> None:
+    columns = Table(columns=["roa", "x1", "x2"], numeric={"roa", "x1", "x2"})
+    monkeypatch.setattr(runs_api, "snapshot_table", lambda *a, **k: columns)
+
+
+def test_manual_creates_experiment_run_and_keeps_criterion(make_client, snapshot: int, sent: list, table: None,  # type: ignore[no-untyped-def,type-arg]
+                                                           db_session: Session) -> None:
+    c = make_client("res", "researcher")
+    _accepted(db_session)
+    r = c.post("/api/experiment-proposals/manual", json={**MANUAL, "snapshot_id": snapshot})
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["experiment"] == "EXP-001" and body["run_id"] and body["from_qwen"] is False
+    assert sent[0]["experiment"] == "EXP-001"
+    assert c.get("/api/hypotheses/H-001").json()["status"] == "testing"
+    exp = c.get("/api/experiments/EXP-001").json()
+    assert exp["status"] == "running" and exp["setup"][-1].endswith(MANUAL["expected"])
+    # критерий, записанный до расчёта, доходит до отчёта
+    assert facts(db_session, db_session.query(Experiment).one(), None)["expected"] == MANUAL["expected"]
+
+
+def test_failed_manual_leaves_nothing(make_client, snapshot: int, sent: list, table: None,  # type: ignore[no-untyped-def,type-arg]
+                                      db_session: Session) -> None:
+    c = make_client("res", "researcher")
+    _accepted(db_session)
+    bad = {**MANUAL, "snapshot_id": snapshot, "params": {"target": "", "features": ["x1"]}}
+    assert c.post("/api/experiment-proposals/manual", json=bad).status_code == 422
+    assert sent == []
+    assert c.get("/api/hypotheses/H-001").json()["status"] == "accepted"
+    assert c.get("/api/experiments").json() == []
+    # поправил и повторил: тот же первый код, эксперимент один
+    r = c.post("/api/experiment-proposals/manual", json={**MANUAL, "snapshot_id": snapshot})
+    assert r.status_code == 201 and r.json()["experiment"] == "EXP-001"
+
+
+def test_manual_needs_generic_method_and_criterion(make_client, snapshot: int, sent: list, table: None,  # type: ignore[no-untyped-def,type-arg]
+                                                   db_session: Session) -> None:
+    c = make_client("res", "researcher")
+    _accepted(db_session)
+    url = "/api/experiment-proposals/manual"
+    assert c.post(url, json={**MANUAL, "snapshot_id": snapshot, "template": "exp007-hsu"}).status_code == 422
+    assert c.post(url, json={**MANUAL, "snapshot_id": snapshot, "expected": "  "}).status_code == 422
+    assert sent == []
+    assert make_client("r", "reader").post(url, json={**MANUAL, "snapshot_id": snapshot}).status_code == 403
+
+
+def test_manual_closes_open_proposal(make_client, snapshot: int, sent: list, table: None,  # type: ignore[no-untyped-def,type-arg]
+                                     db_session: Session) -> None:
+    c = make_client("res", "researcher")
+    pid = _proposal(db_session, snapshot)
+    assert c.post("/api/experiment-proposals/manual", json={**MANUAL, "snapshot_id": snapshot}).status_code == 201
+    old = db_session.get(ExperimentProposal, pid)
+    assert old is not None and old.status == "rejected" and old.note == "Проверку настроили вручную"
+
+
+def test_card_without_run_closes_open_proposal(make_client, snapshot: int, db_session: Session) -> None:  # type: ignore[no-untyped-def]
+    c = make_client("res", "researcher")
+    pid = _proposal(db_session, snapshot)
+    assert c.post("/api/hypotheses/H-001/experiment").json()["experiment"] == "EXP-001"
+    old = db_session.get(ExperimentProposal, pid)
+    assert old is not None and old.status == "rejected"
+
+
+def test_wait_and_request_again(make_client, snapshot: int, db_session: Session,  # type: ignore[no-untyped-def]
+                                monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(proposals_api, "worker_online", lambda s: False)
+    c: TestClient = make_client("res", "researcher")
+    _accepted(db_session)
+    wait = "/api/experiment-proposals/wait?hypothesis=H-001"
+    request = "/api/experiment-proposals/request"
+    assert c.get(wait).json() == {"job": "none", "worker": False}
+    assert c.post(request, json={"hypothesis": "H-001"}).json()["job"] == "queued"
+    assert c.post(request, json={"hypothesis": "H-001"}).status_code == 409  # уже в очереди
+    job = db_session.query(QwenJob).filter_by(kind="experiment").one()
+    job.status = "failed"
+    db_session.commit()
+    assert c.get(wait).json()["job"] == "failed"
+    assert c.post(request, json={"hypothesis": "H-001"}).status_code == 200  # сорвалось — можно снова
+    assert make_client("r", "reader").get(wait).status_code == 403
+
+
+def test_request_refused_when_proposal_is_waiting(make_client, snapshot: int, db_session: Session,  # type: ignore[no-untyped-def]
+                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(proposals_api, "worker_online", lambda s: True)
+    c = make_client("res", "researcher")
+    _proposal(db_session, snapshot)
+    assert c.post("/api/experiment-proposals/request", json={"hypothesis": "H-001"}).status_code == 409

@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { listExperiments } from "../api/experiments";
 import { useMe } from "../auth/useAuth";
+import { ExperimentWizard } from "../components/ExperimentWizard";
 import { defaults, type MethodParam, ParamsEditor, type ParamValue } from "../components/ParamsEditor";
+import { canRun, NextStep, ROLE_LABEL } from "../components/Ux";
 
 export type RunStatus = "queued" | "running" | "done" | "failed" | "stopped";
 
@@ -173,7 +175,10 @@ function LaunchForm({ templates }: { templates: RunTemplate[] }) {
   const generic = t?.scope === "generic";
   return (
     <form className="card launch-form" onSubmit={submit}>
-      <h2 className="h2">Новый запуск</h2>
+      <h2 className="h2">Дозапустить существующий эксперимент</h2>
+      <p className="muted">
+        Для повтора опубликованного расчёта (EXP-001, EXP-007) или нового запуска эксперимента, который уже есть в реестре.
+      </p>
       <label className="field">
         Метод из библиотеки
         <select value={key} onChange={(e) => setKey(e.target.value)}>
@@ -241,9 +246,24 @@ function LaunchForm({ templates }: { templates: RunTemplate[] }) {
   );
 }
 
+type RunTab = "new" | "existing" | "list";
+const RUN_FILTERS: Array<{ key: RunStatus | "all" | "active"; label: string }> = [
+  { key: "all", label: "Все" },
+  { key: "active", label: "Идут сейчас" },
+  { key: "done", label: "Завершены" },
+  { key: "failed", label: "С ошибкой" },
+  { key: "stopped", label: "Остановлены" },
+];
+
 export function Run() {
   const me = useMe();
-  const canLaunch = me.data?.role === "researcher" || me.data?.role === "owner";
+  const role = me.data?.role;
+  const canLaunch = canRun(role);
+  const [search] = useSearchParams();
+  const fromHypothesis = search.get("h") ?? "";
+  const [tab, setTab] = useState<RunTab>(canLaunch ? "new" : "list");
+  const [filter, setFilter] = useState<(typeof RUN_FILTERS)[number]["key"]>("all");
+  useEffect(() => setTab(canLaunch ? "new" : "list"), [canLaunch]);
   const q = useQuery({
     queryKey: ["runs"],
     queryFn: listRuns,
@@ -251,34 +271,91 @@ export function Run() {
   });
   const templates = useQuery({ queryKey: ["run-templates"], queryFn: listTemplates, enabled: canLaunch });
   const runs = q.data ?? [];
+  const activeCount = runs.filter((r) => ACTIVE.has(r.status)).length;
+  const matches = (r: RunRow, f: typeof filter) => f === "all" || (f === "active" ? ACTIVE.has(r.status) : r.status === f);
+  const tabs: Array<{ key: RunTab; label: string }> = [
+    ...(canLaunch
+      ? [
+          { key: "new" as const, label: "Проверить гипотезу" },
+          { key: "existing" as const, label: "Дозапустить эксперимент" },
+        ]
+      : []),
+    { key: "list", label: `Все запуски${activeCount ? ` · идёт ${activeCount}` : ""}` },
+  ];
   return (
     <>
       <section className="page-head">
-        <span className="eyebrow">ЭКСПЕРИМЕНТЫ · ЗАПУСК</span>
-        <h1 className="page-title">Запуски экспериментов</h1>
+        <span className="eyebrow">ШАГ 3 · ЭКСПЕРИМЕНТ</span>
+        <h1 className="page-title">Запуск экспериментов</h1>
         <p className="lead">
-          Расчёт идёт на сервере лаборатории в зафиксированном окружении. Каждый запуск записывает коммит кода, хеш
-          среза данных, окружение и seed. Удачный запуск с чистым коммитом заполняет воспроизводимость эксперимента —
-          после этого его можно перевести в «завершён».
+          Выберите принятую гипотезу — модель Qwen предложит, как её проверить, или задайте метод и данные сами. Расчёт идёт
+          на сервере лаборатории, результат и отчёт появятся на странице эксперимента.
         </p>
       </section>
-      {canLaunch && templates.data && templates.data.length > 0 && <LaunchForm templates={templates.data} />}
-      {templates.isError && (
-        <p className="error" role="alert">
-          {templates.error.message}
-        </p>
+      {!canLaunch && me.data && (
+        <NextStep>
+          Запускать расчёты могут исследователи. Ваша роль — {ROLE_LABEL[role ?? ""]?.name ?? role}: здесь видно, что
+          считается сейчас и чем закончились прошлые запуски.
+        </NextStep>
       )}
-      {q.isError && (
-        <p className="error" role="alert">
-          {q.error.message}
-        </p>
+      <div className="tabs" role="tablist" aria-label="Разделы запуска">
+        {tabs.map((x) => (
+          <button
+            key={x.key}
+            type="button"
+            role="tab"
+            id={`tab-${x.key}`}
+            aria-selected={tab === x.key}
+            aria-controls={`panel-${x.key}`}
+            className={tab === x.key ? "tab active" : "tab"}
+            onClick={() => setTab(x.key)}
+          >
+            {x.label}
+          </button>
+        ))}
+      </div>
+      {/* мастер только прячется: смена вкладки не теряет выбранную гипотезу и введённое */}
+      {canLaunch && (
+        <div role="tabpanel" id="panel-new" aria-labelledby="tab-new" hidden={tab !== "new"}>
+          <ExperimentWizard initialHypothesis={fromHypothesis} />
+        </div>
       )}
-      <section className="card">
-        <h2 className="h2">Реестр запусков</h2>
-        <RunsTable runs={runs} />
-      </section>
-      <section className="card">
-        <h2 className="h2">Запуск вручную на сервере</h2>
+      {tab === "existing" && canLaunch && (
+        <div role="tabpanel" id="panel-existing" aria-labelledby="tab-existing" className="tab-panel">
+          {templates.data && templates.data.length > 0 && <LaunchForm templates={templates.data} />}
+          {templates.isPending && <p className="muted">Загрузка библиотеки методов…</p>}
+          {templates.isError && (
+            <p className="error" role="alert">
+              {templates.error.message}
+            </p>
+          )}
+        </div>
+      )}
+      {tab === "list" && (
+        <section role="tabpanel" id="panel-list" aria-labelledby="tab-list" className="card">
+          <div className="filters" role="group" aria-label="Статус запуска">
+            {RUN_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                className={filter === f.key ? "chip active" : "chip"}
+                aria-pressed={filter === f.key}
+                onClick={() => setFilter(f.key)}
+              >
+                {f.label} ({runs.filter((r) => matches(r, f.key)).length})
+              </button>
+            ))}
+          </div>
+          {q.isError && (
+            <p className="error" role="alert">
+              {q.error.message}
+            </p>
+          )}
+          <RunsTable runs={runs.filter((r) => matches(r, filter))} />
+        </section>
+      )}
+      <details className="card details-card">
+        <summary>Для разработчиков: запуск вручную на сервере</summary>
         <p className="muted">
           Тот же расчёт можно запустить скриптом из <span className="mono">runner/</span>; его итог —{" "}
           <span className="mono">run.json</span> — регистрируется командой в контейнере backend.
@@ -288,7 +365,7 @@ export function Run() {
 python run_exp001.py <каталог DS-01> <каталог результатов> --seed 42
 docker compose exec backend python -m app.manage import-run EXP-001 /tmp/run.json`}
         </pre>
-      </section>
+      </details>
     </>
   );
 }
@@ -415,6 +492,25 @@ export function RunDetail() {
           )}
         </div>
         {r.message && <p className={r.status === "failed" ? "error" : "muted"}>{r.message}</p>}
+        <NextStep
+          action={
+            r.status === "done" ? (
+              <Link to={`/experiments/${r.experiment}`} className="btn-primary">
+                Открыть результаты {r.experiment}
+              </Link>
+            ) : undefined
+          }
+        >
+          {
+            {
+              queued: "Расчёт стоит в очереди сервера и начнётся, когда освободится исполнитель. Страницу можно закрыть.",
+              running: "Расчёт идёт: ход и метрики обновляются ниже сами. Страницу можно закрыть — расчёт не прервётся.",
+              done: "Расчёт завершён. Цифры, графики и отчёт Qwen — на странице эксперимента; там же его рецензируют.",
+              failed: "Расчёт упал. Причина — в сообщении выше и в логе внизу; поправьте параметры и запустите снова.",
+              stopped: "Расчёт остановлен вручную. Чтобы посчитать заново, запустите его снова.",
+            }[r.status]
+          }
+        </NextStep>
         {stop.isError && (
           <p className="error" role="alert">
             {stop.error.message}
@@ -444,6 +540,7 @@ export function RunDetail() {
       <div className="grid-2">
         <section className="card">
           <h2 className="h2">Параметры и воспроизводимость</h2>
+          <p className="muted">Всё, что нужно, чтобы повторить расчёт и получить те же цифры.</p>
           <dl className="run-facts">
             {facts.map(([k, v]) => (
               <div key={k} className="run-fact">
@@ -475,12 +572,12 @@ export function RunDetail() {
           )}
         </section>
       </div>
-      <section className="card">
-        <h2 className="h2">Лог</h2>
+      <details className="card details-card" open={active || r.status === "failed"}>
+        <summary>Лог расчёта{stream.log.length ? ` · ${stream.log.length} строк` : ""}</summary>
         <pre ref={logBox} className="code run-log" aria-live="polite" aria-label="Лог расчёта">
           {stream.log.length > 0 ? stream.log.join("\n") : active ? "Ожидание вывода…" : "Лога нет (запуск вручную или журнал истёк)."}
         </pre>
-      </section>
+      </details>
     </>
   );
 }
