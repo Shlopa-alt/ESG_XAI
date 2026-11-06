@@ -202,11 +202,11 @@ FACTORS = [INVESTMENT, "ESG-рейтинг или балл", "раскрытие
 # чем заменён объём инвестиций — для пометки в названии: «… (по ESG-рейтингу)»
 PROXY_SHORT = {"ESG-рейтинг или балл": "ESG-рейтингу", "раскрытие ESG-информации": "раскрытию ESG",
                "ESG-практики или политика": "ESG-практикам"}
-PROXY_SAID = re.compile(r"замен|вместо|прокси|приближ", re.I)
+PROXY_SAID = re.compile(r"замен|вместо|прокси|приближ", re.IGNORECASE)
 SCOPES = ["Россия", "другие страны или мир", "Россия и другие страны", "не сказано"]
 ABROAD = "другие страны или мир"
-RUSSIA = re.compile(r"росси|\bрф\b|отечествен", re.I)
-ABROAD_SAID = re.compile(r"зарубеж|междунар|иностран|других стран|по аналогии", re.I)
+RUSSIA = re.compile(r"росси|\bрф\b|отечествен", re.IGNORECASE)
+ABROAD_SAID = re.compile(r"зарубеж|междунар|иностран|других стран|по аналогии", re.IGNORECASE)
 # порядок полей — порядок вывода: сначала разбор и цитаты, решения принимает код (_verify)
 CHECK_SCHEMA = {"type": "object", "required": [
     "task_level", "factor", "factor_kind", "outcome", "level", "refs_level", "refs_factor_kind", "direction",
@@ -323,7 +323,7 @@ def _plan(target: dict[str, Any]) -> tuple[list[str], list[str]]:
 
 FRAGMENTS, PER_QUERY, FACTS, FACTS_PER_ENTITY = 8, 4, 6, 2
 CELL = re.compile(r"\S\s=\s\S")  # «ROA, 1 = 0.011», «Improvement (%) = +20%» — ячейки таблицы из PDF
-TABLE_HEAD = re.compile(r"\s*(table|таблица|panel|рис|fig)", re.I)
+TABLE_HEAD = re.compile(r"\s*(table|таблица|panel|рис|fig)", re.IGNORECASE)
 
 
 def _is_prose(text: str) -> bool:
@@ -456,10 +456,10 @@ CHECK_SYSTEM = """Ты — строгий рецензент лаборатор�
 
 # с начала слова: «снижение выбросов» в названии фактора — не знак связи («ниже» внутри «снижение»)
 SIGNED = re.compile(r"\b(?:положительн|отрицательн|повыша|понижа|снижа|увелич|уменьш|рост|выше|ниже|лучше|хуже|улучш|ухудш|"
-                    r"сильнее|слабее|больше|меньше)", re.I)
+                    r"сильнее|слабее|больше|меньше)", re.IGNORECASE)
 # Qwen иногда вставляет китайские (реже японские, корейские) слова: «финансовую绩效 компании»
 CJK = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
-YEARS = re.compile(r"(\d+)\s*(?:[-–—]\s*(\d+)\s*)?(?:-?\s*летн|год|года|лет|year|yr)", re.I)
+YEARS = re.compile(r"(\d+)\s*(?:[-–—]\s*(\d+)\s*)?(?:-?\s*летн|год|года|лет|year|yr)", re.IGNORECASE)
 
 
 def _norm(text: str) -> str:
