@@ -10,12 +10,21 @@ KBRAG и просит Qwen предложить проверяемые гипо�
 статус «предложена», источник qwen.
 """
 
+import re
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Dataset, DatasetSnapshot, Hypothesis, HypothesisRef, KbRef, MethodologySection, QwenJob
+from app.models import (
+    Dataset,
+    DatasetSnapshot,
+    Hypothesis,
+    HypothesisRef,
+    KbRef,
+    MethodologySection,
+    QwenJob,
+)
 from app.services.codes import next_code
 from app.services.run_templates import TEMPLATES
 
@@ -75,6 +84,45 @@ def _clean(text: Any, limit: int) -> str:
     return " ".join(str(text or "").split())[:limit]
 
 
+# Слова-шаблоны: они в названии почти любой гипотезы по заданию («ESG-инвестиции влияют на бюджет
+# региона через 3 года»), а уровень (компания, бюджет, рейтинг) и так общий у всех гипотез задания.
+# Сравниваются остальные — о чём именно гипотеза.
+TEMPLATE_STEMS = (
+    "esg", "инвес", "влия", "улучш", "повыш", "сниж", "связ", "полож", "отриц", "корре",
+    "через", "года", "горизо", "объем", "стать", "затра", "разли", "приво", "приве", "может",
+    "котор", "также", "после", "вложе", "течен", "перио", "прояв", "счет", "эффек", "гипот",
+    "компан", "регион", "бюдже", "федер", "рейти", "показ", "резул", "эконом",
+)
+SAME_IDEA = 0.5  # доля общих слов (от меньшего названия), с которой гипотеза — повтор
+# E, S и G — разные идеи при тех же остальных словах: «экологические затраты» и «социальные затраты»
+PILLARS = {"эколог", "социал", "управл"}
+
+
+def idea(title: str) -> set[str]:
+    """Содержательные слова названия, основами по 6 букв (окончания в русском разные)."""
+    words = re.findall(r"[a-zа-я]{4,}", title.lower().replace("ё", "е"))
+    return {w[:6] for w in words if not w.startswith(TEMPLATE_STEMS)}
+
+
+def repeats(title: str, existing: list[str]) -> str | None:
+    """Название уже предложенной гипотезы, которую эта повторяет, или None.
+
+    Qwen видит уже предложенные и всё равно предлагает их перефразом («влияют на» → «улучшают»):
+    в стресс-тесте так было в 4 случаях из 4, точное сравнение названий их не ловило. Общая
+    формулировка без своих слов («ESG-инвестиции влияют на бюджет региона») — пересказ задания:
+    если по заданию уже что-то есть, она ничего не добавляет."""
+    new = idea(title)
+    for old_title in existing:
+        if title.strip().lower() == old_title.strip().lower():
+            return old_title
+        old = idea(old_title)
+        if new & PILLARS and old & PILLARS and not new & old & PILLARS:
+            continue
+        if not new or (old and len(new & old) / min(len(new), len(old)) >= SAME_IDEA):
+            return old_title
+    return None
+
+
 def create_from_result(db: Session, job: QwenJob, result: dict[str, Any]) -> list[str]:
     """Предложения Qwen → гипотезы на рецензию. Возвращает коды созданных."""
     nodes = {n.number: n for n in db.scalars(select(MethodologySection))}
@@ -94,9 +142,13 @@ def create_from_result(db: Session, job: QwenJob, result: dict[str, Any]) -> lis
             Hypothesis.status == "proposed")) or 0
         if pending >= PENDING_LIMIT or per_node.get(number, 0) >= PER_RUN:
             continue
-        same = db.scalar(select(Hypothesis.id).where(Hypothesis.methodology_node_id == node.id,
-                                                     func.lower(Hypothesis.title) == title.lower()))
-        if same is not None:
+        # и отклонённые: заново предлагать то, что рецензент уже отклонил, — лишняя работа
+        existing = list(db.scalars(
+            select(Hypothesis.title).where(Hypothesis.methodology_node_id == node.id)))
+        same_as = repeats(title, existing)
+        if same_as is not None:
+            # в итог задачи: отброшенное как повтор должно быть видно, порог может ошибиться
+            result.setdefault("repeats", []).append({"node": number, "title": title, "same_as": same_as})
             continue
         dataset = str(item.get("dataset") or "")
         dataset = dataset if dataset in datasets else ""

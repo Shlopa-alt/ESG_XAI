@@ -266,6 +266,8 @@ def job_result(job_id: int, body: JobResult, db: Annotated[Session, Depends(get_
                       "proposed": len(body.result.get("hypotheses") or []), "created": created}
         job.message = (f"Предложено гипотез: {len(created)} — {', '.join(created)}" if created
                        else "Новых гипотез нет: опор не нашлось или по заданиям уже ждут рецензии")
+        if body.result.get("repeats"):
+            job.message += f"; отброшено как повтор: {len(body.result['repeats'])}"
     if job.kind == "graph" and body.status == "done":
         # новые факты — новые опоры для гипотез; граф, поставленный вручную или по расписанию,
         # иначе так и остался бы без гипотез (после импорта задача уже ждёт — повтора не будет)

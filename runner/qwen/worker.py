@@ -157,10 +157,11 @@ def gpu() -> tuple[int | None, int | None]:
         return None, None
 
 
-def chat(prompt: str, max_tokens: int = 200, system: str = "", schema: dict[str, Any] | None = None) -> str:
+def chat(prompt: str, max_tokens: int = 200, system: str = "", schema: dict[str, Any] | None = None,
+         temperature: float = 0.3) -> str:
     messages = ([{"role": "system", "content": system}] if system else []) + [
         {"role": "user", "content": prompt + " /no_think"}]
-    body: dict[str, Any] = {"model": "qwen3-14b", "max_tokens": max_tokens, "temperature": 0.3,
+    body: dict[str, Any] = {"model": "qwen3-14b", "max_tokens": max_tokens, "temperature": temperature,
                             "messages": messages}
     if schema is not None:
         # vLLM выводит ровно по схеме: с «просто JSON» модель иногда отвечала пустым {}
@@ -172,12 +173,13 @@ def chat(prompt: str, max_tokens: int = 200, system: str = "", schema: dict[str,
     return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
 
 
-def ask_json(prompt: str, max_tokens: int, system: str, schema: dict[str, Any]) -> dict[str, Any]:
+def ask_json(prompt: str, max_tokens: int, system: str, schema: dict[str, Any],
+             temperature: float = 0.3) -> dict[str, Any]:
     """Ответ модели по JSON-схеме; не разобрался или без обязательных полей — ещё одна попытка."""
     required = schema.get("required", [])
     for _ in range(2):
         try:
-            data = json.loads(chat(prompt, max_tokens, system, schema))
+            data = json.loads(chat(prompt, max_tokens, system, schema, temperature))
         except ValueError:
             continue
         if isinstance(data, dict) and all(k in data for k in required):
@@ -185,7 +187,7 @@ def ask_json(prompt: str, max_tokens: int, system: str, schema: dict[str, Any]) 
     raise ValueError("модель не дала ответ по схеме")
 
 
-_S, _B, _I = {"type": "string"}, {"type": "boolean"}, {"type": "integer"}
+_S, _I = {"type": "string"}, {"type": "integer"}
 PLAN_SCHEMA = {"type": "object", "required": ["queries", "entities"], "properties": {
     "queries": {"type": "array", "items": _S, "maxItems": 3}, "entities": {"type": "array", "items": _S, "maxItems": 5}}}
 HYP_SCHEMA = {"type": "object", "required": ["hypotheses"], "properties": {"hypotheses": {
@@ -193,8 +195,29 @@ HYP_SCHEMA = {"type": "object", "required": ["hypotheses"], "properties": {"hypo
         "title", "statement", "rationale", "fragments", "dataset", "method", "data_needed"], "properties": {
         "title": _S, "statement": _S, "rationale": _S, "fragments": {"type": "array", "items": _I},
         "dataset": _S, "method": _S, "data_needed": _S}}}}}
-CHECK_SCHEMA = {"type": "object", "required": ["task_output", "grounded", "no_extra", "comment"], "properties": {
-    "task_output": _B, "grounded": _B, "no_extra": _B, "comment": _S}}
+LEVELS = ["компания", "бюджет региона", "федеральный бюджет", "регион (не бюджет)", "ESG-рейтинг", "другое"]
+DIRECTIONS = ["рост", "снижение", "связь без знака", "не сказано"]
+INVESTMENT = "объём ESG-инвестиций или затрат"
+FACTORS = [INVESTMENT, "ESG-рейтинг или балл", "раскрытие ESG-информации", "ESG-практики или политика", "другое"]
+# чем заменён объём инвестиций — для пометки в названии: «… (по ESG-рейтингу)»
+PROXY_SHORT = {"ESG-рейтинг или балл": "ESG-рейтингу", "раскрытие ESG-информации": "раскрытию ESG",
+               "ESG-практики или политика": "ESG-практикам"}
+PROXY_SAID = re.compile(r"замен|вместо|прокси|приближ", re.IGNORECASE)
+SCOPES = ["Россия", "другие страны или мир", "Россия и другие страны", "не сказано"]
+ABROAD = "другие страны или мир"
+RUSSIA = re.compile(r"росси|\bрф\b|отечествен", re.IGNORECASE)
+ABROAD_SAID = re.compile(r"зарубеж|междунар|иностран|других стран|по аналогии", re.IGNORECASE)
+# порядок полей — порядок вывода: сначала разбор и цитаты, решения принимает код (_verify)
+CHECK_SCHEMA = {"type": "object", "required": [
+    "task_level", "factor", "factor_kind", "outcome", "level", "refs_level", "refs_factor_kind", "direction",
+    "link_quote", "link_scope", "refs_direction", "direction_quote", "comment"], "properties": {
+    "task_level": {"type": "string", "enum": LEVELS}, "factor": _S,
+    "factor_kind": {"type": "string", "enum": FACTORS}, "outcome": _S,
+    "level": {"type": "string", "enum": LEVELS}, "refs_level": {"type": "string", "enum": LEVELS},
+    "refs_factor_kind": {"type": "string", "enum": FACTORS},
+    "direction": {"type": "string", "enum": DIRECTIONS}, "link_quote": _S,
+    "link_scope": {"type": "string", "enum": SCOPES},
+    "refs_direction": {"type": "string", "enum": DIRECTIONS}, "direction_quote": _S, "comment": _S}}
 
 
 # --- задачи ---
@@ -257,14 +280,26 @@ HYP_SYSTEM = """Ты — исследователь НИЦ ИИ (Универс�
 3. Не повторяй гипотезы, которые уже есть.
 4. "dataset" — код датасета из списка, только если в его описании есть нужные показатели; иначе "" и в
    "data_needed" — какие данные нужны и где их взять. Датасет и "data_needed" вместе не бывают.
-5. "method" — ключ метода из списка, только если этот метод считается на выбранном датасете; иначе
+5. "method" — ключ метода из списка, только если этот метод считается на выбранном датасете и действительно
+   проверяет утверждение. Метод «Повтор …» пересчитывает опубликованную работу как есть: бери его, только
+   если гипотеза о воспроизведении именно этой работы; иначе
    коротко словами: каким методом проверять.
 6. Пиши по-русски; названия показателей и терминов из статей можно оставить как в статье.
-7. Лучше 1 хорошо обоснованная гипотеза, чем 3 слабых. Нечего предложить — верни пустой список.
+7. Горизонт — ровно тот, что в задании: в задании 3 года — пиши 3 года, не «3–5 лет».
+8. Опоры о зарубежных данных, а задание о России — так и пиши: «по зарубежным данным …; для России
+   проверить». Числа из зарубежных опор — ориентир для сравнения, не ожидаемое значение для России.
+   Названий агентств, компаний и регионов, которых нет в опорах и задании, не добавляй.
+9. Если опоры говорят не о том показателе, что в задании (ESG-рейтинг или раскрытие вместо объёма
+   ESG-инвестиций, прибыль компаний вместо налогов в бюджет), скажи это в утверждении прямо: «ESG-рейтинг как
+   замена объёма ESG-инвестиций». Не выдавай одно за другое.
+10. Знак связи («повышает», «улучшает», «положительно») пиши, только если опора его называет. Опоры говорят
+   только, что связь есть, или знак у них разный (в краткосроке хуже, в долгосроке лучше) — пиши «связан с»:
+   знак покажет расчёт.
+11. Лучше 1 хорошо обоснованная гипотеза, чем 3 слабых. Нечего предложить — верни пустой список.
 
 Ответ — только JSON: {"hypotheses": [{"title": "коротко, до 120 знаков", "statement": "проверяемое
 утверждение", "rationale": "почему так думаем, со ссылками [n] на фрагменты", "fragments": [1, 3],
-"dataset": "DS-04", "method": "exp007-hsu", "data_needed": ""}]}"""
+"dataset": "код из списка или пусто", "method": "ключ из списка или словами", "data_needed": "пусто, если датасет выбран"}]}"""
 
 DOI = re.compile(r"10\.\d{4,9}/\S+")
 
@@ -288,25 +323,63 @@ def _plan(target: dict[str, Any]) -> tuple[list[str], list[str]]:
     return queries or [target["title"]], entities
 
 
-def _evidence(target: dict[str, Any], token: str) -> list[dict[str, Any]]:
+FRAGMENTS, PER_QUERY, FACTS, FACTS_PER_ENTITY = 8, 4, 6, 2
+CELL = re.compile(r"\S\s=\s\S")  # «ROA, 1 = 0.011», «Improvement (%) = +20%» — ячейки таблицы из PDF
+TABLE_HEAD = re.compile(r"\s*(table|таблица|panel|рис|fig)", re.IGNORECASE)
+
+
+def _is_prose(text: str) -> bool:
+    """Связный текст, а не таблица, формула или подпись: из таблиц модель вычитывала «коэффициент при ROA»."""
+    t = text[:800]
+    if not t:
+        return False
+    letters = sum(ch.isalpha() for ch in t) / len(t)
+    digits = sum(ch.isdigit() for ch in t) / len(t)
+    markup = sum(t.count(ch) for ch in "=|$\\")
+    return (letters > 0.6 and digits < 0.12 and markup < 6 and len(CELL.findall(t)) < 3
+            and not TABLE_HEAD.match(t))
+
+
+def _own_reports(token: str) -> set[str]:
+    """Отчёты лаборатории в базе знаний: их текст писала сама Qwen, поэтому опорой он быть не может —
+    иначе гипотеза опиралась бы на собственный пересказ."""
+    try:
+        docs = kbrag_get("documents", {"kb": "esg.experiments"}, token, timeout_s=30).get("documents") or []
+    except (TimeoutError, URLError, OSError, ValueError) as exc:
+        log(f"  список отчётов лаборатории не получен ({exc}) — опоры без этого фильтра")
+        return set()
+    return {str(d.get("doc_id")) for d in docs if d.get("doc_id")}
+
+
+def _evidence(target: dict[str, Any], token: str, exclude: frozenset[str] | set[str] = frozenset()) -> list[dict[str, Any]]:
     """Опоры по заданию: фрагменты статей по коротким запросам и факты графа о ключевых сущностях
     (у каждого факта — дословная цитата из статьи). Материалы лаборатории (lab_*) — сама
-    постановка, не опора."""
+    постановка, не опора.
+
+    Фрагменты берутся по кругу — лучший с каждого запроса, затем второй… — чтобы каждый запрос дошёл
+    до модели; длинное русское название задания — последним (раньше оно занимало 5 мест из 8)."""
     queries, entities = _plan(target)
-    items: list[dict[str, Any]] = []
-    seen: set[int] = set()
-    for q in [target["title"], *queries]:
+    ranked: list[list[dict[str, Any]]] = []
+    for q in [*queries, target["title"]]:
         try:
-            found = kbrag_get("search", {"q": query_text(q, 120), "kb": "esg", "limit": 5}, token).get("hits", [])
+            found = kbrag_get("search", {"q": query_text(q, 120), "kb": "esg", "limit": PER_QUERY + 4},
+                              token).get("hits", [])
         except (TimeoutError, URLError, OSError) as exc:
             log(f"  поиск «{q[:60]}» не ответил ({exc}) — пропускаю запрос")
             continue
-        for h in found:
-            if h["chunk_id"] in seen or h["doc_id"].startswith("lab_") or len(items) >= 8:
+        ranked.append([h for h in found if not h["doc_id"].startswith("lab_") and h["doc_id"] not in exclude
+                       and _is_prose(h["text"])][:PER_QUERY])
+    items: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for rank in range(PER_QUERY):
+        for hits in ranked:
+            if rank >= len(hits) or hits[rank]["chunk_id"] in seen or len(items) >= FRAGMENTS:
                 continue
+            h = hits[rank]
             seen.add(h["chunk_id"])
             items.append({"kind": "fragment", "doc_id": h["doc_id"], "title": h["title"], "year": h.get("year"),
                           "url": h.get("url"), "pages": h.get("pages") or [], "text": " ".join(h["text"].split())})
+    known: set[str] = set()
     for name in entities:
         try:
             ds = kbrag_get("dataset", {"name": name, "kb": "esg"}, token)
@@ -315,11 +388,17 @@ def _evidence(target: dict[str, Any], token: str) -> list[dict[str, Any]]:
         # сначала связи с направлением: «повышает», «снижает», «не влияет на»
         facts = sorted(ds.get("facts") or [], key=lambda f: (not re.search(r"повыша|снижа|не влияет", f["relation"]),
                                                               -f.get("documents", 0)))
-        for f in facts[:3]:
+        taken = 0
+        for f in facts:
+            if taken >= FACTS_PER_ENTITY or sum(it["kind"] == "fact" for it in items) >= FACTS:
+                break
             q = (f.get("quotes") or [{}])[0]
-            if not q.get("doc_id") or q["doc_id"].startswith("lab_"):
-                continue
             a, b = (f["other"], f["about"]) if f.get("direction") == "←" else (f["about"], f["other"])
+            key = f"{a}|{f['relation']}|{b}".lower()  # один и тот же факт приходит от разных сущностей
+            if not q.get("doc_id") or q["doc_id"].startswith("lab_") or q["doc_id"] in exclude or key in known:
+                continue
+            known.add(key)
+            taken += 1
             items.append({"kind": "fact", "doc_id": q["doc_id"], "title": q.get("title") or "", "year": q.get("year"),
                           "url": q.get("url"), "pages": [], "fact": f"{a} — {f['relation']} — {b}",
                           "text": " ".join((q.get("quote") or "").split())})
@@ -367,30 +446,183 @@ def _ref(it: dict[str, Any]) -> dict[str, Any]:
             "quote": quote, "page": (it.get("pages") or [None])[0]}
 
 
-CHECK_SYSTEM = """Ты — строгий рецензент лаборатории. Тебе дают задание методики, гипотезу и опоры (цитаты
-из статей), на которые она ссылается. Ответь на три вопроса:
-1. "task_output": о том ли результате гипотеза, что требует задание? Например, задание о бюджете региона,
-   а гипотеза о прибыли компании — false; задание о компаниях, гипотеза о компаниях — true.
-2. "grounded": прямо ли опоры говорят о тех же показателях и той же связи (направление не противоречит)?
-3. "no_extra": нет ли в утверждении того, чего в опорах нет (другой горизонт, «но в долгосрочной
-   перспективе…», новые показатели, механизмы)?
-Сомневаешься — false. Ответ — только JSON:
-{"task_output": true/false, "grounded": true/false, "no_extra": true/false, "comment": "одной фразой"}"""
+CHECK_SYSTEM = """Ты — строгий рецензент лаборатории. Тебе дают задание методики, утверждение гипотезы и
+пронумерованные опоры (цитаты из статей). Разбери, не оценивая заранее:
+- "task_level": о чьём результате задание (компания, бюджет региона, федеральный бюджет, регион (не бюджет),
+  ESG-рейтинг, другое);
+- "factor": что в утверждении влияет; "factor_kind": чем этот фактор выражен в утверждении (объём
+  ESG-инвестиций или затрат, ESG-рейтинг или балл, раскрытие ESG-информации, ESG-практики или политика,
+  другое); "outcome": на какой показатель; "level": чей это показатель (из списка уровней);
+- "refs_level": о чьих показателях говорят САМИ ОПОРЫ; "refs_factor_kind": чем фактор выражен В ОПОРАХ
+  (тот же список): статья про ESG-балл компаний — это «ESG-рейтинг или балл», даже если в ней есть слово
+  «инвестиции»;
+- "direction": какую связь утверждает гипотеза;
+- "link_quote": ДОСЛОВНО скопируй из опор (на языке опоры, без перевода, 5–30 слов) место, где сказано, что
+  ИМЕННО этот фактор связан ИМЕННО с этим показателем. Нет такого места — пустая строка "";
+- "link_scope": на чьих данных получена связь из "link_quote" — Россия, другие страны или мир (MSCI,
+  Sustainalytics, компании США, Европы, Китая), Россия и другие страны вместе, не сказано;
+- "refs_direction": какую связь фактора с показателем называют сами опоры;
+- "direction_quote": ДОСЛОВНО место из опор о направлении связи; нет — "";
+- "comment": одной фразой по-русски, чего не хватает.
+Перефразировать цитаты нельзя. Похожие слова — не то же самое: «ESG-рейтинг» ≠ «ESG-инвестиции»,
+«раскрытие ESG» ≠ «ESG-инвестиции», прибыль компании ≠ налоги в бюджет.
+Ответ — только JSON по схеме."""
+
+# с начала слова: «снижение выбросов» в названии фактора — не знак связи («ниже» внутри «снижение»)
+SIGNED = re.compile(r"\b(?:положительн|отрицательн|повыша|понижа|снижа|увелич|уменьш|рост|выше|ниже|лучше|хуже|улучш|ухудш|"
+                    r"сильнее|слабее|больше|меньше)", re.IGNORECASE)
+# Qwen иногда вставляет китайские (реже японские, корейские) слова: «финансовую绩效 компании»
+CJK = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]")
+YEARS = re.compile(r"(\d+)\s*(?:[-–—]\s*(\d+)\s*)?(?:-?\s*летн|год|года|лет|year|yr)", re.IGNORECASE)
 
 
-def _verify(h: dict[str, Any], cited: list[dict[str, Any]], target: dict[str, Any]) -> tuple[bool, str]:
-    """Вторая пара глаз: гипотеза отвечает заданию и следует из процитированных опор (видна только им)."""
-    quotes = "\n".join(f"- {it.get('fact', '')} «{it['text'][:500]}» («{it['title']}»)" for it in cited)
-    prompt = (f"ЗАДАНИЕ: {target['title']}\n{target['content'][:1200]}\n\n"
-              f"ГИПОТЕЗА: {h['statement']}\nОБОСНОВАНИЕ: {h['rationale']}\n\nОПОРЫ:\n{quotes}")
+def _norm(text: str) -> str:
+    return re.sub(r"[^\w]+", " ", text.lower()).strip()
+
+
+def _quoted(quote: str, sources: list[str]) -> bool:
+    """Цитата есть в одной из опор: дословно с точностью до пробелов и знаков или почти — 85 % слов
+    и хотя бы четыре слова подряд (модель иногда пропускает слово или ставит другое окончание)."""
+    words = _norm(quote).split()
+    if len(words) < 4:
+        return False
+    q = " ".join(words)
+    for src in map(_norm, sources):
+        if q in src:
+            return True
+        padded = f" {src} "
+        if (sum(f" {w} " in padded for w in words) / len(words) >= 0.85
+                and any(" ".join(words[i:i + 4]) in src for i in range(len(words) - 3))):
+            return True
+    return False
+
+
+def _years(text: str) -> set[str]:
+    return {n for m in YEARS.finditer(text) for n in m.groups() if n}
+
+
+def _verify(h: dict[str, Any], cited: list[dict[str, Any]],
+            target: dict[str, Any]) -> tuple[bool, str, dict[str, Any], bool]:
+    """Вторая пара глаз: гипотеза отвечает заданию и следует из процитированных опор (видна только им).
+
+    Модель только разбирает утверждение и выписывает цитаты; решает код. Обоснование генератора проверке
+    не показывается — это уговоры, а не опоры (с ним проверка пропускала 16 из 28 испорченных гипотез).
+
+    Третье значение — пометки, которые гипотезу не отклоняют (почти все статьи о рейтингах и о
+    зарубежных данных), но должны быть написаны в ней самой: "proxy" — чем опоры заменяют объём
+    ESG-инвестиций (утверждение о нём, опоры — о рейтинге, раскрытии или практиках); "abroad" — числа
+    из опор, если утверждение о России, а связь получена на зарубежных данных (список, может быть пуст).
+
+    Четвёртое — отклонена только за знак, которого опоры не называют (но и не опровергают): такую
+    гипотезу можно переписать без знака (_unsign)."""
+    texts = [f"{it.get('fact', '')} {it['text'][:700]}".strip() for it in cited]
+    refs = "\n".join(f"[{i}] {t} («{it['title']}»)" for i, (t, it) in enumerate(zip(texts, cited, strict=True), start=1))
+    prompt = f"ЗАДАНИЕ: {target['title']}\n{target['content'][:1200]}\n\nУТВЕРЖДЕНИЕ: {h['statement']}\n\nОПОРЫ:\n{refs}"
     try:
-        data = ask_json(prompt, 250, CHECK_SYSTEM, CHECK_SCHEMA)
+        d = ask_json(prompt, 500, CHECK_SYSTEM, CHECK_SCHEMA, temperature=0)
     except (ValueError, TimeoutError, URLError, OSError):
-        return False, "проверка опор не ответила"
-    failed = [name for key, name in (("task_output", "не о результате задания"), ("grounded", "опоры не о том"),
-                                     ("no_extra", "сверх опор")) if data.get(key) is not True]
-    comment = str(data.get("comment") or "")[:300]
-    return not failed, (f"{'; '.join(failed)} — {comment}" if failed else comment)
+        return False, "проверка опор не ответила", {}, False
+    failed = []
+    task = d["task_level"]
+    if task != "другое" and d["level"] != task:
+        failed.append(f"не о результате задания ({d['level']}, а задание — {task})")
+    if task != "другое" and d["refs_level"] != task:
+        failed.append(f"опоры о другом уровне ({d['refs_level']}, а задание — {task})")
+    if not _quoted(d["link_quote"], [t for t in texts if _is_prose(t)]):
+        failed.append("в опорах нет связи этого фактора с этим показателем"
+                      + (" (цитата не дословная или из таблицы)" if d["link_quote"] else ""))
+    direction = d["direction"]
+    # знак — и по словам утверждения и названия: модель охотно пишет «связь без знака», чтобы не искать
+    # цитату, а в названии оставляет «повышают» при «связан» в утверждении
+    if direction not in ("рост", "снижение") and SIGNED.search(f"{h['title']} {h['statement']}"):
+        direction = "снижение" if d["refs_direction"] == "снижение" else "рост"
+    sign_only = False
+    if direction in ("рост", "снижение") and (d["refs_direction"] != direction
+                                             or not _quoted(d["direction_quote"], texts)):
+        failed.append(f"направление «{direction}» опоры не подтверждают" + (
+            f" (в опорах: {d['refs_direction']})" if d["refs_direction"] != direction else " (нет цитаты)"))
+        # опровергнуть знак может только цитата с другим знаком; без неё знак просто не установлен
+        sign_only = not (d["refs_direction"] in ("рост", "снижение") and _quoted(d["direction_quote"], texts))
+    # четырёхзначное — календарный год («в 2021 году»), а не срок
+    extra = {y for y in _years(h["statement"]) - _years(target["content"]) - set().union(*map(_years, texts))
+             if len(y) < 4}
+    if extra:
+        failed.append(f"горизонт {', '.join(sorted(extra, key=int))} лет — ни в задании, ни в опорах")
+    comment = str(d.get("comment") or "")[:200]
+    if failed:
+        return False, "; ".join(failed) + (f" — {comment}" if comment else ""), {}, sign_only and len(failed) == 1
+    marks: dict[str, Any] = {}
+    if (d["factor_kind"] == INVESTMENT and d["refs_factor_kind"] in PROXY_SHORT
+            and not PROXY_SAID.search(h["statement"])):
+        marks["proxy"] = d["refs_factor_kind"]
+    if d.get("link_scope") == ABROAD and RUSSIA.search(h["statement"]):
+        # числа утверждения, взятые из опор: для России это ориентир, а не ожидаемое значение
+        found = dict.fromkeys(m.group(0).replace(" ", "") for m in re.finditer(r"\d+(?:[.,]\d+)?\s*%?",
+                                                                                  h["statement"]))
+        figures = [f for f in found if (n := f.rstrip("%")) not in _years(h["statement"]) and any(
+            re.search(rf"(?<![\d.,]){re.escape(n)}(?![\d])", t) for t in texts)]
+        if figures or not ABROAD_SAID.search(h["statement"]):
+            marks["abroad"] = figures
+    return True, f"связь в опорах: «{d['link_quote'][:200]}»" + (f"; {comment}" if comment else ""), marks, False
+
+
+UNSIGN_SYSTEM = """Перепиши название и утверждение гипотезы без знака связи: вместо «повышает», «улучшает»,
+«снижает», «положительно влияет», «рост» — «связан с». Фактор, показатель, горизонт и данные оставь как
+есть, ничего не добавляй. Знак покажет расчёт. Ответ — только JSON {"title": "…", "statement": "…"}."""
+UNSIGN_SCHEMA = {"type": "object", "required": ["title", "statement"], "properties": {"title": _S, "statement": _S}}
+
+
+def _unsign(h: dict[str, Any]) -> dict[str, Any] | None:
+    """Правило 10 — кодом: модель пишет «положительно», когда опоры говорят только, что связь есть.
+    Переписанное без знака проверяется заново; если знак остался — None (гипотеза отклоняется)."""
+    try:
+        d = ask_json(f"НАЗВАНИЕ: {h['title']}\nУТВЕРЖДЕНИЕ: {h['statement']}", 400, UNSIGN_SYSTEM, UNSIGN_SCHEMA,
+                     temperature=0)
+    except (ValueError, TimeoutError, URLError, OSError):
+        return None
+    title, statement = str(d.get("title") or "").strip(), str(d.get("statement") or "").strip()
+    if len(title) < 5 or len(statement) < 10 or SIGNED.search(f"{title} {statement}") or CJK.search(
+            f"{title} {statement}"):
+        return None
+    return {**h, "title": title, "statement": statement}
+
+
+def _review(h: dict[str, Any], cited: list[dict[str, Any]],
+            target: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    """Проверка опор с исправлениями кодом: знак, которого опоры не называют, убирается (правило 10),
+    замена объёма инвестиций рейтингом (правило 9) и зарубежные данные о России (правило 8)
+    помечаются. Возвращает (гипотеза или None, комментарий)."""
+    if CJK.search(f"{h['title']} {h['statement']} {h['rationale']}"):
+        return None, "в тексте иероглифы — модель сбилась с языка"
+    ok, comment, marks, sign_only = _verify(h, cited, target)
+    if not ok and sign_only:
+        fixed = _unsign(h)
+        if fixed is not None:
+            ok, again, marks, _ = _verify(fixed, cited, target)
+            if ok:
+                h, comment = fixed, f"знак убран — опоры его не называют, покажет расчёт; {again}"
+            else:
+                comment = f"{comment}; без знака: {again}"
+    return (_mark(h, marks), comment) if ok else (None, comment)
+
+
+def _mark(h: dict[str, Any], marks: dict[str, Any]) -> dict[str, Any]:
+    """Правила 8 и 9 — кодом: модель пишет «объём ESG-инвестиций», когда опоры об ESG-рейтинге, и
+    переносит на российские агентства числа зарубежных провайдеров, даже если её об этом прямо
+    просят. Пометка — в названии (видна в списке) и в утверждении (что проверять)."""
+    title, statement = h["title"], h["statement"].rstrip()
+    if "proxy" in marks:
+        title += f" (по {PROXY_SHORT[marks['proxy']]})"
+        statement += (f" Мера фактора — {marks['proxy']} как замена объёма ESG-инвестиций: об объёме "
+                      "вложений в опорах данных нет.")
+    if "abroad" in marks:
+        title += " (по зарубежным данным)"
+        statement += " Связь в опорах получена на зарубежных данных; для России её надо проверить"
+        figures = ", ".join(marks["abroad"])
+        statement += (f": {figures} — ориентир для сравнения, а не ожидаемое значение." if figures else ".")
+    if not marks:
+        return h
+    return {**h, "title": title[:300], "statement": statement}
 
 
 def _numbers(value: Any, top: int) -> list[int]:
@@ -413,6 +645,8 @@ def job_hypotheses(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     skipped: list[str] = []
     answers: dict[str, str] = {}
     rejected: list[dict[str, str]] = []  # отброшенные проверкой опор — в итог задачи
+    own = _own_reports(ctx["kbrag_token"])
+    asked = failed = 0
     for target in context["targets"]:
         if target["pending_qwen"] >= context["limits"]["pending"]:
             skipped.append(f"{target['number']}: ждут рецензии {target['pending_qwen']}")
@@ -420,11 +654,20 @@ def job_hypotheses(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
         # гипотезы этого прохода по другим заданиям — тоже «уже есть»: без повторов между заданиями
         target = {**target, "existing": target["existing"] + [
             {"code": f"новая ({x['node']})", "title": x["title"], "status": "предложена сейчас"} for x in out]}
-        items = _evidence(target, ctx["kbrag_token"])
+        items = _evidence(target, ctx["kbrag_token"], own)
         if not items:
             skipped.append(f"{target['number']}: в базе нет опор")
             continue
-        answer = json.dumps(ask_json(_prompt(target, context, items), 1800, HYP_SYSTEM, HYP_SCHEMA), ensure_ascii=False)
+        asked += 1
+        try:
+            answer = json.dumps(ask_json(_prompt(target, context, items), 1800, HYP_SYSTEM, HYP_SCHEMA),
+                                ensure_ascii=False)
+        except (ValueError, TimeoutError, URLError, OSError) as exc:
+            # сбой по одному заданию не должен стоить гипотез по остальным
+            failed += 1
+            log(f"  {target['number']}: модель не ответила ({exc})")
+            skipped.append(f"{target['number']}: модель не ответила ({exc})"[:300])
+            continue
         answers[target["number"]] = answer[:4000]
         before = len(out)
         for item in _parse(answer)[: context["limits"]["per_run"]]:
@@ -433,16 +676,19 @@ def job_hypotheses(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
                 continue  # без опоры из найденного — не гипотеза
             h = {k: str(item.get(k) or "") for k in ("title", "statement", "rationale", "dataset", "method",
                                                      "data_needed")}
-            ok, comment = _verify(h, [items[n - 1] for n in nums], target)
-            if not ok:
+            checked, comment = _review(h, [items[n - 1] for n in nums], target)
+            if checked is None:
                 rejected.append({"node": target["number"], "title": h["title"], "why": comment})
                 continue
+            h = checked
             h["rationale"] = f"{h['rationale']}\nПроверка опор (Qwen): {comment}".strip()
             out.append({**h, "node": target["number"], "refs": [_ref(items[n - 1]) for n in nums]})
         facts = sum(1 for it in items if it["kind"] == "fact")
         log(f"  {target['number']}: опор {len(items)} (фактов {facts}), гипотез {len(out) - before}")
         if len(out) == before:
             skipped.append(f"{target['number']}: модель не нашла обоснованной гипотезы")
+    if asked and failed == asked:
+        raise RuntimeError(f"модель не ответила ни по одному из заданий ({failed}): {skipped[-1]}")
     # ответы модели — в журнал задачи: по ним видно, почему по заданию ничего не предложено
     (ctx["logs"] / f"qwen-hypotheses-{job['id']}.json").write_text(
         json.dumps(answers, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -453,7 +699,8 @@ EXP_SYSTEM = """Ты — исследователь НИЦ ИИ (Универс�
 эксперимент, который её подтвердит или опровергнет.
 
 Правила:
-1. "method" — ключ метода ТОЛЬКО из библиотеки. Повтор (scope replication) — только на своём датасете.
+1. "method" — ключ метода ТОЛЬКО из библиотеки. Повтор (scope replication) — только на своём датасете и только
+   если гипотеза о воспроизведении этой работы: новых показателей он не считает.
    Если ни один метод не проверяет гипотезу, верни "method": "" и в "rationale" опиши, какой метод нужен.
 2. "snapshot_id" — номер среза из списка, на котором есть нужные показатели (смотри числовые столбцы);
    нет подходящего — 0, и в "rationale" напиши, каких данных не хватает.
