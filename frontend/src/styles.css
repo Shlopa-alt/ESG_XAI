@@ -8,6 +8,15 @@
   --accent: #1f6f4a;
   --accent-hover: #17583a;
   --warn: #b5651d;
+  --on-accent: #ffffff;
+  --nav-muted: #a9bbb0;
+  --surface-soft: #f9faf8;
+  --ok-bg: #dcefe3;
+  --ok-text: #145a37;
+  --info-bg: #dce8f7;
+  --info-text: #1d4e89;
+  --warn-bg: #fbe8d0;
+  --warn-text: #8a4a0f;
 }
 
 * {
@@ -667,8 +676,8 @@ a.btn-ghost.active { border-color: var(--accent); }
 /* --- удобство: меню по шагам цикла, шаги, «что дальше», мастер запуска (цвета — только токены выше) --- */
 .nav { gap: 14px; }
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
-.nav-group-title { display: flex; align-items: center; gap: 8px; padding: 0 12px 4px; font: 500 11px "IBM Plex Mono", monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #a9bbb0; }
-.nav-step { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid #7fc8a0; color: #7fc8a0; font-size: 11px; }
+.nav-group-title { display: flex; align-items: center; gap: 8px; padding: 0 12px 4px; font: 500 11px "IBM Plex Mono", monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--nav-muted); }
+.nav-step { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--nav-muted); color: var(--nav-muted); font-size: 11px; }
 .nav-group .nav-link { padding-left: 38px; }
 .nav-group:first-child .nav-link { padding-left: 12px; }
 
@@ -677,13 +686,13 @@ a.btn-ghost.active { border-color: var(--accent); }
 .step + .step::before { content: ""; width: 24px; height: 2px; margin-right: 6px; background: var(--border); }
 .step-done + .step::before { background: var(--accent); }
 .step-dot { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); background: var(--surface); font: 600 12px "IBM Plex Sans", sans-serif; }
-.step-done .step-dot { border-color: var(--accent); background: var(--accent); color: #fff; }
+.step-done .step-dot { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .step-current .step-dot { border-color: var(--accent); color: var(--accent); }
 .step-current { color: var(--text); font-weight: 600; }
-.step-failed .step-dot { border-color: #8a4a0f; background: #fbe8d0; color: #8a4a0f; }
-.step-failed { color: #8a4a0f; }
+.step-failed .step-dot { border-color: var(--warn-text); background: var(--warn-bg); color: var(--warn-text); }
+.step-failed { color: var(--warn-text); }
 
-.next-step { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-radius: 8px; background: #dcefe3; color: #145a37; font-size: 14px; line-height: 1.5; }
+.next-step { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-radius: 8px; background: var(--ok-bg); color: var(--ok-text); font-size: 14px; line-height: 1.5; }
 .next-step-label { font: 600 11px "IBM Plex Mono", monospace; letter-spacing: 0.06em; text-transform: uppercase; }
 .next-step-text { flex: 1 1 260px; color: var(--text); }
 .next-step .btn-primary { min-height: 38px; }
@@ -708,7 +717,7 @@ a.btn-ghost.active { border-color: var(--accent); }
 .choice-list { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
 .choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .choice:hover { border-color: var(--accent); }
-.choice.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: #f9faf8; }
+.choice.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--surface-soft); }
 .choice input { margin-top: 4px; accent-color: var(--accent); }
 .choice-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .choice-title { font-weight: 600; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
@@ -719,9 +728,11 @@ a.btn-ghost.active { border-color: var(--accent); }
 .mode.active { border: 2px solid var(--accent); padding: 13px; }
 .mode input { margin-top: 4px; accent-color: var(--accent); }
 .proposal-summary { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 8px; }
+.proposal-missing { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.proposal-missing p { margin: 0; }
 .manual { display: flex; flex-direction: column; gap: 12px; }
-.waiting { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 8px; background: #dce8f7; color: #1d4e89; font-size: 14px; }
-.spinner { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #1d4e89; border-right-color: transparent; animation: spin 0.9s linear infinite; }
+.waiting { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 8px; background: var(--info-bg); color: var(--info-text); font-size: 14px; }
+.spinner { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--info-text); border-right-color: transparent; animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 
@@ -731,7 +742,7 @@ a.btn-ghost.active { border-color: var(--accent); }
 @media (max-width: 480px) { .cycle { grid-template-columns: minmax(0, 1fr); } }
 .cycle-step { position: relative; display: flex; flex-direction: column; gap: 4px; color: var(--text); text-decoration: none; }
 .cycle-step:hover { border-color: var(--accent); color: var(--text); }
-.cycle-n { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; font: 600 13px "IBM Plex Sans", sans-serif; }
+.cycle-n { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font: 600 13px "IBM Plex Sans", sans-serif; }
 .cycle-title { font-weight: 600; font-size: 16px; }
 .cycle-value { font-size: 28px; font-weight: 600; color: var(--accent); }
 .cycle-text { font-size: 13px; }

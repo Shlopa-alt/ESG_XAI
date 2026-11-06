@@ -18,7 +18,7 @@ import { useMe } from "../auth/useAuth";
 import { experimentRuns, RunsTable } from "./RunPage";
 import { Chart } from "../components/Charts";
 import { ReportPanel } from "../components/ReportPanel";
-import { NextStep } from "../components/Ux";
+import { experimentNext, NextStep } from "../components/Ux";
 import { ExperimentEditor, toReport } from "./ExperimentEditor";
 
 /** Пустой раздел: что в нём должно быть и откуда это возьмётся. */
@@ -337,18 +337,7 @@ export function Experiment() {
           </button>
         )}
       </div>
-      <NextStep>
-        {
-          {
-            draft: "Черновик: заполните постановку и запустите расчёт на странице «Запуск экспериментов».",
-            planned: "Эксперимент создан, расчёта ещё нет — запустите его на странице «Запуск экспериментов».",
-            running: "Идёт расчёт — ход виден в разделе «Запуски» внизу. Отчёт Qwen появится сам после расчёта.",
-            review: "Результат посчитан и ждёт рецензии: отчёт и рецензии — внизу страницы.",
-            done: "Эксперимент завершён. Если результат меняет методику — по одобренному отчёту предлагается изменение (CR).",
-            failed: "Расчёт не удался — откройте запуск внизу, посмотрите лог и перезапустите.",
-          }[e.status]
-        }
-      </NextStep>
+      {!runs.isPending && <NextStep>{experimentNext(e.status, runs.data ?? [])}</NextStep>}
       {editing && <ExperimentEditor e={e} onClose={() => setEditing(false)} />}
       {report.kpis.length > 0 ? (
         <div className="kpis">

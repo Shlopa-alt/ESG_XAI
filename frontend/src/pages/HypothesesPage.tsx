@@ -180,21 +180,21 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
         </p>
       )}
       {h.refs.length > 0 && (
-        <details>
+        <details open={h.status === "proposed"}>
           <summary>Опоры в базе знаний ({h.refs.length})</summary>
-        <ul className="list muted">
-          {h.refs.map((r) => (
-            <li key={r.kbrag_id}>
-              {r.kind === "article" ? (
-                <Link to={`/knowledge/article/${encodeURIComponent(r.kbrag_id)}`}>{r.title || r.kbrag_id}</Link>
-              ) : (
-                r.title || r.kbrag_id
-              )}{" "}
-              {r.doi && <span className="mono">· DOI {r.doi}</span>}
-              {r.quote && <q> {r.quote}</q>}
-            </li>
-          ))}
-        </ul>
+          <ul className="list muted">
+            {h.refs.map((r) => (
+              <li key={r.kbrag_id}>
+                {r.kind === "article" ? (
+                  <Link to={`/knowledge/article/${encodeURIComponent(r.kbrag_id)}`}>{r.title || r.kbrag_id}</Link>
+                ) : (
+                  r.title || r.kbrag_id
+                )}{" "}
+                {r.doi && <span className="mono">· DOI {r.doi}</span>}
+                {r.quote && <q> {r.quote}</q>}
+              </li>
+            ))}
+          </ul>
         </details>
       )}
       {h.decision_note && (
@@ -226,7 +226,7 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
         </div>
       )}
       {/* править и одобрять предложение Qwen — в мастере на странице запуска; здесь только история */}
-      {h.status !== "accepted" && <ProposalPanel code={h.code} status={h.status} canDecide={false} />}
+      {h.status !== "accepted" && <ProposalPanel code={h.code} status={h.status} />}
       {error && (
         <p className="error" role="alert">
           {error.message}
@@ -264,7 +264,9 @@ export function Hypotheses() {
   const mineCount = all.filter((h) => needsMe(h, role)).length;
   const [touched, setTouched] = useState(false);
   useEffect(() => {
-    if (!touched && mineCount > 0) setFilter("mine");
+    if (touched) return;
+    // решил последнюю — не оставляем пустой список
+    setFilter((f) => (mineCount > 0 ? "mine" : f === "mine" ? "all" : f));
   }, [mineCount, touched]);
   const shown = all.filter((h) => match(h, filter));
   const close = () => {

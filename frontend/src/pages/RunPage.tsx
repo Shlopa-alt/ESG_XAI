@@ -64,7 +64,7 @@ export const listRuns = () => call<RunRow[]>("/runs");
 export const experimentRuns = (code: string) => call<RunRow[]>(`/experiments/${code}/runs`);
 const getRun = (id: number) => call<RunRow>(`/runs/${id}`);
 export const listTemplates = () => call<RunTemplate[]>("/run-templates");
-export const launch = (body: { template: string; snapshot_id: number; params: Record<string, ParamValue>; experiment?: string }) =>
+const launch = (body: { template: string; snapshot_id: number; params: Record<string, ParamValue>; experiment?: string }) =>
   call<RunRow>("/runs", { method: "POST", body: JSON.stringify(body) });
 const stopRun = (id: number) => call<RunRow>(`/runs/${id}/stop`, { method: "POST" });
 
@@ -259,7 +259,7 @@ export function Run() {
   const me = useMe();
   const role = me.data?.role;
   const canLaunch = canRun(role);
-  const [search, setSearch] = useSearchParams();
+  const [search] = useSearchParams();
   const fromHypothesis = search.get("h") ?? "";
   const [tab, setTab] = useState<RunTab>(canLaunch ? "new" : "list");
   const [filter, setFilter] = useState<(typeof RUN_FILTERS)[number]["key"]>("all");
@@ -308,17 +308,15 @@ export function Run() {
             aria-selected={tab === x.key}
             aria-controls={`panel-${x.key}`}
             className={tab === x.key ? "tab active" : "tab"}
-            onClick={() => {
-              setTab(x.key);
-              if (x.key !== "new" && fromHypothesis) setSearch({}, { replace: true });
-            }}
+            onClick={() => setTab(x.key)}
           >
             {x.label}
           </button>
         ))}
       </div>
-      {tab === "new" && canLaunch && (
-        <div role="tabpanel" id="panel-new" aria-labelledby="tab-new">
+      {/* мастер только прячется: смена вкладки не теряет выбранную гипотезу и введённое */}
+      {canLaunch && (
+        <div role="tabpanel" id="panel-new" aria-labelledby="tab-new" hidden={tab !== "new"}>
           <ExperimentWizard initialHypothesis={fromHypothesis} />
         </div>
       )}
@@ -509,7 +507,7 @@ export function RunDetail() {
               running: "Расчёт идёт: ход и метрики обновляются ниже сами. Страницу можно закрыть — расчёт не прервётся.",
               done: "Расчёт завершён. Цифры, графики и отчёт Qwen — на странице эксперимента; там же его рецензируют.",
               failed: "Расчёт упал. Причина — в сообщении выше и в логе внизу; поправьте параметры и запустите снова.",
-              stopped: "Расчёт остановлен вручную. Частичные результаты сохранены в каталоге результатов.",
+              stopped: "Расчёт остановлен вручную. Чтобы посчитать заново, запустите его снова.",
             }[r.status]
           }
         </NextStep>
