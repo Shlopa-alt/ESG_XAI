@@ -282,7 +282,10 @@ HYP_SYSTEM = """Ты — исследователь НИЦ ИИ (Универс�
 8. Если опоры говорят не о том показателе, что в задании (ESG-рейтинг или раскрытие вместо объёма
    ESG-инвестиций, прибыль компаний вместо налогов в бюджет), скажи это в утверждении прямо: «ESG-рейтинг как
    замена объёма ESG-инвестиций». Не выдавай одно за другое.
-9. Лучше 1 хорошо обоснованная гипотеза, чем 3 слабых. Нечего предложить — верни пустой список.
+9. Знак связи («повышает», «улучшает», «положительно») пиши, только если опора его называет. Опоры говорят
+   только, что связь есть, или знак у них разный (в краткосроке хуже, в долгосроке лучше) — пиши «связан с»:
+   знак покажет расчёт.
+10. Лучше 1 хорошо обоснованная гипотеза, чем 3 слабых. Нечего предложить — верни пустой список.
 
 Ответ — только JSON: {"hypotheses": [{"title": "коротко, до 120 знаков", "statement": "проверяемое
 утверждение", "rationale": "почему так думаем, со ссылками [n] на фрагменты", "fragments": [1, 3],
@@ -441,8 +444,9 @@ CHECK_SYSTEM = """Ты — строгий рецензент лаборатор�
 «раскрытие ESG» ≠ «ESG-инвестиции», прибыль компании ≠ налоги в бюджет.
 Ответ — только JSON по схеме."""
 
-SIGNED = re.compile(r"положительн|отрицательн|повыша|понижа|снижа|увелич|уменьш|рост|выше|ниже|лучше|хуже|"
-                    r"сильнее|слабее|больше|меньше", re.I)
+# с начала слова: «снижение выбросов» в названии фактора — не знак связи («ниже» внутри «снижение»)
+SIGNED = re.compile(r"\b(?:положительн|отрицательн|повыша|понижа|снижа|увелич|уменьш|рост|выше|ниже|лучше|хуже|"
+                    r"сильнее|слабее|больше|меньше)", re.I)
 YEARS = re.compile(r"(\d+)\s*(?:[-–—]\s*(\d+)\s*)?(?:-?\s*летн|год|года|лет|year|yr)", re.I)
 
 
@@ -471,7 +475,8 @@ def _years(text: str) -> set[str]:
     return {n for m in YEARS.finditer(text) for n in m.groups() if n}
 
 
-def _verify(h: dict[str, Any], cited: list[dict[str, Any]], target: dict[str, Any]) -> tuple[bool, str, str]:
+def _verify(h: dict[str, Any], cited: list[dict[str, Any]],
+            target: dict[str, Any]) -> tuple[bool, str, str, bool]:
     """Вторая пара глаз: гипотеза отвечает заданию и следует из процитированных опор (видна только им).
 
     Модель только разбирает утверждение и выписывает цитаты; решает код. Обоснование генератора проверке
@@ -479,14 +484,17 @@ def _verify(h: dict[str, Any], cited: list[dict[str, Any]], target: dict[str, An
 
     Третье значение — чем опоры заменяют объём ESG-инвестиций, если утверждение о нём, а опоры — об
     ESG-рейтинге, раскрытии или практиках, и утверждение этого не говорит (иначе ""). Гипотезу это не
-    отклоняет — почти все статьи о рейтингах, — но об этом должно быть написано в ней самой."""
+    отклоняет — почти все статьи о рейтингах, — но об этом должно быть написано в ней самой.
+
+    Четвёртое — отклонена только за знак, которого опоры не называют (но и не опровергают): такую
+    гипотезу можно переписать без знака (_unsign)."""
     texts = [f"{it.get('fact', '')} {it['text'][:700]}".strip() for it in cited]
     refs = "\n".join(f"[{i}] {t} («{it['title']}»)" for i, (t, it) in enumerate(zip(texts, cited, strict=True), start=1))
     prompt = f"ЗАДАНИЕ: {target['title']}\n{target['content'][:1200]}\n\nУТВЕРЖДЕНИЕ: {h['statement']}\n\nОПОРЫ:\n{refs}"
     try:
         d = ask_json(prompt, 500, CHECK_SYSTEM, CHECK_SCHEMA, temperature=0)
     except (ValueError, TimeoutError, URLError, OSError):
-        return False, "проверка опор не ответила", ""
+        return False, "проверка опор не ответила", "", False
     failed = []
     task = d["task_level"]
     if task != "другое" and d["level"] != task:
@@ -500,19 +508,58 @@ def _verify(h: dict[str, Any], cited: list[dict[str, Any]], target: dict[str, An
     # знак — и по словам утверждения: модель охотно пишет «связь без знака», чтобы не искать цитату
     if direction not in ("рост", "снижение") and SIGNED.search(h["statement"]):
         direction = "снижение" if d["refs_direction"] == "снижение" else "рост"
+    sign_only = False
     if direction in ("рост", "снижение") and (d["refs_direction"] != direction
                                              or not _quoted(d["direction_quote"], texts)):
         failed.append(f"направление «{direction}» опоры не подтверждают" + (
             f" (в опорах: {d['refs_direction']})" if d["refs_direction"] != direction else " (нет цитаты)"))
+        # опровергнуть знак может только цитата с другим знаком; без неё знак просто не установлен
+        sign_only = not (d["refs_direction"] in ("рост", "снижение") and _quoted(d["direction_quote"], texts))
     extra = _years(h["statement"]) - _years(target["content"]) - set().union(*map(_years, texts))
     if extra:
         failed.append(f"горизонт {', '.join(sorted(extra, key=int))} лет — ни в задании, ни в опорах")
     comment = str(d.get("comment") or "")[:200]
     if failed:
-        return False, "; ".join(failed) + (f" — {comment}" if comment else ""), ""
+        return False, "; ".join(failed) + (f" — {comment}" if comment else ""), "", sign_only and len(failed) == 1
     proxy = (d["refs_factor_kind"] if d["factor_kind"] == INVESTMENT and d["refs_factor_kind"] in PROXY_SHORT
              and not PROXY_SAID.search(h["statement"]) else "")
-    return True, f"связь в опорах: «{d['link_quote'][:200]}»" + (f"; {comment}" if comment else ""), proxy
+    return True, f"связь в опорах: «{d['link_quote'][:200]}»" + (f"; {comment}" if comment else ""), proxy, False
+
+
+UNSIGN_SYSTEM = """Перепиши название и утверждение гипотезы без знака связи: вместо «повышает», «улучшает»,
+«снижает», «положительно влияет», «рост» — «связан с». Фактор, показатель, горизонт и данные оставь как
+есть, ничего не добавляй. Знак покажет расчёт. Ответ — только JSON {"title": "…", "statement": "…"}."""
+UNSIGN_SCHEMA = {"type": "object", "required": ["title", "statement"], "properties": {"title": _S, "statement": _S}}
+
+
+def _unsign(h: dict[str, Any]) -> dict[str, Any] | None:
+    """Правило 9 — кодом: модель пишет «положительно», когда опоры говорят только, что связь есть.
+    Переписанное без знака проверяется заново; если знак остался — None (гипотеза отклоняется)."""
+    try:
+        d = ask_json(f"НАЗВАНИЕ: {h['title']}\nУТВЕРЖДЕНИЕ: {h['statement']}", 400, UNSIGN_SYSTEM, UNSIGN_SCHEMA,
+                     temperature=0)
+    except (ValueError, TimeoutError, URLError, OSError):
+        return None
+    title, statement = str(d.get("title") or "").strip(), str(d.get("statement") or "").strip()
+    if len(title) < 5 or len(statement) < 10 or SIGNED.search(f"{title} {statement}"):
+        return None
+    return {**h, "title": title, "statement": statement}
+
+
+def _review(h: dict[str, Any], cited: list[dict[str, Any]],
+            target: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    """Проверка опор с исправлениями кодом: знак, которого опоры не называют, убирается (правило 9),
+    замена объёма инвестиций рейтингом помечается (правило 8). (гипотеза или None, комментарий)."""
+    ok, comment, proxy, sign_only = _verify(h, cited, target)
+    if not ok and sign_only:
+        fixed = _unsign(h)
+        if fixed is not None:
+            ok, again, proxy, _ = _verify(fixed, cited, target)
+            if ok:
+                h, comment = fixed, f"знак убран — опоры его не называют, покажет расчёт; {again}"
+            else:
+                comment = f"{comment}; без знака: {again}"
+    return (_mark_proxy(h, proxy), comment) if ok else (None, comment)
 
 
 def _mark_proxy(h: dict[str, Any], proxy: str) -> dict[str, Any]:
@@ -565,11 +612,11 @@ def job_hypotheses(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
                 continue  # без опоры из найденного — не гипотеза
             h = {k: str(item.get(k) or "") for k in ("title", "statement", "rationale", "dataset", "method",
                                                      "data_needed")}
-            ok, comment, proxy = _verify(h, [items[n - 1] for n in nums], target)
-            if not ok:
+            checked, comment = _review(h, [items[n - 1] for n in nums], target)
+            if checked is None:
                 rejected.append({"node": target["number"], "title": h["title"], "why": comment})
                 continue
-            h = _mark_proxy(h, proxy)
+            h = checked
             h["rationale"] = f"{h['rationale']}\nПроверка опор (Qwen): {comment}".strip()
             out.append({**h, "node": target["number"], "refs": [_ref(items[n - 1]) for n in nums]})
         facts = sum(1 for it in items if it["kind"] == "fact")

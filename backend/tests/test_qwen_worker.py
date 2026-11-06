@@ -58,6 +58,8 @@ def model(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         prompt: str, max_tokens: int, system: str, schema: dict[str, Any], temperature: float = 0.3
     ) -> Any:
         state["calls"].append({"prompt": prompt, "temperature": temperature})
+        if state.get("queue"):  # несколько вызовов подряд: проверка → переписывание → проверка
+            return state["queue"].pop(0)
         return state["answer"]
 
     monkeypatch.setattr(W, "ask_json", fake)
@@ -98,7 +100,7 @@ def test_years() -> None:
 
 
 def test_grounded_hypothesis_passes_at_zero_temperature(model: dict[str, Any]) -> None:
-    ok, comment, _ = W._verify(H, CITED, TARGET)
+    ok, comment, *_ = W._verify(H, CITED, TARGET)
     assert ok, comment
     assert "связь в опорах" in comment
     call = model["calls"][0]
@@ -121,7 +123,7 @@ def test_grounded_hypothesis_passes_at_zero_temperature(model: dict[str, Any]) -
 )
 def test_verifier_decides_in_code(model: dict[str, Any], kw: dict[str, Any], why: str) -> None:
     model["answer"] = answer(**kw)
-    ok, comment, _ = W._verify(H, CITED, TARGET)
+    ok, comment, *_ = W._verify(H, CITED, TARGET)
     assert not ok
     assert why in comment
 
@@ -132,13 +134,13 @@ def test_sign_taken_from_statement_words(model: dict[str, Any]) -> None:
     model["answer"] = answer(
         direction="связь без знака", refs_direction="не сказано", direction_quote=""
     )
-    ok, comment, _ = W._verify(H, CITED, TARGET)
+    ok, comment, *_ = W._verify(H, CITED, TARGET)
     assert not ok
     assert "направление «рост»" in comment
 
 
 def test_horizon_not_in_task_or_refs(model: dict[str, Any]) -> None:
-    ok, comment, _ = W._verify(
+    ok, comment, *_ = W._verify(
         {**H, "statement": "Фактор альфа повышает показатель бета через 3–5 лет"}, CITED, TARGET
     )
     assert not ok
@@ -151,7 +153,7 @@ def test_quote_from_table_does_not_count(model: dict[str, Any]) -> None:
         "фактор альфа повышает показатель бета"
     )
     model["answer"] = answer(link_quote="фактор альфа повышает показатель бета")
-    ok, comment, _ = W._verify(
+    ok, comment, *_ = W._verify(
         H, [{"kind": "fragment", "title": "[таблица]", "text": table}], TARGET
     )
     assert not ok
@@ -205,7 +207,7 @@ def test_rating_instead_of_investment_is_marked(model: dict[str, Any]) -> None:
     """Правило 8: утверждение об объёме ESG-инвестиций, опоры — об ESG-рейтинге, модель молчит —
     гипотеза проходит, но с пометкой в названии и утверждении."""
     model["answer"] = answer(factor_kind=W.INVESTMENT, refs_factor_kind="ESG-рейтинг или балл")
-    ok, _, proxy = W._verify(H, CITED, TARGET)
+    ok, _, proxy, _ = W._verify(H, CITED, TARGET)
     assert ok
     assert proxy == "ESG-рейтинг или балл"
     marked = W._mark_proxy(H, proxy)
@@ -224,3 +226,59 @@ def test_replacement_already_said_is_not_marked_twice(model: dict[str, Any]) -> 
 def test_investment_in_refs_is_not_marked(model: dict[str, Any]) -> None:
     model["answer"] = answer(factor_kind=W.INVESTMENT, refs_factor_kind=W.INVESTMENT)
     assert W._verify(H, CITED, TARGET)[2] == ""
+
+
+UNSIGNED = {
+    "title": "[гипотеза без знака]",
+    "statement": "Фактор альфа связан с показателем бета через 3 года",
+}
+NO_SIGN_IN_REFS = {"refs_direction": "связь без знака", "direction_quote": ""}
+
+
+def test_sign_not_in_refs_is_removed(model: dict[str, Any]) -> None:
+    """Опоры говорят только, что связь есть, — знак убирается,
+    гипотеза проходит после повторной проверки."""
+    model["queue"] = [answer(**NO_SIGN_IN_REFS), UNSIGNED,
+                      answer(direction="связь без знака", **NO_SIGN_IN_REFS)]
+    h, comment = W._review(H, CITED, TARGET)
+    assert h is not None, comment
+    assert h["statement"] == UNSIGNED["statement"]
+    assert comment.startswith("знак убран")
+    assert len(model["calls"]) == 3 and all(c["temperature"] == 0 for c in model["calls"])
+
+
+def test_contradicted_sign_is_not_rewritten(model: dict[str, Any]) -> None:
+    """Опора с цитатой называет другой знак — это опровержение, а не пробел:
+    гипотеза отклоняется."""
+    model["answer"] = answer(refs_direction="снижение")
+    assert W._verify(H, CITED, TARGET)[3] is False
+    h, comment = W._review(H, CITED, TARGET)
+    assert h is None and "в опорах: снижение" in comment
+    assert len(model["calls"]) == 2  # без переписывания
+
+
+def test_sign_left_after_rewrite_is_rejected(model: dict[str, Any]) -> None:
+    model["queue"] = [answer(**NO_SIGN_IN_REFS),
+                      {**UNSIGNED,
+                       "statement": "Фактор альфа положительно связан с показателем бета"}]
+    h, comment = W._review(H, CITED, TARGET)
+    assert h is None and "направление «рост»" in comment
+
+
+def test_other_failure_is_not_rescued_by_unsign(model: dict[str, Any]) -> None:
+    model["answer"] = answer(level="бюджет региона", **NO_SIGN_IN_REFS)
+    assert W._verify(H, CITED, TARGET)[3] is False
+    assert W._review(H, CITED, TARGET)[0] is None
+
+
+@pytest.mark.parametrize(
+    ("text", "signed"),
+    [
+        ("Фактор альфа повышает показатель бета", True),
+        ("Фактор альфа положительно влияет на бета", True),
+        ("Затраты на снижение выбросов связаны с показателем бета", False),
+        ("Фактор альфа связан с показателем бета", False),
+    ],
+)
+def test_sign_words(text: str, signed: bool) -> None:
+    assert bool(W.SIGNED.search(text)) is signed
