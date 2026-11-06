@@ -16,5 +16,10 @@ deploy/certs/
 
 .local/
 
+# Claude Code: личные настройки машины; снимки и отчёты стенда для рецензентов
+.claude/settings.local.json
+.claude/worktrees/
+.review/
+
 # временные файлы Word
 ~$*

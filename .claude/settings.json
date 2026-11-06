@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.local/**)",
+      "Edit(./.local/**)",
+      "Read(**/.env)",
+      "Edit(**/.env)",
+      "Read(./deploy/certs/**)",
+      "Edit(./deploy/certs/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_secrets.py\"",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/lint_changed.py\"",
+            "timeout": 30,
+            "statusMessage": "ruff: новые нарушения"
+          }
+        ]
+      }
+    ]
+  }
+}
