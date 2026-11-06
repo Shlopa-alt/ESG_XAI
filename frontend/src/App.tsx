@@ -4,6 +4,7 @@ import { Route, Routes } from "react-router-dom";
 import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
 import { Article } from "./pages/ArticlePage";
+import { DataDraftPage, DataDrafts } from "./pages/DataDraftsPage";
 import { DatasetPage } from "./pages/DatasetPage";
 import { Experiment, Experiments } from "./pages/ExperimentPages";
 import { Hypotheses } from "./pages/HypothesesPage";
@@ -37,6 +38,8 @@ export function App() {
         <Route path="knowledge/graph" element={<Suspense fallback={<p className="muted">Загрузка графа…</p>}><Graph /></Suspense>} />
         <Route path="knowledge/import" element={<Import />} />
         <Route path="datasets/:code" element={<DatasetPage />} />
+        <Route path="data-drafts" element={<DataDrafts />} />
+        <Route path="data-drafts/:id" element={<DataDraftPage />} />
         <Route path="knowledge/article/:docId" element={<Article />} />
         <Route path="hypotheses" element={<Hypotheses />} />
         <Route path="experiments" element={<Experiments />} />

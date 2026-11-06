@@ -281,5 +281,7 @@ def job_result(import_id: int, body: ResultIn,
         # новая статья в базе — Qwen достроит граф и предложит гипотезы (одна задача на все импорты подряд)
         enqueue(db, "graph", {"kb": "esg"}, trigger="import")
         enqueue(db, "hypotheses", {}, trigger="import")  # после графа: очередь идёт по порядку
+        if imp.doc_id:  # таблицы-наблюдения статьи — в черновики датасетов
+            enqueue(db, "tables", {"doc_id": imp.doc_id}, trigger="import")
     db.commit()
     return _out(db, imp)

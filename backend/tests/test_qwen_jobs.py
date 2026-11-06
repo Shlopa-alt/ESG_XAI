@@ -61,7 +61,8 @@ def test_imported_article_queues_graph(make_client, db_session: Session) -> None
                json={"status": "done", "doc_id": "10.1_x"})
     assert r.status_code == 200, r.text
     jobs = c.get("/api/qwen/jobs").json()
-    assert sorted((j["kind"], j["trigger"]) for j in jobs) == [("graph", "import"), ("hypotheses", "import")]
+    assert sorted((j["kind"], j["trigger"]) for j in jobs) == [
+        ("graph", "import"), ("hypotheses", "import"), ("tables", "import")]
 
 
 def test_finished_graph_queues_hypotheses(make_client) -> None:  # type: ignore[no-untyped-def]

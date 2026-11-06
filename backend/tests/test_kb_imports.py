@@ -4,6 +4,7 @@ import pytest
 
 import app.api.kb_imports as kb_imports
 from app.config import Settings
+from app.models import QwenJob
 from app.services.article_fetch import FetchError, _check_public, doc_id_for_doi, normalize_doi
 
 PDF = b"%PDF-1.7\n%test\n"
@@ -66,7 +67,7 @@ def test_worker_needs_token(make_client) -> None:  # type: ignore[no-untyped-def
     assert c.post("/api/kb-imports/worker/next", headers={"X-Import-Token": "x"}).status_code == 403
 
 
-def test_worker_cycle(make_client) -> None:  # type: ignore[no-untyped-def]
+def test_worker_cycle(make_client, db_session) -> None:  # type: ignore[no-untyped-def]
     c = make_client("res", "researcher")
     imp = _upload(c).json()
     job = c.post("/api/kb-imports/worker/next", headers=TOKEN)
@@ -85,6 +86,9 @@ def test_worker_cycle(make_client) -> None:  # type: ignore[no-untyped-def]
                json={"status": "done", "doc_id": "10.3390_abc.1"})
     assert r.json()["status"] == "done" and r.json()["doc_id"] == "10.3390_abc.1"
     assert c.post(f"/api/kb-imports/{job['id']}/retry").status_code == 409
+    # новая статья — Qwen поищет в ней таблицы-наблюдения для черновиков датасетов
+    kinds = {(j.kind, j.payload.get("doc_id")) for j in db_session.query(QwenJob)}
+    assert ("tables", "10.3390_abc.1") in kinds
 
 
 def test_by_doi(make_client, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]

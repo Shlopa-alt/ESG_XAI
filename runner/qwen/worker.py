@@ -645,6 +645,140 @@ def job_cr(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# --- таблицы статей → черновики датасетов ---
+
+TABLE_SYSTEM = """Ты — исследователь лаборатории ESG. Тебе дают таблицу из научной статьи, уже разобранную
+кодом в строки и столбцы. Реши, НАБЛЮДЕНИЯ ли это — исходные данные, где строка — один объект или
+период (компания, регион, страна, год, индекс за год) и столбцы — его показатели, — на которых можно
+что-то посчитать. НЕ наблюдения: результаты расчёта авторов (коэффициенты регрессий, корреляции,
+описательная статистика, веса AHP, VIF, нагрузки факторов, метрики качества моделей), распределение
+выборки по отраслям или странам, словари переменных, план или бюджет одной компании.
+Поля:
+- "row_is": что такое одна строка таблицы (по-русски, коротко);
+- "observations": true — наблюдения, false — нет;
+- "why": одной фразой — почему;
+- "title": название будущего датасета по-русски, до 120 знаков (что, по каким объектам, за какие годы);
+- "description": 2–4 предложения по-русски: что такое строка, что значат столбцы (единицы, шкала:
+  ранг, балл, %, тыс. руб.), откуда данные по словам статьи. Ничего не додумывай.
+Ответ — только JSON по схеме."""
+TABLE_SCHEMA = {"type": "object", "required": ["row_is", "observations", "why", "title", "description"],
+                "properties": {"row_is": _S, "observations": {"type": "boolean"}, "why": _S, "title": _S,
+                               "description": _S}}
+
+
+def _cells(rows: list[list[Any]], limit: int) -> str:
+    return "\n".join(f"{i}. " + " | ".join("" if v is None else (f"{v:g}" if isinstance(v, float) else str(v))
+                                            for v in r) for i, r in enumerate(rows[:limit], start=1))
+
+
+def _describe(d: dict[str, Any]) -> str:
+    """Описание датасета: что такое строка — один раз (модель часто сама начинает с «Строка — …»)."""
+    text = str(d.get("description") or "").strip()
+    row = str(d.get("row_is") or "").strip().rstrip(".")
+    return text if not row or text.lower().startswith("строка") else f"Строка — {row}. {text}".strip()
+
+
+def _doi(url: str) -> str:
+    m = re.search(r"10\.\d{4,9}/\S+", url or "")
+    return m.group(0).rstrip(".,;)") if m else ""
+
+
+def job_tables(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Таблицы статей ветки esg: разбор кодом (tables.py), отбор наблюдений и описание — Qwen."""
+    import tables as T  # рядом с worker.py; только stdlib
+
+    want = str(job["payload"].get("doc_id") or "")
+    docs = kbrag_get("documents", {"kb": "esg"}, ctx["kbrag_token"], timeout_s=60).get("documents") or []
+    docs = [d for d in docs if not want or d.get("doc_id") == want]
+    known = {(d, n) for d, n in ctx["platform"].post("tables-context")[1].get("known") or []}
+    acquired = Path(ctx["kbrag"]) / ".local" / "acquired"
+    drafts: list[dict[str, Any]] = []
+    skipped: list[str] = []
+    for meta in docs:
+        doc_id = str(meta.get("doc_id") or "")
+        path = acquired / f"{doc_id}.docling.json"
+        if not path.exists():
+            skipped.append(f"{doc_id}: нет разметки docling")
+            continue
+        for x in T.tables(json.loads(path.read_text(encoding="utf-8"))):
+            if (doc_id, x["number"]) in known:
+                continue
+            if not x["data"]:
+                continue  # код уже видит, что это не наблюдения
+            t = x["table"]
+            prompt = (f"СТАТЬЯ: {meta.get('title', '')}\nТАБЛИЦА {x['number']}"
+                      + (f" (с. {x['page']})" if x["page"] else "") + f": {x['caption'] or 'без подписи'}\n"
+                      f"ЧТО СДЕЛАЛ КОД: {'; '.join(t.notes) or 'ничего'}\n"
+                      f"СТОЛБЦЫ: {' | '.join(t.columns)}\nСТРОК: {len(t.rows)}\nПЕРВЫЕ СТРОКИ:\n{_cells(t.rows, 12)}")
+            try:
+                d = ask_json(prompt, 700, TABLE_SYSTEM, TABLE_SCHEMA)
+            except ValueError as exc:
+                skipped.append(f"{doc_id} т{x['number']}: модель не ответила ({exc})")
+                continue
+            if not d.get("observations"):
+                skipped.append(f"{doc_id} т{x['number']}: не наблюдения — {d.get('why', '')}")
+                continue
+            drafts.append({"doc_id": doc_id, "kb_path": "esg", "article_title": meta.get("title", ""),
+                           "doi": _doi(str(meta.get("url") or "")), "table_number": x["number"],
+                           "page": x["page"], "caption": x["caption"], "title": d.get("title", ""),
+                           "description": _describe(d),
+                           "columns": t.columns, "rows": t.rows[:5000], "notes": t.notes})
+            log(f"  {doc_id} т{x['number']}: черновик «{d.get('title', '')}» ({len(t.rows)}×{len(t.columns)})")
+    return {"drafts": drafts, "skipped": skipped[:200], "docs": len(docs)}
+
+
+OPS = ["rename", "drop_columns", "keep_columns", "drop_rows", "drop_rows_where", "keep_rows_where", "set_cell",
+       "to_number", "scale", "add_column", "sort", "transpose"]
+EDIT_SYSTEM = """Ты правишь таблицу данных по команде исследователя. Код ты не пишешь: ответ — список
+операций, их применит платформа по порядку. Операции:
+- {"op": "rename", "column": имя, "to": новое имя}
+- {"op": "drop_columns", "columns": [имена]} / {"op": "keep_columns", "columns": [имена по порядку]}
+- {"op": "drop_rows", "rows": [номера строк, как в таблице ниже, с 1]}
+- {"op": "drop_rows_where" | "keep_rows_where", "column": имя, "test": "empty"|"equals"|"contains"|"less"|"greater",
+  "value": значение} — убрать / оставить строки, где условие верно
+- {"op": "set_cell", "rows": [номер строки], "column": имя, "value": новое значение}
+- {"op": "to_number", "column": имя} — текст в числа («1 234,5» → 1234,5; не число — пропуск)
+- {"op": "scale", "column": имя, "factor": число} — умножить (тыс. руб. → руб.: 1000)
+- {"op": "add_column", "name": имя, "value": значение для всех строк}
+- {"op": "sort", "column": имя, "descending": true|false}
+- {"op": "transpose"} — строки станут столбцами (первый столбец — имена новых столбцов)
+Имена столбцов пиши ТОЧНО как в таблице. Делай только то, что просят; не можешь — пустой список ops и
+в "explanation" — почему. "explanation" — одной фразой по-русски, что сделано.
+Ответ — только JSON по схеме."""
+EDIT_SCHEMA = {"type": "object", "required": ["explanation", "ops"], "properties": {
+    "explanation": _S, "ops": {"type": "array", "maxItems": 20, "items": {"type": "object", "required": ["op"],
+        "properties": {"op": {"type": "string", "enum": OPS}, "column": _S, "to": _S,
+                       "columns": {"type": "array", "items": _S}, "rows": {"type": "array", "items": _I},
+                       "test": {"type": "string", "enum": ["empty", "equals", "contains", "less", "greater"]},
+                       "value": _S, "factor": {"type": "number"}, "name": _S, "descending": {"type": "boolean"}}}}}}
+
+
+def job_table_edit(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Команда словами по черновику → операции; применяет и проверяет их платформа."""
+    did = int(job["payload"].get("draft") or 0)
+    command = str(job["payload"].get("command") or "")
+    c = ctx["platform"].post("draft-context", {"draft": did, "command": command})[1]
+    prompt = (f"ТАБЛИЦА: {c.get('title', '')} (из статьи «{c.get('article_title', '')}», подпись: "
+              f"{c.get('caption', '') or 'нет'})\nОПИСАНИЕ: {c.get('description', '')}\n"
+              f"СТОЛБЦЫ: {' | '.join(c.get('columns') or [])}\nСТРОК: {c.get('row_count')}\n"
+              f"СТРОКИ (первые {min(40, c.get('row_count') or 0)}):\n{_cells(c.get('rows') or [], 40)}\n"
+              f"ПРЕЖНИЕ ПРАВКИ: {'; '.join(c.get('history') or []) or 'нет'}\n\nКОМАНДА: {command}")
+    out = ask_json(prompt, 900, EDIT_SYSTEM, EDIT_SCHEMA)
+    ops = []
+    for op in out.get("ops") or []:
+        op = {k: v for k, v in op.items() if v not in (None, "", [])}
+        if op.get("op") in ("drop_rows", "set_cell") and isinstance(op.get("rows"), list):
+            nums = [n - 1 for n in op["rows"] if isinstance(n, int)]  # в подсказке строки с 1
+            if op["op"] == "set_cell":
+                op["row"] = nums[0] if nums else -1
+                op.pop("rows")
+            else:
+                op["rows"] = nums
+        ops.append(op)
+    log(f"  черновик №{did}: «{command}» → {len(ops)} операций: {out.get('explanation', '')}")
+    return {"ops": ops, "explanation": out.get("explanation", ""), "draft": did}
+
+
 HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]] = {
     "ping": job_ping,
     "graph": job_graph,
@@ -652,6 +786,8 @@ HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]] 
     "experiment": job_experiment,
     "report": job_report,
     "cr": job_cr,
+    "tables": job_tables,
+    "table_edit": job_table_edit,
 }
 
 
@@ -670,6 +806,11 @@ def describe(kind: str, result: dict[str, Any]) -> str:
     if kind == "cr":
         return ("Черновик CR передан платформе" if result.get("decision") == "change"
                 else f"Менять методику не нужно: {result.get('reason', '')}")
+    if kind == "tables":
+        return (f"Статей {result.get('docs', 0)}: таблиц-наблюдений {len(result.get('drafts') or [])} "
+                "(черновики создаст платформа)")
+    if kind == "table_edit":
+        return f"Операций {len(result.get('ops') or [])}: {result.get('explanation', '')}"
     if kind == "hypotheses":
         return f"Qwen предложила {len(result.get('hypotheses') or [])} (платформа проверит опоры)"
     return ""

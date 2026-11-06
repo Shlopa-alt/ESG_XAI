@@ -80,8 +80,17 @@ class Table:
         w = csv.writer(buf, lineterminator="\n")
         w.writerow(self.columns)
         for r in self.rows:
-            w.writerow(["" if v is None else (f"{v:g}" if isinstance(v, float) else v) for v in r])
+            w.writerow([_fmt(v) for v in r])
         return buf.getvalue()
+
+
+def _fmt(v: Any) -> str:
+    """Число без потери знаков: 5838951.7, а не 5.83895e+06."""
+    if v is None:
+        return ""
+    if isinstance(v, float):
+        return str(int(v)) if v.is_integer() and abs(v) < 1e15 else repr(v)
+    return str(v)
 
 
 def grid(table: dict[str, Any]) -> tuple[list[list[str]], set[int]]:

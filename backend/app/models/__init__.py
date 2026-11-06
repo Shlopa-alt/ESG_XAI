@@ -1,3 +1,4 @@
+from app.models.data_draft import DataDraft
 from app.models.hypothesis import Hypothesis, HypothesisRef
 from app.models.kb_import import KbImport
 from app.models.methodology import ChangeRequest, CrBasis, MethodologySection, MethodologyVersion
@@ -18,6 +19,7 @@ from app.models.user import User
 __all__ = [
     "ChangeRequest",
     "CrBasis",
+    "DataDraft",
     "Dataset",
     "DatasetSnapshot",
     "Experiment",

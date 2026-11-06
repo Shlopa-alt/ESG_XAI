@@ -22,9 +22,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_role
 from app.config import Settings, get_settings
 from app.db import get_db
-from app.models import ExperimentReport, QwenJob, User
+from app.models import DataDraft, ExperimentReport, QwenJob, User
 from app.models.qwen_job import QWEN_KINDS
-from app.services import qwen_cr, qwen_experiments, qwen_hypotheses, qwen_reports
+from app.services import data_drafts, qwen_cr, qwen_experiments, qwen_hypotheses, qwen_reports
 from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/qwen", tags=["qwen"])
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/qwen", tags=["qwen"])
 Owner = Depends(require_role())  # только owner
 HEARTBEAT = "qwen:heartbeat"
 HEARTBEAT_TTL_S = 120  # обработчик отмечается раз в 30 с; дольше молчит — считается остановленным
-MANUAL_KINDS = ("graph", "ping", "hypotheses")  # что owner может поставить кнопкой
+MANUAL_KINDS = ("graph", "ping", "hypotheses", "tables")  # что owner может поставить кнопкой
 
 
 class JobOut(BaseModel):
@@ -208,6 +208,27 @@ def worker_cr_context(body: ReportContextIn, db: Annotated[Session, Depends(get_
     return qwen_cr.context(db, r)
 
 
+@router.post("/worker/tables-context", dependencies=[Worker])
+def worker_tables_context(db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
+    """Какие таблицы статей уже разобраны (черновик есть в любом статусе) — их не предлагать."""
+    return {"known": data_drafts.known(db)}
+
+
+class DraftContextIn(BaseModel):
+    draft: int
+    command: str = ""
+
+
+@router.post("/worker/draft-context", dependencies=[Worker])
+def worker_draft_context(body: DraftContextIn,
+                         db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
+    """Что нужно Qwen для команды по черновику: шапка, начало таблицы, подпись, журнал."""
+    d = db.get(DataDraft, body.draft)
+    if d is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет черновика №{body.draft}")
+    return data_drafts.context(d, body.command)
+
+
 @router.post("/worker/next", response_model=JobOut, dependencies=[Worker],
              responses={204: {"description": "очередь пуста"}})
 def next_job(db: Annotated[Session, Depends(get_db)]) -> JobOut | Response:
@@ -249,6 +270,14 @@ def job_result(job_id: int, body: JobResult, db: Annotated[Session, Depends(get_
         cr, why = qwen_cr.create_from_result(db, job, body.result)
         job.message = (f"Предложен {cr.code}: «{cr.title}»" + (f" — проверить: {cr.problems}" if cr.problems else "")
                        if cr is not None else why)
+    if job.kind == "tables" and body.status == "done":
+        drafts = data_drafts.create_from_result(db, job, body.result)
+        job.result = {**{k: v for k, v in body.result.items() if k != "drafts"},
+                      "proposed": len(body.result.get("drafts") or []), "created": drafts}
+        job.message = (f"Черновиков данных: {len(drafts)} (№ {', '.join(map(str, drafts))})"
+                       if drafts else "Новых таблиц-наблюдений нет")
+    if job.kind == "table_edit" and body.status == "done":
+        job.message = data_drafts.apply_edit_result(db, job, body.result)
     if job.kind == "experiment" and body.status == "done":
         p = qwen_experiments.create_from_result(db, settings, job, body.result)
         job.message = (f"Предложен эксперимент для {job.payload.get('hypothesis')}: «{p.title}»"
