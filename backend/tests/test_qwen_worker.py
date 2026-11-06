@@ -44,6 +44,7 @@ def answer(**kw: Any) -> dict[str, Any]:
         "link_quote": "фактор альфа заметно повышает показатель бета",
         "refs_direction": "рост",
         "direction_quote": "заметно повышает показатель бета у компаний",
+        "link_scope": "не сказано",
         "comment": "",
     }
     return {**base, **kw}
@@ -207,10 +208,10 @@ def test_rating_instead_of_investment_is_marked(model: dict[str, Any]) -> None:
     """Правило 8: утверждение об объёме ESG-инвестиций, опоры — об ESG-рейтинге, модель молчит —
     гипотеза проходит, но с пометкой в названии и утверждении."""
     model["answer"] = answer(factor_kind=W.INVESTMENT, refs_factor_kind="ESG-рейтинг или балл")
-    ok, _, proxy, _ = W._verify(H, CITED, TARGET)
+    ok, _, marks, _ = W._verify(H, CITED, TARGET)
     assert ok
-    assert proxy == "ESG-рейтинг или балл"
-    marked = W._mark_proxy(H, proxy)
+    assert marks == {"proxy": "ESG-рейтинг или балл"}
+    marked = W._mark(H, marks)
     assert marked["title"] == "[гипотеза] (по ESG-рейтингу)"
     assert "ESG-рейтинг или балл как замена объёма ESG-инвестиций" in marked["statement"]
     assert marked["rationale"] == H["rationale"]
@@ -219,13 +220,13 @@ def test_rating_instead_of_investment_is_marked(model: dict[str, Any]) -> None:
 def test_replacement_already_said_is_not_marked_twice(model: dict[str, Any]) -> None:
     model["answer"] = answer(factor_kind=W.INVESTMENT, refs_factor_kind="ESG-рейтинг или балл")
     said = {**H, "statement": f"{H['statement']} (ESG-рейтинг как замена объёма инвестиций)"}
-    assert W._verify(said, CITED, TARGET)[2] == ""
-    assert W._mark_proxy(said, "") is said
+    assert W._verify(said, CITED, TARGET)[2] == {}
+    assert W._mark(said, {}) is said
 
 
 def test_investment_in_refs_is_not_marked(model: dict[str, Any]) -> None:
     model["answer"] = answer(factor_kind=W.INVESTMENT, refs_factor_kind=W.INVESTMENT)
-    assert W._verify(H, CITED, TARGET)[2] == ""
+    assert W._verify(H, CITED, TARGET)[2] == {}
 
 
 UNSIGNED = {
@@ -282,3 +283,52 @@ def test_other_failure_is_not_rescued_by_unsign(model: dict[str, Any]) -> None:
 )
 def test_sign_words(text: str, signed: bool) -> None:
     assert bool(W.SIGNED.search(text)) is signed
+
+
+ABROAD_PROSE = (
+    "[заглушка] согласованность рейтингов провайдеров альфа и бета "
+    "в среднем составляет 24% по выборке компаний"
+)
+ABROAD_CITED = [{"kind": "fragment", "title": "[статья]", "text": ABROAD_PROSE}]
+ABROAD_ANSWER = {
+    "link_quote": "согласованность рейтингов провайдеров альфа и бета",
+    "link_scope": "другие страны или мир",
+    "direction": "связь без знака",
+    "refs_direction": "связь без знака",
+    "direction_quote": "",
+}
+
+
+def test_foreign_figure_for_russia_is_marked(model: dict[str, Any]) -> None:
+    """Правило 8: число зарубежных провайдеров, выданное за ожидаемое для России, —
+    гипотеза проходит, но число названо ориентиром, а не ожиданием."""
+    model["answer"] = answer(**ABROAD_ANSWER)
+    h = {**H, "statement": "Рейтинги российских агентств согласованы на уровне 24% через 3 года"}
+    ok, comment, marks, _ = W._verify(h, ABROAD_CITED, TARGET)
+    assert ok, comment
+    assert marks == {"abroad": ["24%"]}
+    marked = W._mark(h, marks)
+    assert marked["title"] == "[гипотеза] (по зарубежным данным)"
+    assert "24% — ориентир для сравнения, а не ожидаемое значение" in marked["statement"]
+
+
+@pytest.mark.parametrize(
+    ("statement", "scope", "marked"),
+    [
+        # о России не сказано — переносить не на что
+        ("Рейтинги провайдеров согласованы на уровне 24% через 3 года", W.ABROAD, False),
+        # опоры о России
+        ("Рейтинги российских агентств согласованы на уровне 24% через 3 года", "Россия", False),
+        # перенос назван, чисел из опор нет
+        ("По зарубежным данным рейтинги российских агентств согласованы слабо", W.ABROAD, False),
+        # перенос не назван, чисел нет — пометка без чисел
+        ("Рейтинги российских агентств согласованы слабо", W.ABROAD, True),
+    ],
+)
+def test_foreign_data_mark_only_when_needed(
+    model: dict[str, Any], statement: str, scope: str, marked: bool
+) -> None:
+    model["answer"] = answer(**{**ABROAD_ANSWER, "link_scope": scope})
+    ok, comment, marks, _ = W._verify({**H, "statement": statement}, ABROAD_CITED, TARGET)
+    assert ok, comment
+    assert ("abroad" in marks) is marked
