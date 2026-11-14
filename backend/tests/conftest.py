@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import audit
 from app.config import Settings, get_settings
 from app.db import Base, get_db
 from app.main import app
@@ -25,6 +26,17 @@ def db_session() -> Iterator[Session]:
     Base.metadata.create_all(engine)
     with sessionmaker(bind=engine, expire_on_commit=False)() as session:
         yield session
+
+
+@pytest.fixture(autouse=True)
+def audit_to_test_db(
+    db_session: Session, settings: Settings, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Журнал пишет прослойкой — мимо подмен зависимостей FastAPI: направляем его сессию в тестовую
+    # базу, а настройки (секрет сессии) — тестовые, иначе cookie тестового входа не читается.
+    # Без этого каждый POST в тестах ждёт подключения к PostgreSQL.
+    monkeypatch.setattr(audit, "SessionLocal", sessionmaker(bind=db_session.get_bind()))
+    monkeypatch.setattr(audit, "get_settings", lambda: settings)
 
 
 @pytest.fixture
