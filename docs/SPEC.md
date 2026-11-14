@@ -83,6 +83,7 @@ GET             /kb/kbs                               (дерево баз esg.*
 GET             /kb/search          ?q=&kb=           (→ KBRAG /api/search)
 GET             /kb/articles        ?kb=              (→ /api/documents)
 GET             /kb/articles/{doc_id}                 (→ /api/document, /api/article)
+GET             /kb/pdf             ?doc_id=          (→ /api/pdf: PDF статьи; KBRAG отдаёт его тем, кому видна статья)
 GET             /kb/graph           ?kb=&focus=       (→ /api/network + узлы экспериментов из ExperimentLink)
 GET             /kb/facts           ?entity=&kb=      (→ /api/facts)
 POST            /kb/refs                              (зафиксировать KbRef на статью или факт)

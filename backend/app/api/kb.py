@@ -33,6 +33,7 @@ ALLOWED = frozenset(
         "document",
         "article",
         "fragment",
+        "pdf",  # PDF статьи: KBRAG отдаёт его тем же, кому видна сама статья
         "network",
         "facts",
         "datasets",
@@ -48,6 +49,39 @@ def slim_network(body: bytes) -> bytes:
     for edge in data.get("edges", []):
         edge.pop("quotes", None)
     return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def slim_article(body: bytes) -> bytes:
+    """Карточка статьи без пути к PDF на компьютере KBRAG: экрану нужно только, есть ли PDF."""
+    data = json.loads(body)
+    if not isinstance(data, dict):
+        return body
+    data["has_pdf"] = bool(data.pop("pdf_path", None))
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+PDF_MAX_BYTES = 100 * 2**20  # PDF статьи держим в памяти целиком — больше не берём
+
+
+class TooLarge(Exception):
+    pass
+
+
+def fetch_pdf(url: str, token: str, timeout_s: float) -> tuple[int, bytes, str]:
+    """GET PDF у KBRAG не больше PDF_MAX_BYTES; больше — TooLarge."""
+    headers = {"X-KBRAG-Token": token} if token else {}
+    try:
+        with urlopen(Request(url, headers=headers), timeout=timeout_s) as r:
+            size = r.headers.get("Content-Length")
+            if size and size.isdigit() and int(size) > PDF_MAX_BYTES:
+                raise TooLarge
+            body = r.read(PDF_MAX_BYTES + 1)
+            if len(body) > PDF_MAX_BYTES:
+                raise TooLarge
+            return r.status, body, r.headers.get("Content-Type", "application/pdf")
+    except HTTPError as exc:
+        body = unpack(exc.read(), exc.headers.get("Content-Encoding"))
+        return exc.code, body, exc.headers.get("Content-Type", "application/json")
 
 
 def unpack(body: bytes, encoding: str | None) -> bytes:
@@ -127,10 +161,26 @@ def proxy(
     try:
         if name == "network":
             code, body, kind = network(url, settings)
+        elif name == "pdf":
+            code, body, kind = fetch_pdf(url, settings.kbrag_token, settings.kbrag_timeout_s)
         else:
             code, body, kind = fetch(url, settings.kbrag_token, settings.kbrag_timeout_s)
+    except TooLarge as exc:
+        limit_mb = PDF_MAX_BYTES // 2**20
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"PDF статьи больше {limit_mb} МБ — откройте по DOI") from exc
     except (URLError, TimeoutError, OSError) as exc:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, f"База знаний недоступна: {exc}"
         ) from exc
+    if name == "article" and code == 200:
+        body = slim_article(body)
+    if name == "pdf" and code == 200:
+        # своё имя файла: имя с компьютера KBRAG не пробрасываем; статьи под NDA не кешируем
+        asked = request.query_params.get("doc_id", "")
+        doc_id = "".join(c for c in asked if c.isalnum() or c in "-_.") or "article"
+        headers = {"Content-Disposition": f'inline; filename="{doc_id}.pdf"',
+                   "Cache-Control": "private, no-store"}
+        return Response(content=body, status_code=code, media_type="application/pdf",
+                        headers=headers)
     return Response(content=body, status_code=code, media_type=kind)

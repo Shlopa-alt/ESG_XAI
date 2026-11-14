@@ -62,6 +62,8 @@ export interface KbArticle {
   pages: number | null;
   chunks: number;
   kbs: string[];
+  /** Есть ли у KBRAG PDF статьи (путь к файлу платформа не передаёт). */
+  has_pdf?: boolean;
   fragments?: Array<{ ord: number; text: string; headings: string[]; pages: number[] }>;
   fragments_total?: number;
   next_offset?: number | null;
@@ -93,5 +95,8 @@ export const kbDocuments = (kb: string) =>
 export const kbDocumentsPage = (kb: string, limit: number, q: string) =>
   get<{ documents: KbDocument[]; total?: number }>("documents", { kb, limit: String(limit), ...(q ? { q } : {}) });
 export const kbNetwork = (kb: string) => get<KbNetwork>("network", { kb });
+/** PDF статьи через платформу; page — открыть на этой странице. */
+export const kbPdfUrl = (docId: string, page?: number) =>
+  `/api/kb/pdf?doc_id=${encodeURIComponent(docId)}${page ? `#page=${page}` : ""}`;
 export const kbArticle = (docId: string, offset: number) =>
   get<KbArticle>("article", { doc_id: docId, text: "1", offset: String(offset), limit: "20" });

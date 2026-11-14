@@ -42,8 +42,54 @@ def test_kb_forwards_platform_token(make_client, calls, settings) -> None:  # ty
 def test_kb_rejects_unknown_endpoint(make_client, calls) -> None:  # type: ignore[no-untyped-def]
     c = make_client("ivanov", "owner")
     assert c.get("/api/kb/chat").status_code == 404
-    assert c.get("/api/kb/pdf").status_code == 404
+    assert c.get("/api/kb/chat/status").status_code == 404
     assert calls == []
+
+
+def test_kb_pdf_passes_through(make_client, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    seen: list[str] = []
+
+    def fake_pdf(url: str, token: str, timeout_s: float) -> tuple[int, bytes, str]:
+        seen.append(url)
+        return 200, b"%PDF-1.7 [...]", "application/pdf"
+
+    monkeypatch.setattr(kb_api, "fetch_pdf", fake_pdf)
+    r = make_client("ivanov", "reader").get("/api/kb/pdf", params={"doc_id": "d1"})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.headers["content-disposition"] == 'inline; filename="d1.pdf"'
+    assert r.headers["cache-control"] == "private, no-store"
+    assert r.content.startswith(b"%PDF-")
+    assert seen[-1].endswith("/api/pdf?doc_id=d1")
+
+
+def test_kb_pdf_hidden_article_stays_404(  # type: ignore[no-untyped-def]
+    make_client, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hidden = (404, b'{"error": "[...]"}', "application/json")
+    monkeypatch.setattr(kb_api, "fetch_pdf", lambda url, token, timeout_s: hidden)
+    r = make_client("ivanov", "reader").get("/api/kb/pdf", params={"doc_id": "d1"})
+    assert r.status_code == 404
+    assert not r.content.startswith(b"%PDF-")
+
+
+def test_kb_pdf_too_large(make_client, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    def big(url: str, token: str, timeout_s: float) -> tuple[int, bytes, str]:
+        raise kb_api.TooLarge
+
+    monkeypatch.setattr(kb_api, "fetch_pdf", big)
+    r = make_client("ivanov", "reader").get("/api/kb/pdf", params={"doc_id": "d1"})
+    assert r.status_code == 502 and "МБ" in r.json()["detail"]
+
+
+def test_kb_article_hides_pdf_path(  # type: ignore[no-untyped-def]
+    make_client, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = b'{"doc_id": "d1", "pdf_path": "[...]"}'
+    answer = (200, body, "application/json")
+    monkeypatch.setattr(kb_api, "fetch", lambda url, token, timeout_s: answer)
+    got = make_client("ivanov", "reader").get("/api/kb/article", params={"doc_id": "d1"}).json()
+    assert got == {"doc_id": "d1", "has_pdf": True}
 
 
 def test_kb_unavailable_is_502(make_client, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
