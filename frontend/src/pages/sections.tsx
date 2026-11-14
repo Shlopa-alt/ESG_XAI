@@ -150,7 +150,7 @@ export function Overview() {
               Открыть методику
             </Link>
           </div>
-          <ul className="goal-outcomes" aria-label="Чем может закончиться проверка пункта методики">
+          <ul className="goal-outcomes" aria-label="Что проверка может дать методике">
             <li>
               <strong>Подтвердить</strong>
               <span className="muted">расчёт показал, что правило работает</span>
@@ -161,7 +161,7 @@ export function Overview() {
             </li>
             <li>
               <strong>Доработать</strong>
-              <span className="muted">уточнить правило или добавить новое</span>
+              <span className="muted">результат неоднозначен или правило работает не везде — уточнить его или добавить новое</span>
             </li>
           </ul>
         </div>

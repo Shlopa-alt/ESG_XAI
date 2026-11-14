@@ -95,7 +95,7 @@ describe("Обзор", () => {
     expect(await screen.findByRole("heading", { name: "Наша цель — проверить методику лаборатории" })).toBeInTheDocument();
     expect(await screen.findByText("Методика, версия [версия]")).toBeInTheDocument();
     expect(screen.getByText("3 пункта · черновиков: 1 · оспаривается: 1")).toBeInTheDocument();
-    const outcomes = screen.getByRole("list", { name: "Чем может закончиться проверка пункта методики" });
+    const outcomes = screen.getByRole("list", { name: "Что проверка может дать методике" });
     expect(within(outcomes).getAllByRole("listitem")).toHaveLength(3);
     expect(screen.getByRole("link", { name: "Открыть методику" })).toHaveAttribute("href", "/methodology");
   });
