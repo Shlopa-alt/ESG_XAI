@@ -337,6 +337,34 @@ describe("Карточка идеи", () => {
     expect(screen.getByText("не указано")).toBeInTheDocument();
   });
 
+  it("сила связи видна с автором; рецензент меняет её, исследователь — нет", async () => {
+    const h = { ...HYP, refs: [], status: "proposed", weight: 2, weight_set_by: "[автор]" };
+    api({ hypotheses: [h] });
+    renderAt("/hypotheses");
+    expect(await screen.findByText(/поставил \[автор\]/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Изменить" })).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
+
+    const puts: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.includes("/auth/me")) return Promise.resolve(json({ ...USER, role: "reviewer" }));
+        if (init?.method === "PUT") {
+          puts.push({ url, body: JSON.parse(String(init.body)) });
+          return Promise.resolve(json({ ...h, weight: 3, weight_set_by: "[рецензент]" }));
+        }
+        if (url.includes("/hypotheses")) return Promise.resolve(json([h]));
+        return Promise.resolve(json([]));
+      }),
+    );
+    renderAt("/hypotheses");
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    await userEvent.selectOptions(screen.getByLabelText("Сила связи"), "3");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(puts).toEqual([{ url: "/api/hypotheses/H-001/weight", body: { weight: 3 } }]));
+  });
+
   it("у предложенной идеи источники раскрыты: они нужны для решения", async () => {
     const refs = [{ kind: "article", kbrag_id: "d", title: "[статья]", doi: "", quote: "[цитата]" }];
     api({ hypotheses: [{ ...HYP, status: "proposed", refs }, { ...HYP, code: "H-002", title: "[вторая]", status: "testing", refs }] });

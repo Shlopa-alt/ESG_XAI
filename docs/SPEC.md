@@ -45,6 +45,7 @@ ExperimentLink(experiment_id, kb_ref_id, relation[tests|uses_method|replicates|m
 Hypothesis(id, code H-001 UNIQUE, title, statement, rationale, direction,
            status[proposed|accepted|rejected|testing|tested], decision_note, decided_by,
            effect[increases|decreases|no_effect|mixed|""], target_kind[financial|nonfinancial|""],
+           weight[1|2|3|NULL], weight_set_by,       -- сила связи: ставит автор, меняет рецензент
            experiment_id, author_id, created_at)
 HypothesisRef(hypothesis_id, kb_ref_id)                 -- опоры гипотезы в базе знаний
      -- узлы платформы (эксперименты) на графе KBRAG
@@ -121,6 +122,7 @@ POST            /datasets/{code}/snapshots            (загрузка срез
 
 GET/POST        /hypotheses                          (POST — любой вошедший)
 POST            /hypotheses/similar   {title, statement}  (похожие уже предложенные идеи — подсказка до отправки; любой вошедший)
+PUT             /hypotheses/{code}/weight  {weight: 1|2|3|null}  (сила связи; reviewer, owner)
 GET             /hypotheses/{code}
 POST            /hypotheses/{code}/refs              (автор или researcher+)
 PATCH           /hypotheses/{code}                   (reviewer/owner: accepted | rejected с причиной)

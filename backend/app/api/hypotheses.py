@@ -51,6 +51,7 @@ class HypothesisIn(BaseModel):
     # тип связи: как влияет и на какие показатели; пусто — автор не указал
     effect: Literal["increases", "decreases", "no_effect", "mixed", ""] = ""
     target_kind: Literal["financial", "nonfinancial", ""] = ""
+    weight: Literal[1, 2, 3] | None = None  # вес связи: 1 слабая, 2 средняя, 3 сильная
     refs: list[RefIn] = []
 
 
@@ -69,6 +70,8 @@ class HypothesisOut(BaseModel):
     methodology_node_title: str
     effect: str
     target_kind: str
+    weight: int | None
+    weight_set_by: str  # кто последним поставил вес: автор или рецензент
     source: str  # human | qwen
     suggested: dict[str, Any]  # от Qwen: датасет, метод, каких данных не хватает
     created_at: datetime
@@ -113,6 +116,10 @@ def similar_ideas(db: Session, title: str, statement: str) -> list[SimilarOut]:
     return found[:SIMILAR_MAX]
 
 
+class WeightIn(BaseModel):
+    weight: Literal[1, 2, 3] | None
+
+
 class DecisionIn(BaseModel):
     status: Literal["accepted", "rejected"]
     note: str = ""
@@ -149,6 +156,7 @@ def _out(db: Session, h: Hypothesis) -> HypothesisOut:
         methodology_node=node_number(db, h.methodology_node_id),
         methodology_node_title=_node_title(db, h.methodology_node_id),
         effect=h.effect or "", target_kind=h.target_kind or "",
+        weight=h.weight, weight_set_by=_login(db, h.weight_set_by),
         source=h.source, suggested=h.suggested or {},
         refs=[RefOut(kind=r.kind, kbrag_id=r.kbrag_id, title=r.title, doi=r.doi, quote=r.quote)
               for r in refs],
@@ -182,7 +190,8 @@ def propose(
                    statement=body.statement, rationale=body.rationale, direction=body.direction,
                    status="proposed", author_id=user.id,
                    methodology_node_id=node_id(db, body.methodology_node),
-                   effect=body.effect, target_kind=body.target_kind)
+                   effect=body.effect, target_kind=body.target_kind, weight=body.weight,
+                   weight_set_by=user.id if body.weight else None)
     db.add(h)
     db.flush()
     for ref in body.refs:
@@ -207,6 +216,18 @@ def add_ref(
     if h.author_id != user.id and user.role == "reader":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Добавить опору может автор или researcher")
     _add_ref(db, h, body)
+    db.commit()
+    return _out(db, h)
+
+
+@router.put("/{code}/weight", response_model=HypothesisOut)
+def set_weight(
+    code: str, body: WeightIn, db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, ReviewerRole],
+) -> HypothesisOut:
+    """Вес связи меняет рецензент (или owner) при любом статусе; автор ставит его при отправке."""
+    h = _get(db, code)
+    h.weight, h.weight_set_by = body.weight, user.id if body.weight else None
     db.commit()
     return _out(db, h)
 

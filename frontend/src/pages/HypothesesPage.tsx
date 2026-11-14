@@ -14,9 +14,13 @@ import {
   listHypotheses,
   linkType,
   proposeHypothesis,
+  setHypothesisWeight,
   similarHypotheses,
   TARGET_KIND_LABEL,
   type TargetKind,
+  type Weight,
+  WEIGHT_LABEL,
+  WEIGHTS,
 } from "../api/hypotheses";
 import { kbSearch } from "../api/kb";
 import { useMe } from "../auth/useAuth";
@@ -113,6 +117,70 @@ function SimilarCheck({ title, statement, refs, onAddRef }: {
   );
 }
 
+/** Выбор силы связи; пустое значение — «не знаю». */
+function WeightSelect({ value, onChange, id }: { value: Weight | null; onChange: (w: Weight | null) => void; id?: string }) {
+  return (
+    <select id={id} value={value ?? ""} onChange={(e) => onChange(e.target.value ? (Number(e.target.value) as Weight) : null)}>
+      <option value="">не знаю</option>
+      {WEIGHTS.map((w) => (
+        <option key={w} value={w}>
+          {w} — {WEIGHT_LABEL[w]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Сила связи на карточке: кто поставил; рецензент может изменить. */
+function WeightFact({ h, canChange }: { h: Hypothesis; canChange: boolean }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState<Weight | null>(h.weight);
+  const save = useMutation({
+    mutationFn: () => setHypothesisWeight(h.code, value),
+    onSuccess: () => {
+      setEditing(false);
+      void qc.invalidateQueries({ queryKey: ["hypotheses"] });
+    },
+  });
+  const selectId = `weight-${h.code}`;
+  return (
+    <div>
+      <dt>{editing ? <label htmlFor={selectId}>Сила связи</label> : "Сила связи"}</dt>
+      <dd>
+        {editing ? (
+          <span className="weight-edit">
+            <WeightSelect id={selectId} value={value} onChange={setValue} />
+            <button type="button" className="btn-primary" onClick={() => save.mutate()} disabled={save.isPending}>
+              Сохранить
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => { setEditing(false); setValue(h.weight); }}>
+              Отмена
+            </button>
+            {save.error && <span role="alert" className="error">{save.error.message}</span>}
+          </span>
+        ) : (
+          <>
+            {h.weight ? (
+              <>
+                {h.weight} — {WEIGHT_LABEL[h.weight]}
+                {h.weight_set_by && <span className="muted"> · поставил {h.weight_set_by}</span>}
+              </>
+            ) : (
+              <span className="muted">не указана</span>
+            )}
+            {canChange && (
+              <button type="button" className="btn-ghost weight-change" onClick={() => setEditing(true)}>
+                Изменить
+              </button>
+            )}
+          </>
+        )}
+      </dd>
+    </div>
+  );
+}
+
 function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () => void }) {
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
@@ -122,9 +190,10 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
   const [node, setNode] = useState("");
   const [effect, setEffect] = useState<Effect | "">("");
   const [target, setTarget] = useState<TargetKind | "">("");
+  const [weight, setWeight] = useState<Weight | null>(null);
   const [refs, setRefs] = useState<KbRefIn[]>(initialRef ? [initialRef] : []);
   const m = useMutation({
-    mutationFn: () => proposeHypothesis({ title, statement, rationale, direction, methodology_node: node, effect, target_kind: target, refs }),
+    mutationFn: () => proposeHypothesis({ title, statement, rationale, direction, methodology_node: node, effect, target_kind: target, weight, refs }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["hypotheses"] });
       onDone();
@@ -184,7 +253,12 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
             ))}
           </select>
         </label>
+        <label className="field" htmlFor="h-weight">
+          Сила связи
+          <WeightSelect id="h-weight" value={weight} onChange={setWeight} />
+        </label>
         <p className="muted field-hint">
+          Сила связи — насколько, по-вашему, заметно влияние: слабая, средняя или сильная. Рецензент может её изменить.
           Нефинансовые результаты — например, ESG-рейтинг или выбросы. Единого перечня нет, поэтому уточните в утверждении,
           какой именно показатель.
         </p>
@@ -294,6 +368,7 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
           <dt>Тип связи</dt>
           <dd>{linkType(h.effect, h.target_kind) || <span className="muted">не указан</span>}</dd>
         </div>
+        <WeightFact h={h} canChange={canDecide} />
       </dl>
       <HypothesisPath status={h.status} />
       <NextStep
