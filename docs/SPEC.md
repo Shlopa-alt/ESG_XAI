@@ -137,6 +137,7 @@ POST            /runs/{id}/stop
 
 GET             /methodology          (текущая версия + разделы)
 GET             /methodology/versions, /methodology/versions/{v}, /methodology/diff?from=&to=
+                -- versions: [{version, notes, created_at, points, rules}] — points: пунктов в версии, rules: из них разделов-правил
 GET/POST        /change-requests
 PATCH           /change-requests/{code}            (смена статуса с проверкой инварианта; title/description/proposed_content/new_title — правка текста researcher+, пока нет одобряющей рецензии)
 POST            /reviews

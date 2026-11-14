@@ -935,3 +935,11 @@ details[open] > .node-head .node-preview { display: none; }
   .graph-canvas { height: 62vh; min-height: 380px; }
   .graph-panel { max-height: none; overflow: visible; }
 }
+
+/* --- «Как меняется методика» на «Обзоре» --- */
+.funnel { list-style: none; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.funnel li { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; border-left: 3px solid var(--ok-bg); }
+.evolution { list-style: none; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.evolution li { display: grid; grid-template-columns: 56px 96px 1fr; gap: 12px; align-items: baseline; line-height: 1.5; }
+.evolution-version { font-weight: 600; color: var(--accent); }
+@media (max-width: 640px) { .evolution li { grid-template-columns: 48px 1fr; } .evolution li > span:last-child { grid-column: 1 / -1; } }
