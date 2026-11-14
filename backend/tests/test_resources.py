@@ -158,3 +158,81 @@ def test_transformer_prefers_gpu_only_when_executor_exists(db_session: Session) 
     assert on.resource == "gpu" and on.minutes < off.minutes
     mlp = resources.estimate(db_session, Settings(), t, {**params, "architecture": "mlp"}, 300)
     assert mlp.minutes < off.minutes
+
+
+def test_excel_rows_are_counted_for_limits(db_session: Session, tmp_path: Any) -> None:
+    """У книги Excel число строк при загрузке не записывается — оценка считает их сама, иначе
+    большая книга шла бы по 200 строкам мимо лимитов и квоты."""
+    from openpyxl import Workbook
+
+    path = tmp_path / "DS-50" / "v1" / "big.xlsx"
+    path.parent.mkdir(parents=True)
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["[R]", "[x1]", "[x2]"])
+    for i in range(1500):
+        ws.append([i, i * 2, i % 7])
+    wb.save(path)
+    s = Settings(esg_data_dir=str(tmp_path), esg_data_host="C:/data")
+    snap = DatasetSnapshot(
+        dataset_id=1,
+        version="v1",
+        sha256="a" * 64,
+        storage_path="C:/data/DS-50/v1/big.xlsx",
+        row_count=None,
+    )
+    assert resources.rows_of(s, snap) == 1500
+    est = resources.estimate(
+        db_session,
+        s,
+        TEMPLATES["lab-mlp"],
+        {"target": "[R]", "features": ["[x1]", "[x2]"]},
+        resources.rows_of(s, snap),
+    )
+    assert (
+        not est.warnings
+        and est.minutes
+        > resources.estimate(
+            db_session,
+            s,
+            TEMPLATES["lab-mlp"],
+            {"target": "[R]", "features": ["[x1]", "[x2]"]},
+            200,
+        ).minutes
+    )
+
+
+def test_calibration_is_per_network(db_session: Session, settings: Settings) -> None:
+    start = datetime(2026, 11, 1, tzinfo=UTC)
+    for _ in range(3):  # трансформер шёл вчетверо дольше оценки — перцептрон это не трогает
+        db_session.add(
+            Run(
+                experiment_id=1,
+                status="done",
+                template="lab-mlp",
+                config={"params": {"architecture": "transformer"}, "estimate": {"minutes": 10}},
+                started_at=start,
+                finished_at=start + timedelta(minutes=40),
+            )
+        )
+    db_session.commit()
+    p = {"target": "[R]", "features": ["[x]"]}
+    mlp = resources.estimate(
+        db_session, settings, TEMPLATES["lab-mlp"], {**p, "architecture": "mlp"}, 100
+    )
+    tr = resources.estimate(
+        db_session, settings, TEMPLATES["lab-mlp"], {**p, "architecture": "transformer"}, 100
+    )
+    assert "по формуле метода" == mlp.basis and "3 прошлым расчётам (×4.00)" in tr.basis
+
+
+def test_estimate_survives_garbage_params(make_client, snapshot: int) -> None:  # type: ignore[no-untyped-def]
+    r = make_client("rd", "reader").post(
+        "/api/runs/estimate",
+        json={
+            "template": "lab-mlp",
+            "snapshot_id": snapshot,
+            "params": {"features": 5, "context": "x", "trials": "[x]"},
+        },
+    )
+    assert r.status_code == 200, r.text
