@@ -100,6 +100,28 @@ describe("Обзор", () => {
     expect(screen.getByRole("link", { name: "Открыть методику" })).toHaveAttribute("href", "/methodology");
   });
 
+  it("показывает, как менялась методика: версии от первой к последней и путь от статей к изменениям", async () => {
+    stub("reader", {
+      "/methodology/versions": [
+        { version: "[в2]", notes: "[CR-2]: [второе изменение]", created_at: "2026-02-01T00:00:00Z", points: 6, rules: 2 },
+        { version: "[в1]", notes: "[CR-1]: [первое изменение]", created_at: "2026-01-01T00:00:00Z", points: 4, rules: 1 },
+      ],
+      "/change-requests": [{ ...CR, status: "accepted" }],
+    });
+    renderAt("/");
+    const list = await screen.findByRole("list", { name: "Версии методики" });
+    expect(within(list).getAllByRole("listitem").map((li) => li.querySelector(".mono")?.textContent)).toEqual(["[в1]", "[в2]"]);
+    expect(within(list).getByText(/6 пунктов \(\+2\)/)).toBeInTheDocument();
+    const funnel = screen.getByRole("list", { name: "Путь от статей к изменениям методики" });
+    expect(within(funnel).getByText("изменений методики принято").previousSibling?.textContent).toBe("1");
+  });
+
+  it("без версий методики говорит, когда появится первая", async () => {
+    stub("reader");
+    renderAt("/");
+    expect(await screen.findByText(/Версий методики пока нет/)).toBeInTheDocument();
+  });
+
   it("без опубликованной методики цель всё равно объяснена", async () => {
     stub("reader");
     renderAt("/");

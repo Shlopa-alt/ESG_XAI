@@ -46,6 +46,16 @@ class VersionOut(BaseModel):
     version: str
     notes: str
     created_at: datetime
+    points: int  # пунктов методики в этой версии — для «как менялась методика» на «Обзоре»
+    rules: int  # из них разделов-правил
+
+
+def _counts(content: object) -> tuple[int, int]:
+    """Пункты и разделы-правила снимка версии; у старых снимков без вида узел считается разделом."""
+    if not isinstance(content, dict):
+        return 0, 0
+    kinds = [n.get("kind", "section") if isinstance(n, dict) else "section" for n in content.values()]
+    return len(kinds), kinds.count("section")
 
 
 class MethodologyOut(BaseModel):
@@ -217,7 +227,12 @@ def _tree(db: Session) -> list[SectionOut]:
             dependencies=[Depends(current_user)])
 def versions(db: Annotated[Session, Depends(get_db)]) -> list[VersionOut]:
     rows = db.scalars(select(MethodologyVersion).order_by(MethodologyVersion.id.desc()))
-    return [VersionOut(version=v.version, notes=v.notes, created_at=v.created_at) for v in rows]
+    out = []
+    for v in rows:
+        points, rules = _counts(v.sections_content)
+        out.append(VersionOut(version=v.version, notes=v.notes, created_at=v.created_at,
+                              points=points, rules=rules))
+    return out
 
 
 def _version(db: Session, v: str) -> MethodologyVersion:
