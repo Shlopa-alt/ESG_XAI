@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     # предел размера файла и токен обработчика (deploy/windows/kb_import_worker.py)
     kb_inbox_dir: str = "/data/kb_inbox"
     kb_import_max_mb: int = 60
+    # Агент сбора данных по ссылкам из статей: предел файла, который платформа принимает
+    link_max_mb: int = 25
     kb_import_token: str = ""
 
     # Запуск экспериментов из формы: очередь Celery в Redis, исполнитель runner/ (контейнер

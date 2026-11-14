@@ -253,6 +253,24 @@ def worker_draft_context(body: DraftContextIn,
     return data_drafts.context(d, body.command)
 
 
+@router.post("/worker/links-context", dependencies=[Worker])
+def worker_links_context(db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
+    """Какие ссылки статей агент уже разобрал (черновик есть в любом статусе) — их не скачивать."""
+    return {"known": data_drafts.known_links(db)}
+
+
+@router.post("/worker/link-drafts", dependencies=[Worker])
+def worker_link_drafts(body: TableDraftsIn, db: Annotated[Session, Depends(get_db)],
+                       settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, list[int]]:
+    """Черновики агента сбора данных — по одному: файл проверяется, сохраняется и разбирается здесь."""
+    job = db.get(QwenJob, body.job)
+    if job is None or job.kind != "data_links":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет задачи сбора данных №{body.job}")
+    created = data_drafts.create_link_drafts(db, settings, job, body.drafts)
+    db.commit()
+    return {"created": created}
+
+
 @router.post("/worker/next", response_model=JobOut, dependencies=[Worker],
              responses={204: {"description": "очередь пуста"}})
 def next_job(db: Annotated[Session, Depends(get_db)]) -> JobOut | Response:
@@ -302,6 +320,10 @@ def job_result(job_id: int, body: JobResult, db: Annotated[Session, Depends(get_
                       "proposed": len(body.result.get("drafts") or []), "created": drafts}
         total = db.scalar(select(func.count()).select_from(DataDraft).where(DataDraft.qwen_job_id == job.id)) or 0
         job.message = f"Черновиков данных: {total}" if total else "Новых таблиц-наблюдений нет"
+    if job.kind == "data_links" and body.status == "done":
+        total = db.scalar(select(func.count()).select_from(DataDraft).where(DataDraft.qwen_job_id == job.id)) or 0
+        job.message = (f"Черновиков данных по ссылкам из статей: {total}" if total
+                       else "Новых ссылок на данные авторов не найдено")
     if job.kind == "table_edit" and body.status == "done":
         job.message = data_drafts.apply_edit_result(db, job, body.result)
     if job.kind == "experiment" and body.status == "done":

@@ -31,6 +31,15 @@ class DataDraft(Base):
     table_number: Mapped[int] = mapped_column(Integer)
     page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     caption: Mapped[str] = mapped_column(Text, default="")
+    # table — таблица статьи; link — данные по ссылке из статьи (агент сбора данных, задача data_links):
+    # где данные (source_url), в каком предложении статьи ссылка, какой файл скачан и куда
+    source_kind: Mapped[str] = mapped_column(String(16), default="table")
+    source_url: Mapped[str] = mapped_column(String(2048), default="")
+    link_context: Mapped[str] = mapped_column(Text, default="")
+    file_url: Mapped[str] = mapped_column(String(2048), default="")
+    file_name: Mapped[str] = mapped_column(String(512), default="")
+    file_path: Mapped[str] = mapped_column(String(1024), default="")
+    file_sha256: Mapped[str] = mapped_column(String(64), default="")
     # что предлагается: название и описание будущего датасета, таблица наблюдений
     title: Mapped[str] = mapped_column(String(512), default="")
     description: Mapped[str] = mapped_column(Text, default="")

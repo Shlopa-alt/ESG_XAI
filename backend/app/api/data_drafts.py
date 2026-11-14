@@ -7,6 +7,8 @@ Qwen, создавать датасет и отклонять — researcher+.
 """
 
 import re
+import shutil
+from pathlib import Path
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
@@ -42,6 +44,8 @@ class DraftItem(BaseModel):
     n_cols: int
     dataset: str
     created_at: datetime
+    source_kind: str  # table — таблица статьи; link — данные по ссылке из статьи
+    source_url: str
 
 
 class JobState(BaseModel):
@@ -63,6 +67,10 @@ class DraftOut(DraftItem):
     decided_by: str
     decided_at: datetime | None
     jobs: list[JobState]  # последние команды Qwen по этому черновику
+    link_context: str  # предложение статьи, где стоит ссылка на данные
+    file_url: str
+    file_name: str
+    file_sha256: str
 
 
 class DraftEdit(BaseModel):
@@ -116,6 +124,8 @@ def _item(db: Session, d: DataDraft) -> dict[str, Any]:
         "n_cols": len(d.columns or []),
         "dataset": ds.code if ds else "",
         "created_at": d.created_at,
+        "source_kind": d.source_kind or "table",
+        "source_url": d.source_url,
     }
 
 
@@ -160,6 +170,10 @@ def _out(db: Session, d: DataDraft) -> DraftOut:
         decided_by=user.login if user else "",
         decided_at=d.decided_at,
         jobs=_jobs(db, d),
+        link_context=d.link_context,
+        file_url=d.file_url,
+        file_name=d.file_name,
+        file_sha256=d.file_sha256,
     )
 
 
@@ -241,7 +255,11 @@ def approve(
     d = _get(db, did)
     _open(d)
     if len(d.rows or []) < 3 or not d.columns:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "В таблице меньше трёх строк")
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Файл по ссылке не скачан или в нём нет таблицы — скачайте данные по ссылке источника "
+            "и загрузите их в набор данных вручную" if d.source_kind == "link" else "В таблице меньше трёх строк",
+        )
     description = "\n\n".join(
         x for x in (body.description.strip() or d.description, svc.provenance(d)) if x
     )
@@ -249,7 +267,8 @@ def approve(
         code=next_code(db, Dataset.code, "DS", 2),
         title=body.title.strip(),
         description=description[:20000],
-        source_url=f"https://doi.org/{d.doi}" if d.doi else "",
+        # по ссылке из статьи — адрес самих данных; таблица статьи — ссылка на статью
+        source_url=d.source_url if d.source_kind == "link" else (f"https://doi.org/{d.doi}" if d.doi else ""),
         license="",
         access_level=body.access_level,
     )
@@ -257,9 +276,16 @@ def approve(
     db.flush()
     version = _version(db, ds, "")
     stem = re.sub(r"[^\w.-]+", "_", f"{d.doc_id}_t{d.table_number}").strip("_.")[:120] or "table"
-    target = _root(settings, ds) / "snapshots" / version / f"{stem}.csv"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(svc.to_csv(d), encoding="utf-8")
+    original = Path(d.file_path) if d.source_kind == "link" and d.file_path else None
+    if original is not None and original.is_file() and not svc.edited(d):
+        # исходный файл как есть: все строки и листы, тот же sha256, что скачал агент
+        target = _root(settings, ds) / "snapshots" / version / original.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(original, target)
+    else:
+        target = _root(settings, ds) / "snapshots" / version / f"{stem}.csv"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(svc.to_csv(d), encoding="utf-8")
     d.status, d.dataset_id, d.decided_by, d.decided_at = (
         "approved",
         ds.id,
@@ -290,6 +316,28 @@ def reject(
     svc.note(d, "reject", user.login, f"отклонён: {d.note}")
     db.commit()
     return _out(db, d)
+
+
+@router.post("/links-scan", status_code=status.HTTP_202_ACCEPTED)
+def links_scan(
+    body: ScanIn, db: Annotated[Session, Depends(get_db)], user: Annotated[User, Researcher]
+) -> dict[str, int]:
+    """Агент сбора данных: ссылки на данные в одной статье (doc_id) или во всех статьях ветки esg —
+    скачивает доступное и кладёт черновиками сюда (задача Qwen data_links)."""
+    if not body.doc_id and user.role != "owner":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Поиск по всем статьям может занять часы и задержать другие задачи Qwen: его запускает владелец",
+        )
+    job = enqueue(
+        db,
+        "data_links",
+        {"doc_id": body.doc_id} if body.doc_id else {},
+        trigger="manual",
+        user_id=user.id,
+    )
+    db.commit()
+    return {"job": job.id}
 
 
 @router.post("/scan", status_code=status.HTTP_202_ACCEPTED)

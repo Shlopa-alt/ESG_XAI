@@ -5,16 +5,21 @@
 операции, применяет их платформа, и каждая правка с её операциями пишется в журнал черновика.
 """
 
+import base64
 import csv
+import hashlib
 import io
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import Settings
 from app.models import DataDraft, QwenJob
+from app.services.data_files import EXCEL, TEXT, excel_sheets
 
 MAX_ROWS = 5000
 MAX_COLS = 60
@@ -277,6 +282,8 @@ def to_csv(draft: DataDraft) -> str:
 
 def provenance(draft: DataDraft) -> str:
     """Откуда данные и что с ними сделано — в описание датасета."""
+    if draft.source_kind == "link":
+        return link_provenance(draft)
     src = f"Таблица {draft.table_number}" + (f" (с. {draft.page})" if draft.page else "")
     src += f" статьи «{draft.article_title}»" if draft.article_title else f" статьи {draft.doc_id}"
     src += f", DOI {draft.doi}" if draft.doi else ""
@@ -292,6 +299,26 @@ def provenance(draft: DataDraft) -> str:
         for h in draft.history or []
         if h.get("kind") in ("parse", "manual", "qwen")
     ]
+    if steps:
+        lines.append("Обработка: " + "; ".join(steps)[:3000])
+    return "\n".join(lines)
+
+
+def link_provenance(draft: DataDraft) -> str:
+    """Данные по ссылке из статьи: статья, источник данных, файл, журнал; условия — по статье."""
+    art = f"«{draft.article_title}»" if draft.article_title else draft.doc_id
+    lines = [f"Источник данных: {draft.source_url} — ссылка из статьи {art}"
+             + (f", DOI {draft.doi}" if draft.doi else "") + f"; KBRAG {draft.kb_path}/{draft.doc_id}."]
+    if draft.file_url:
+        lines.append(f"Скачан файл {draft.file_name}: {draft.file_url}, sha256 {draft.file_sha256}.")
+    if not draft.doi:
+        lines.append("DOI статьи нет — требует источника: найдите ссылку на статью, прежде чем "
+                     "опираться на эти данные.")
+    # данные по ссылке из статьи — производные данные (правило 8): условия задаёт сама статья
+    lines.append("Условия использования определяет статья: при публикации результатов ссылайтесь на неё "
+                 "и на источник данных, проверьте их лицензии.")
+    steps = [str(h.get("text")) for h in draft.history or []
+             if h.get("kind") in ("found", "download", "parse", "manual", "qwen")]
     if steps:
         lines.append("Обработка: " + "; ".join(steps)[:3000])
     return "\n".join(lines)
@@ -388,3 +415,125 @@ def context(draft: DataDraft, command: str) -> dict[str, Any]:
         "row_count": len(draft.rows),
         "history": [str(h.get("text")) for h in (draft.history or [])[-10:]],
     }
+
+
+# --- данные по ссылкам из статей (агент сбора данных, задача Qwen data_links) ---
+
+
+def known_links(db: Session) -> list[list[str]]:
+    """Какие ссылки статей уже разобраны (любой статус): агент их снова не скачивает."""
+    q = select(DataDraft.doc_id, DataDraft.source_url).where(DataDraft.source_kind == "link")
+    return [[d, u] for d, u in db.execute(q)]
+
+
+def table_from_file(path: Path) -> tuple[list[str], list[list[Cell]], str]:
+    """Таблица из скачанного файла (CSV/TSV/XLSX — первый лист-таблица): столбцы, строки (не больше
+    MAX_ROWS) и как разобрано. Не таблица — OpError."""
+    suffix = path.suffix.lower()
+    if suffix in EXCEL:
+        sheets = excel_sheets(path, limit=MAX_ROWS)
+        if not sheets:
+            raise OpError("в книге нет листа-таблицы со строкой заголовка")
+        name, (cols, rows) = next(iter(sheets.items()))
+        how = f"книга Excel, лист «{name}»" + (f" (листов-таблиц {len(sheets)})" if len(sheets) > 1 else "")
+    elif suffix in TEXT:
+        with path.open(encoding="utf-8-sig", errors="replace", newline="") as f:
+            first = f.readline()
+            f.seek(0)
+            try:
+                dialect: type[csv.Dialect] | csv.Dialect = csv.Sniffer().sniff(first, delimiters=",;\t")
+            except csv.Error:
+                dialect = csv.excel
+            reader = csv.reader(f, dialect)
+            cols = next(reader, [])
+            rows = [list(r) for _, r in zip(range(MAX_ROWS), reader, strict=False)]
+        how = "CSV"
+    else:
+        raise OpError(f"формат {suffix or 'без расширения'} не разбирается — нужен CSV или XLSX")
+    columns, data = clean_table(list(cols), [list(r) for r in rows])
+    # числа из текста — как у таблиц статей: «1 234,5» → 1234.5
+    for j in range(len(columns)):
+        vals = [r[j] for r in data if r[j] is not None]
+        nums = [number(v) for v in vals]
+        if vals and sum(n is not None for n in nums) >= 0.8 * len(vals):
+            for r in data:
+                r[j] = number(r[j]) if r[j] is not None else None
+    return columns, data, f"{how}, {len(data)} строк × {len(columns)} столбцов"
+
+
+def create_link_drafts(
+    db: Session, settings: Settings, job: QwenJob, items: list[dict[str, Any]]
+) -> list[int]:
+    """Ссылки на данные от агента → черновики. Файл проверяется (sha256, размер), сохраняется в
+    папке данных и разбирается в таблицу; файла нет — черновик со ссылкой, чтобы скачать вручную.
+    Повтор той же ссылки той же статьи — нет."""
+    have = {(d, u.lower()) for d, u in known_links(db)}
+    created = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        doc_id = str(item.get("doc_id") or "")[:512]
+        source = str(item.get("source_url") or "")[:2048]
+        if not doc_id or not source.startswith(("http://", "https://")) or (doc_id, source.lower()) in have:
+            continue
+        d = DataDraft(
+            doc_id=doc_id,
+            kb_path=str(item.get("kb_path") or "esg")[:256],
+            article_title=str(item.get("article_title") or "")[:1024],
+            doi=str(item.get("doi") or "")[:256],
+            table_number=0,
+            source_kind="link",
+            source_url=source,
+            link_context=str(item.get("link_context") or "")[:4000],
+            title=str(item.get("title") or "")[:512],
+            description=str(item.get("description") or "")[:4000],
+            columns=[],
+            rows=[],
+            qwen_job_id=job.id,
+            history=[],
+        )
+        db.add(d)
+        db.flush()
+        why = f"; ИИ-помощник: {item.get('why')}" if item.get("why") else ""
+        note(d, "found", "агент сбора данных",
+             f"Ссылка в статье ({item.get('reason') or 'похожа на данные'}): «{d.link_context[:400]}»{why}")
+        _attach_file(d, settings, item.get("file"), str(item.get("failure") or ""))
+        have.add((doc_id, source.lower()))
+        created.append(d.id)
+    return created
+
+
+def _attach_file(d: DataDraft, settings: Settings, file: Any, failure: str) -> None:
+    if not isinstance(file, dict):
+        note(d, "download", "агент сбора данных", f"Файл не скачан: {failure or 'причина не указана'}")
+        return
+    try:
+        data = base64.b64decode(str(file.get("content_b64") or ""), validate=True)
+    except ValueError:
+        note(d, "download", "платформа", "Файл не принят: содержимое повреждено")
+        return
+    sha = hashlib.sha256(data).hexdigest()
+    if sha != file.get("sha256") or len(data) > settings.link_max_mb * 2**20:
+        why = "sha256 не совпал с присланным" if sha != file.get("sha256") else f"больше {settings.link_max_mb} МБ"
+        note(d, "download", "платформа", f"Файл не принят: {why}")
+        return
+    name = re.sub(r"[^\w.-]+", "_", str(file.get("name") or "data")).strip("_.")[:120] or "data"
+    target = Path(settings.esg_data_dir) / "_article_data" / str(d.id) / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    d.file_url = str(file.get("url") or "")[:2048]
+    d.file_name, d.file_path, d.file_sha256 = name, str(target), sha
+    note(d, "download", "агент сбора данных",
+         f"Скачан файл {name} ({len(data)} байт, sha256 {sha[:12]}…) с {d.file_url}")
+    try:
+        d.columns, d.rows, how = table_from_file(target)
+    except OpError as exc:
+        note(d, "parse", "платформа", f"Таблица не разобрана: {exc}")
+        return
+    cut = f" (в черновике первые {MAX_ROWS})" if len(d.rows) >= MAX_ROWS else ""
+    note(d, "parse", "платформа", f"Разбор: {how}{cut}")
+
+
+def edited(d: DataDraft) -> bool:
+    """Таблицу черновика правили люди или Qwen — в набор идёт правленая таблица, а не исходный файл."""
+    return any(h.get("kind") in ("manual", "qwen") for h in d.history or [])

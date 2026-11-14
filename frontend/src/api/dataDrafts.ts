@@ -16,12 +16,14 @@ export interface DraftItem {
   n_cols: number;
   dataset: string;
   created_at: string;
+  source_kind: "table" | "link"; // таблица статьи или данные по ссылке из статьи (агент сбора данных)
+  source_url: string;
 }
 
 export interface DraftHistory {
   at: string;
   who: string;
-  kind: "parse" | "manual" | "qwen" | "command" | "approve" | "reject";
+  kind: "parse" | "manual" | "qwen" | "command" | "approve" | "reject" | "found" | "download";
   text: string;
 }
 
@@ -44,6 +46,10 @@ export interface Draft extends DraftItem {
   decided_by: string;
   decided_at: string | null;
   jobs: DraftJob[];
+  link_context: string;
+  file_url: string;
+  file_name: string;
+  file_sha256: string;
 }
 
 /** Операция правки — те же, что выбирает Qwen по команде (backend/app/services/data_drafts.py). */
@@ -80,6 +86,9 @@ export const rejectDraft = (id: number, note: string) =>
   call<Draft>(`/data-drafts/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) });
 export const scanTables = (docId = "") =>
   call<{ job: number }>("/data-drafts/scan", { method: "POST", body: JSON.stringify({ doc_id: docId }) });
+
+export const scanLinks = (docId = "") =>
+  call<{ job: number }>("/data-drafts/links-scan", { method: "POST", body: JSON.stringify({ doc_id: docId }) });
 
 export const DRAFT_STATUS: Record<DraftStatus, string> = {
   proposed: "ждёт решения",

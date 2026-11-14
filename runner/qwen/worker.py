@@ -18,6 +18,8 @@ vLLM (`docker compose --profile llm up -d llm` в KBRAG) и дождаться �
                платформа проверяет опоры и ставит гипотезы на рецензию
   experiment — по принятой гипотезе: метод из библиотеки, срез, параметры (столбцы), протокол и что
                подтвердит или опровергнет гипотезу; платформа проверяет и показывает человеку
+  data_links — агент сбора данных: ссылки на данные в статьях банка (data_links.py), Qwen решает,
+               данные ли это авторов, доступный файл скачивается; черновик набора создаёт платформа
   report     — текст отчёта по завершённому эксперименту: резюме, вердикт по гипотезе, интерпретация,
                что это значит для задания методики, ограничения, что дальше; цифры и графики — из
                run.json, числа текста платформа сверяет с расчётом
@@ -1036,6 +1038,78 @@ EDIT_SCHEMA = {"type": "object", "required": ["explanation", "ops"], "properties
                        "value": _S, "factor": {"type": "number"}, "name": _S, "descending": {"type": "boolean"}}}}}}
 
 
+LINK_SYSTEM = """Ты — исследователь лаборатории ESG. Тебе дают ссылку из научной статьи и предложение, в котором
+она стоит. Реши, ведёт ли ссылка на данные, которыми пользовались САМИ авторы этой статьи (их выборка,
+файлы для повтора расчёта, дополнительные материалы с таблицами). Ссылки на чужие статьи, журналы,
+программы, лицензии и сайты организаций без конкретного набора — не данные авторов.
+"authors_data" — true/false; "title" — короткое название набора по-русски (что в нём: показатели, объекты,
+годы), если понятно; "description" — одной-двумя фразами, что это за данные, только из предложения и
+названия статьи, без выдумок; "why" — почему так решил, одной фразой.
+Ответ — только JSON по схеме."""
+LINK_SCHEMA = {"type": "object", "required": ["authors_data", "title", "description", "why"],
+               "properties": {"authors_data": {"type": "boolean"}, "title": _S, "description": _S, "why": _S}}
+LINK_MAX_MB = float(os.environ.get("LINK_MAX_MB", "25"))
+
+
+def job_data_links(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Агент сбора данных: ссылки на данные в статьях банка → скачанный файл → черновик в «Данных».
+    Ссылку находит и скачивает код (data_links.py), что это данные авторов — решает Qwen; черновик
+    создаёт платформа: разбор таблицы, файл, журнал обработки, ссылки на статью и источник."""
+    import data_links as L  # рядом с worker.py; только stdlib
+
+    want = str(job["payload"].get("doc_id") or "")
+    docs = kbrag_get("documents", {"kb": "esg", "limit": 20000}, ctx["kbrag_token"], timeout_s=120).get("documents") or []
+    own = _own_reports(ctx["kbrag_token"])
+    docs = [d for d in docs if (not want or d.get("doc_id") == want)
+            and d.get("doc_id") not in own and not str(d.get("doc_id") or "").startswith("lab_")]
+    known = {(d, u.lower()) for d, u in ctx["platform"].post("links-context")[1].get("known") or []}
+    acquired = Path(ctx["kbrag"]) / ".local" / "acquired"
+    limit = int(LINK_MAX_MB * 2**20)
+    skipped: list[str] = []
+    sent = asked = failed = 0
+    for meta in docs:
+        doc_id = str(meta.get("doc_id") or "")
+        path = acquired / f"{doc_id}.docling.json"
+        if not path.exists():
+            skipped.append(f"{doc_id}: нет разметки docling")
+            continue
+        text = L.article_text(json.loads(path.read_text(encoding="utf-8")))
+        for link in L.find_links(text):
+            if (doc_id, link["url"].lower()) in known:
+                continue
+            asked += 1
+            try:
+                prompt = "\n".join([f"СТАТЬЯ: {meta.get('title', '')}", f"ССЫЛКА: {link['url']}",
+                                    f"ПРЕДЛОЖЕНИЕ: {link['context']}", f"ПРИЗНАК: {link['reason']}"])
+                verdict = ask_json(prompt, 300, LINK_SYSTEM, LINK_SCHEMA)
+            except (ValueError, TimeoutError, URLError, OSError) as exc:
+                # модель не ответила — решает признак кода, человек посмотрит черновик
+                failed += 1
+                verdict = {"authors_data": True, "title": "", "description": "",
+                           "why": f"модель не ответила ({exc}); признак: {link['reason']}"}
+            if not verdict.get("authors_data"):
+                skipped.append(f"{doc_id}: {link['url']} — не данные авторов: {verdict.get('why', '')}"[:300])
+                continue
+            item: dict[str, Any] = {
+                "doc_id": doc_id, "kb_path": "esg", "article_title": meta.get("title", ""),
+                "doi": _doi(str(meta.get("url") or "")), "source_url": link["url"], "link_context": link["context"],
+                "reason": link["reason"], "title": verdict.get("title", ""),
+                "description": verdict.get("description", ""), "why": verdict.get("why", ""), "file": None,
+                "failure": "",
+            }
+            try:
+                item["file"] = L.fetch_table(link["url"], limit)
+            except L.FetchError as exc:
+                item["failure"] = str(exc)[:1000]
+            post_retry(ctx["platform"], "link-drafts", {"job": job["id"], "drafts": [item]})
+            known.add((doc_id, link["url"].lower()))
+            sent += 1
+            log(f"  {doc_id}: {link['url']} → " + (f"файл {item['file']['name']}" if item["file"] else item["failure"]))
+    if asked and failed == asked and not sent:
+        raise RuntimeError(f"модель не ответила ни по одной ссылке ({failed})")
+    return {"sent": sent, "skipped": skipped[:200], "docs": len(docs)}
+
+
 def job_table_edit(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     """Команда словами по черновику → операции; применяет и проверяет их платформа."""
     did = int(job["payload"].get("draft") or 0)
@@ -1071,6 +1145,7 @@ HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]] 
     "cr": job_cr,
     "tables": job_tables,
     "table_edit": job_table_edit,
+    "data_links": job_data_links,
 }
 
 
@@ -1092,6 +1167,8 @@ def describe(kind: str, result: dict[str, Any]) -> str:
     if kind == "tables":
         return (f"Статей {result.get('docs', 0)}: таблиц-наблюдений {result.get('sent', 0) + len(result.get('drafts') or [])} "
                 "(черновики создаст платформа)")
+    if kind == "data_links":
+        return f"Статей {result.get('docs', 0)}: ссылок на данные авторов {result.get('sent', 0)} (черновики создаёт платформа)"
     if kind == "table_edit":
         return f"Операций {len(result.get('ops') or [])}: {result.get('explanation', '')}"
     if kind == "hypotheses":

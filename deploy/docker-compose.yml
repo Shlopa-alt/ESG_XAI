@@ -49,6 +49,8 @@ services:
       # deploy/windows/kb_import_worker.py на машине KBRAG (токен — KB_IMPORT_TOKEN)
       KB_IMPORT_TOKEN: ${KB_IMPORT_TOKEN:-}
       KB_IMPORT_MAX_MB: ${KB_IMPORT_MAX_MB:-60}
+      # Агент сбора данных по ссылкам из статей: предел файла, который принимает платформа
+      LINK_MAX_MB: ${LINK_MAX_MB:-25}
       # Запуск экспериментов из формы: очередь Celery в Redis, исполнитель runner-cpu
       REDIS_URL: redis://redis:6379/0
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
