@@ -447,12 +447,16 @@ function About({ d, canEdit }: { d: Draft; canEdit: boolean }) {
           <Link to={`/knowledge/article/${encodeURIComponent(d.doc_id)}`}>{d.article_title || d.doc_id}</Link>
           {d.doi && <span className="mono"> · DOI {d.doi}</span>}
         </dd>
-        <dt>Таблица</dt>
-        <dd>
-          {d.table_number}
-          {d.page ? `, с. ${d.page}` : ""}
-          {d.caption && <span className="muted"> — {d.caption}</span>}
-        </dd>
+        {d.source_kind !== "link" && (
+          <>
+            <dt>Таблица</dt>
+            <dd>
+              {d.table_number}
+              {d.page ? `, с. ${d.page}` : ""}
+              {d.caption && <span className="muted"> — {d.caption}</span>}
+            </dd>
+          </>
+        )}
         <dt>Найдена</dt>
         <dd>{day(d.created_at)}</dd>
       </dl>

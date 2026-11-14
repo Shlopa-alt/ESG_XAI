@@ -69,6 +69,8 @@ interface AnalysisChoice {
 function WhyMethod({ e }: { e: { config?: Record<string, unknown> } }) {
   const c = (e.config?.analysis ?? null) as AnalysisChoice | null;
   if (!c) return null;
+  // цитата статьи уже стоит отдельным блоком — в причинах её не повторяем
+  const why = (c.why ?? []).filter((w) => !(c.as_authors && c.evidence && w.includes(c.evidence)));
   return (
     <section className="card">
       <h2 className="h2">Почему этот метод</h2>
@@ -87,9 +89,9 @@ function WhyMethod({ e }: { e: { config?: Record<string, unknown> } }) {
           «{c.evidence}»{c.article && <cite> — {c.article}</cite>}
         </blockquote>
       )}
-      {(c.why ?? []).length > 0 && (
+      {why.length > 0 && (
         <ul className="list muted">
-          {(c.why ?? []).map((w) => (
+          {why.map((w) => (
             <li key={w}>{w}</li>
           ))}
         </ul>

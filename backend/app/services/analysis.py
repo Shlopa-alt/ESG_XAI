@@ -34,6 +34,8 @@ OUTCOMES: dict[str, tuple[str, ...]] = {
     "доходность": ("доходност", "return", "yield"),
 }
 LAG_WORDS = ("прош", "lag", "prev", "t-1", "предыдущ")
+# слова, которые есть почти в каждом пункте методики — по ним столбцы не сравниваются
+GENERIC = {"esg", "показатель", "показатели", "компании", "компаний", "данные", "задание"}
 YEAR = re.compile(r"(19|20)\d{2}")
 
 
@@ -51,6 +53,16 @@ class Recommendation:
     net: str = ""  # сеть из каталога (app/services/net_catalog.py)
     as_authors: bool = False  # повтор с сетью из статьи-источника
     evidence: str = ""  # цитата статьи, по которой определена сеть авторов
+
+
+def _columns(n: int) -> str:
+    """«1 числовой столбец», «4 числовых столбца», «5 числовых столбцов»."""
+    d, dd = n % 10, n % 100
+    if d == 1 and dd != 11:
+        return f"{n} числовой столбец"
+    if 2 <= d <= 4 and not 12 <= dd <= 14:
+        return f"{n} числовых столбца"
+    return f"{n} числовых столбцов"
 
 
 def _filled(v: Any) -> bool:
@@ -79,7 +91,7 @@ def target_candidates(node: MethodologySection | None, t: Table) -> list[dict[st
     if node is None:
         return []
     text = f"{node.title} {node.content}".lower()
-    words = _words(text)
+    words = _words(text) - GENERIC
     scored = []
     for c in t.numeric:
         name = c.lower()
@@ -96,9 +108,19 @@ def target_candidates(node: MethodologySection | None, t: Table) -> list[dict[st
                 if reasons
                 else f"в пункте {node.number} есть слова «{', '.join(common)}»"
             )
-            scored.append((score, c, why))
-    scored.sort(key=lambda s: (-s[0], t.columns.index(s[1])))
-    return [{"column": c, "reason": why} for _, c, why in scored[:5]]
+            scored.append((score, c, why, bool(reasons)))
+    # есть совпадения по смыслу результата (ROA, выручка…) — только они: общие слова пункта
+    # («инвестиции» в «ESG-инвестиции → ROA») чаще описывают входы, а не результат
+    if any(r for *_, r in scored):
+        scored = [s for s in scored if s[3]]
+    # при равном сходстве — более поздний год: его и предсказываем, ранний идёт как прошлый период
+    scored.sort(key=lambda s: (-s[0], -_year(s[1]), t.columns.index(s[1])))
+    return [{"column": c, "reason": why} for _, c, why, _ in scored[:5]]
+
+
+def _year(column: str) -> int:
+    years = [int(m.group(0)) for m in YEAR.finditer(column)]
+    return max(years, default=0)
 
 
 def guess_lag(target: str, numeric: list[str]) -> str:
@@ -155,7 +177,7 @@ def recommend(
         ok, why_not = _rows_note(rows, MIN_ROWS["lab-mlp"])
         mlp_why = [
             "Задача — предсказать числовой результат R по входам X: это постановка лаборатории, п. 3.1 методики.",
-            f"Входы X — {len(features)} числовых столбцов"
+            f"Входы X — {_columns(len(features))}"
             + (
                 f"; параметры Z — {', '.join(cats)} (категории, учитываются отдельно)"
                 if cats
@@ -250,7 +272,7 @@ def recommend(
                 params={"columns": compare, "invert": [], "sheet": t.sheet},
                 why=[
                     "Без целевого показателя задача — сравнить показатели между собой: нейросеть здесь не нужна.",
-                    f"Сравниваются {len(compare)} числовых столбцов"
+                    f"Сравниваются {_columns(len(compare))}"
                     + (
                         f" (первые {MAX_COMPARE} — остальные можно добавить)"
                         if len(numeric) > MAX_COMPARE

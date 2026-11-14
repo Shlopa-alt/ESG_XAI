@@ -121,7 +121,7 @@ def test_methodology_item_ranks_target_candidates(
         .json()
     )
     cands = [c["column"] for c in out["target_candidates"]]
-    assert cands[:2] == ["[ROA_2021]", "[ROA_2022]"]
+    assert cands[:2] == ["[ROA_2022]", "[ROA_2021]"]  # поздний год — результат, ранний — прошлый период
     assert "рентабельность активов" in out["target_candidates"][0]["reason"]
 
 
@@ -194,3 +194,15 @@ def test_launch_with_bad_params_leaves_no_check(
     replication = {"snapshot_id": sid, "template": "exp001-dow30", "params": {}}
     assert c.post("/api/analysis/launch", json=replication).status_code == 422
     assert db_session.scalars(select(Experiment)).all() == [] and queue == []
+
+
+def test_outcome_columns_beat_input_columns_sharing_words() -> None:
+    """«ESG-инвестиции → ROA»: результат — ROA, а не столбцы входов с теми же словами."""
+    from app.services.analysis import target_candidates
+    from app.services.data_files import Table
+
+    node = MethodologySection(number="1.1.1", title="[задание]: рентабельность активов (ROA) от ESG-инвестиций",
+                              content="", kind="task")
+    cols = ["[ESG-инвестиции: экология]", "[ROA 2022]", "[размер]"]
+    t = Table(columns=cols, numeric=set(cols))
+    assert [c["column"] for c in target_candidates(node, t)] == ["[ROA 2022]"]

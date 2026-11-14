@@ -186,6 +186,11 @@ export function Analysis() {
     retry: false,
   });
   const r = q.data;
+  // пункт методики идеи — сразу в поле, чтобы было видно, к чему относится анализ
+  const ideaNode = r?.hypothesis?.node ?? "";
+  useEffect(() => {
+    if (ideaNode && !node) setNode(ideaNode);
+  }, [ideaNode, node]);
   const candidates = new Set((r?.target_candidates ?? []).map((c) => c.column));
   const byKey = (key: string) => (templates.data ?? []).find((t) => t.key === key);
 
