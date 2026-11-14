@@ -11,6 +11,8 @@ const PIPE_RULE = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
 // «строка, столбец = значение»: строка — до первой запятой, значение — до «. » перед следующей парой или до конца
 const TRIPLE = /([^=,.]+?), ([^=]+?) = ([^=]*?)(?:\.\s+(?=[^=,.]+?, [^=]+? = )|\.?\s*$)/gy;
 const MIN_TRIPLES = 4;
+// число в ячейке: «0,12», «1 200», «−2,7», «18 %» — выравнивается вправо, как в остальных таблицах
+const NUMERIC = /^[-−+]?\d[\d\s]*([.,]\d+)?\s*%?$/; // \s в JS включает и неразрывный пробел
 
 function cells(line: string): string[] {
   return line
@@ -109,7 +111,9 @@ export function FragmentText({ text }: { text: string }) {
                 {b.rows.map((r, j) => (
                   <tr key={j}>
                     {r.map((c, k) => (
-                      <td key={k}>{c}</td>
+                      <td key={k} className={NUMERIC.test(c) ? "num" : undefined}>
+                        {c}
+                      </td>
                     ))}
                   </tr>
                 ))}

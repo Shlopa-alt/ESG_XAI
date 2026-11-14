@@ -14,6 +14,14 @@ describe("Таблица во фрагменте статьи", () => {
     expect(screen.getByText("[текст до]")).toBeInTheDocument();
     expect(screen.getByText("[текст после]")).toBeInTheDocument();
     expect(screen.queryByText(/\|/)).not.toBeInTheDocument();
+    expect(screen.getByText("[1]")).not.toHaveClass("num");
+  });
+
+  it("числа в ячейках выровнены вправо, как в остальных таблицах", () => {
+    render(<FragmentText text={["| [a] | [b] | [c] |", "|---|---|---|", "| [текст] | 1 200 | −2,7 % |"].join("\n")} />);
+    expect(screen.getByText("[текст]")).not.toHaveClass("num");
+    expect(screen.getByText("1 200")).toHaveClass("num");
+    expect(screen.getByText("−2,7 %")).toHaveClass("num");
   });
 
   it("пары «строка, столбец = значение» складываются в сетку", () => {
