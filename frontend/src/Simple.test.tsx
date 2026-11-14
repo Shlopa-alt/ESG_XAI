@@ -88,6 +88,24 @@ describe("Обзор", () => {
     expect(screen.getByText("ещё на рецензии")).toBeInTheDocument();
   });
 
+  it("начинается с цели: проверить методику, с её версией и спорными пунктами", async () => {
+    const node = (number: string, stability: string) => ({ number, title: "[пункт]", content: "", stability, kind: "section", parent: "", position: 0 });
+    stub("reader", { "/methodology": { version: "[версия]", sections: [node("1", "stable"), node("2", "draft"), node("3", "contested")] } });
+    renderAt("/");
+    expect(await screen.findByRole("heading", { name: "Наша цель — проверить методику лаборатории" })).toBeInTheDocument();
+    expect(await screen.findByText("Методика, версия [версия]")).toBeInTheDocument();
+    expect(screen.getByText("3 пункта · черновиков: 1 · оспаривается: 1")).toBeInTheDocument();
+    const outcomes = screen.getByRole("list", { name: "Что проверка может дать методике" });
+    expect(within(outcomes).getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.getByRole("link", { name: "Открыть методику" })).toHaveAttribute("href", "/methodology");
+  });
+
+  it("без опубликованной методики цель всё равно объяснена", async () => {
+    stub("reader");
+    renderAt("/");
+    expect(await screen.findByText("Пункты методики появятся здесь, когда её опубликуют")).toBeInTheDocument();
+  });
+
   it("без итогов говорит, что здесь появится", async () => {
     stub("reader");
     renderAt("/");
