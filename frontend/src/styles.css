@@ -925,6 +925,7 @@ details[open] > .node-head .node-preview { display: none; }
 
 /* --- «Проверить, есть ли похожее» в форме идеи --- */
 .similar { display: flex; flex-direction: column; gap: 10px; }
+.similar .review-form { align-items: center; }
 .similar-result { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
 .similar-result .h3 { margin: 4px 0 0; }
 .similar-result .list { margin: 0; }
