@@ -529,16 +529,6 @@ export function Data() {
   const [creating, setCreating] = useState(false);
   const datasets = Array.isArray(ds.data) ? ds.data : [];
   const withFiles = datasets.filter((d) => (d.snapshots ?? 0) > 0).length;
-  // как менялась методика: версии от первой к последней и путь «статьи → идеи → проверки → изменения»
-  const history = Array.isArray(vers.data) ? [...vers.data].reverse() : [];
-  const crList = Array.isArray(crs.data) ? crs.data : [];
-  const funnel = [
-    { value: kb.data?.documents, label: "статей в банке" },
-    { value: ideas.length, label: "идей предложено", note: `ИИ-помощником: ${ideas.filter((h) => h.source === "qwen").length}` },
-    { value: ideas.filter((h) => h.status === "accepted" || h.status === "testing" || h.status === "tested").length, label: "взято в проверку" },
-    { value: experiments.filter((e) => e.outcome).length, label: "проверок с итогом" },
-    { value: crList.filter((c) => c.status === "accepted").length, label: "изменений методики принято" },
-  ];
   return (
     <>
       <Head
