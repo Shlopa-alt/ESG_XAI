@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { listDatasets, listExperiments, OUTCOME_LABEL } from "../api/experiments";
 import { listHypotheses } from "../api/hypotheses";
 import { kbDocuments, kbStats, kbTree } from "../api/kb";
-import { listCrs } from "../api/methodology";
+import { getMethodology, listCrs, listVersions } from "../api/methodology";
 import { useMe } from "../auth/useAuth";
 import { NewDataset } from "./DatasetPage";
 import { KbLive } from "./KbLive";
@@ -76,7 +76,14 @@ export function Overview() {
   const kb = useQuery({ queryKey: ["kb", "stats", "esg"], queryFn: () => kbStats("esg") });
   const tree = useQuery({ queryKey: ["kb", "kbs"], queryFn: () => kbTree("esg") });
   const lab = useQuery({ queryKey: ["kb", "docs", "esg.lab"], queryFn: () => kbDocuments("esg.lab") });
+  const meth = useQuery({ queryKey: ["methodology"], queryFn: getMethodology });
+  const vers = useQuery({ queryKey: ["versions"], queryFn: listVersions });
   const role = useMe().data?.role;
+  // ошибка загрузки методики здесь не показывается: блок цели остаётся понятным и без чисел
+  const methodology = { version: meth.data?.version ?? null, sections: Array.isArray(meth.data?.sections) ? meth.data.sections : [] };
+  const points = methodology.sections;
+  const drafts = points.filter((s) => s.stability === "draft").length;
+  const contested = points.filter((s) => s.stability === "contested").length;
   const experiments = Array.isArray(exps.data) ? exps.data : [];
   const ideas = Array.isArray(hyps.data) ? hyps.data : [];
   const datasets = Array.isArray(ds.data) ? ds.data : [];
@@ -87,6 +94,16 @@ export function Overview() {
   const accepted = ideas.filter((h) => h.status === "accepted").length;
   const inReview = experiments.filter((e) => e.status === "review").length;
   const withFiles = datasets.filter((d) => (d.snapshots ?? 0) > 0).length;
+  // как менялась методика: версии от первой к последней и путь «статьи → идеи → проверки → изменения»
+  const history = Array.isArray(vers.data) ? [...vers.data].reverse() : [];
+  const crList = Array.isArray(crs.data) ? crs.data : [];
+  const funnel = [
+    { value: kb.data?.documents, label: "статей в банке" },
+    { value: ideas.length, label: "идей предложено", note: `ИИ-помощником: ${ideas.filter((h) => h.source === "qwen").length}` },
+    { value: ideas.filter((h) => h.status === "accepted" || h.status === "testing" || h.status === "tested").length, label: "взято в проверку" },
+    { value: experiments.filter((e) => e.outcome).length, label: "проверок с итогом" },
+    { value: crList.filter((c) => c.status === "accepted").length, label: "изменений методики принято" },
+  ];
   const topics = (tree.data?.nodes ?? [])
     .filter((n) => n.path.startsWith("esg.") && n.depth === 1 && (n.subtree ?? 0) > 0)
     .sort((a, b) => (b.subtree ?? 0) - (a.subtree ?? 0))
@@ -114,6 +131,71 @@ export function Overview() {
           </div>
         </div>
         <HeroArt />
+      </section>
+
+      <section className="overview-block" aria-labelledby="goal-title">
+        <h2 className="section-title" id="goal-title">
+          Наша цель — проверить методику лаборатории
+        </h2>
+        <p className="overview-text">
+          В центре платформы — методика лаборатории: что мы изучаем и по каким правилам считаем. Её написали учёные
+          лаборатории, а здесь её проверяют на научных статьях и настоящих данных. Методика не застывшая: она меняется, когда
+          проверка даёт для этого основание, и каждое изменение читает рецензент.
+        </p>
+        <div className="card goal-card">
+          <div className="goal-state">
+            <span className="tile-icon">
+              <Icon name="edit" />
+            </span>
+            <span>
+              <strong>{methodology.version ? `Методика, версия ${methodology.version}` : "Методика"}</strong>
+              <span className="muted goal-note">
+                {points.length > 0
+                  ? `${points.length} ${word(points.length, "пункт", "пункта", "пунктов")}` +
+                    (drafts ? ` · черновиков: ${drafts}` : "") +
+                    (contested ? ` · оспаривается: ${contested}` : "")
+                  : "Пункты методики появятся здесь, когда её опубликуют"}
+              </span>
+            </span>
+            <Link to="/methodology" className="goal-link">
+              Открыть методику
+            </Link>
+          </div>
+          <ul className="goal-outcomes" aria-label="Что проверка может дать методике">
+            <li>
+              <strong>Подтвердить</strong>
+              <span className="muted">расчёт показал, что правило работает</span>
+            </li>
+            <li>
+              <strong>Опровергнуть</strong>
+              <span className="muted">правило не подтвердилось, и это тоже результат</span>
+            </li>
+            <li>
+              <strong>Доработать</strong>
+              <span className="muted">результат неоднозначен или правило работает не везде — уточнить его или добавить новое</span>
+            </li>
+          </ul>
+        </div>
+        <div className="two-grid">
+          <article className="card study-card">
+            <span className="eyebrow">ЗАДАЧА 1</span>
+            <h3 className="h3">Сверить с тем, что уже известно</h3>
+            <p>
+              Предлагал ли кто-то такое правило раньше и считал ли его на данных? Ищем ответ в банке статей: ИИ-помощник
+              выписывает из статей утверждения с цитатами, и их можно открыть и прочитать.
+            </p>
+            <Link to="/knowledge">Банк статей</Link>
+          </article>
+          <article className="card study-card">
+            <span className="eyebrow">ЗАДАЧА 2</span>
+            <h3 className="h3">Улучшать методику по ходу работы</h3>
+            <p>
+              ИИ-помощник читает статьи и предлагает идеи, эксперт выбирает, какие стоит взять. Идею проверяем на данных, и то,
+              что подтвердилось, переносим в методику через предложение её изменить.
+            </p>
+            <Link to="/hypotheses">Идеи для проверки</Link>
+          </article>
+        </div>
       </section>
 
       <section className="tiles" aria-label="Что уже есть на платформе">
@@ -267,6 +349,54 @@ export function Overview() {
         {found.length > 0 && (
           <p className="muted">Отрицательный результат здесь такая же находка, как и положительный: он показывает, на что нельзя опираться.</p>
         )}
+      </section>
+
+      <section className="overview-block" aria-labelledby="evolution-title">
+        <h2 className="section-title" id="evolution-title">
+          Как меняется методика
+        </h2>
+        <p className="overview-text">
+          Итог работы — не только отдельные проверки, но и сама методика: какой она была в начале и какой стала после
+          разбора статей и расчётов. Каждое изменение опирается на проверку, факт с цитатой или статью с DOI и прошло рецензию.
+        </p>
+        <ol className="card funnel" aria-label="Путь от статей к изменениям методики">
+          {funnel.map((f) => (
+            <li key={f.label}>
+              <span className="tile-value">{f.value === undefined ? "—" : fmt(f.value)}</span>
+              <span className="tile-label">{f.label}</span>
+              {f.note && <span className="muted tile-note">{f.note}</span>}
+            </li>
+          ))}
+        </ol>
+        {history.length === 0 ? (
+          <p className="muted">Версий методики пока нет: первая появится, когда примут первое изменение.</p>
+        ) : (
+          <ol className="card evolution" aria-label="Версии методики">
+            {history.map((v, i) => {
+              const prev = history[i - 1];
+              const delta = prev?.points !== undefined && v.points !== undefined ? v.points - prev.points : 0;
+              return (
+                <li key={v.version}>
+                  <span className="mono evolution-version">{v.version}</span>
+                  <span className="muted mono">{new Date(v.created_at).toLocaleDateString("ru-RU")}</span>
+                  <span>
+                    {v.notes || "без описания"}
+                    {v.points !== undefined && (
+                      <span className="muted">
+                        {" "}
+                        · {v.points} {word(v.points, "пункт", "пункта", "пунктов")}
+                        {delta > 0 && ` (+${delta})`}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+        <p>
+          <Link to="/methodology">История версий и отличия между ними</Link>
+        </p>
       </section>
 
       <section className="overview-block" aria-labelledby="trust-title">

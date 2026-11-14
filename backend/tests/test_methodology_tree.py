@@ -73,3 +73,16 @@ def test_experiment_links_to_task(make_client, tree) -> None:  # type: ignore[no
     assert c.patch("/api/experiments/EXP-900", json={"methodology_node": "Н1.В1.З1"}).json()["methodology_node"] == "Н1.В1.З1"
     assert c.patch("/api/experiments/EXP-900", json={"methodology_node": "Н9"}).status_code == 422
     assert c.get("/api/experiments").json()[0]["methodology_node"] == "Н1.В1.З1"
+
+
+def test_versions_count_points_for_overview(make_client, tree) -> None:  # type: ignore[no-untyped-def]
+    """«Как менялась методика» на «Обзоре»: у версии — сколько пунктов и из них разделов-правил."""
+    owner = make_client("boss", "owner")
+    r = owner.post("/api/change-requests", json={
+        "section": "Н1.В1.З1", "action": "add", "new_kind": "section", "new_title": "Правило",
+        "title": "новое правило", "proposed_content": "текст правила"})
+    _accept(owner, r.json()["code"])
+    [v] = make_client("r", "reader").get("/api/methodology/versions").json()
+    # было 4 пункта (О1, Н1, Н1.В1, Н1.В1.З1), принят раздел под заданием — стало 5, разделов 2
+    assert (v["points"], v["rules"]) == (5, 2)
+    assert v["notes"].startswith(r.json()["code"])

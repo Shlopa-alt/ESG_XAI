@@ -57,6 +57,8 @@ export interface Version {
   version: string;
   notes: string;
   created_at: string;
+  points?: number; // пунктов методики в версии
+  rules?: number; // из них разделов-правил
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {

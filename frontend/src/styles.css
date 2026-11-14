@@ -514,6 +514,10 @@ a.btn-ghost.active { border-color: var(--accent); }
 @media (max-width: 640px) { .article-title { font-size: 22px; } }
 .fragments { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 14px; }
 .fragments p { margin: 4px 0; line-height: 1.55; white-space: pre-wrap; }
+.fragment-table { margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.fragment-table .table { font-size: 13px; }
+.fragment-table .table tr:last-child td { border-bottom: 0; }
+.fragment-table .table th { white-space: normal; }
 .code { margin: 8px 0 0; padding: 12px; background: #14231c; color: #e8efea; border-radius: 8px; font: 13px "IBM Plex Mono", monospace; white-space: pre-wrap; overflow-x: auto; }
 
 /* --- графики отчёта (палитра: слоты 1–3 проверенной категориальной палитры) --- */
@@ -550,6 +554,8 @@ a.btn-ghost.active { border-color: var(--accent); }
 .viz-whisker { position: absolute; top: 7px; height: 2px; background: #9aa8a0; border-radius: 1px; }
 .viz-dot { position: absolute; top: 2px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--series-1); box-shadow: 0 0 0 2px var(--surface); cursor: default; }
 .viz-dot.active, .viz-dot:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+/* столбец и точка — кнопки, чтобы значение открывалось с клавиатуры (Tab); вид как у прежних меток */
+.viz-bar, .viz-dot { border: 0; padding: 0; appearance: none; font: inherit; }
 .viz-row.with-value { grid-template-columns: minmax(110px, 26%) minmax(0, 1fr) 56px; }
 .viz-value { font-size: 12px; color: var(--text); white-space: nowrap; text-align: right; }
 .viz-tip { position: absolute; bottom: calc(100% + 8px); transform: translateX(-50%); z-index: 5; padding: 6px 10px; background: #17201b; color: #fff; border-radius: 6px; font-size: 12px; white-space: nowrap; pointer-events: none; }
@@ -866,6 +872,13 @@ details[open] > .node-head .node-preview { display: none; }
 .overview-block { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; scroll-margin-top: 80px; }
 .overview-band { display: flex; flex-direction: column; gap: 18px; margin-top: 20px; padding: clamp(20px, 3vw, 32px); border-radius: 18px; background: var(--ok-bg); }
 .overview-callout { margin: 0; padding: 14px 18px; max-width: 80ch; border-radius: 12px; background: var(--warn-bg); color: var(--warn-text); line-height: 1.55; }
+.goal-card { display: flex; flex-direction: column; gap: 14px; }
+.goal-state { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.goal-state > span:nth-child(2) { display: flex; flex-direction: column; gap: 2px; flex: 1 1 220px; }
+.goal-note { font-size: 14px; }
+.goal-link { font-weight: 500; }
+.goal-outcomes { list-style: none; margin: 0; padding: 14px 0 0; border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.goal-outcomes li { display: flex; flex-direction: column; gap: 2px; line-height: 1.45; }
 .tile { transition: transform 0.12s, border-color 0.12s; }
 .tile:hover { transform: translateY(-2px); }
 .tile-icon, .how-icon, .trust-icon { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--ok-bg); color: var(--accent); }
@@ -922,6 +935,33 @@ details[open] > .node-head .node-preview { display: none; }
   .graph-canvas { height: 62vh; min-height: 380px; }
   .graph-panel { max-height: none; overflow: visible; }
 }
+
+/* --- «Как меняется методика» на «Обзоре» --- */
+.funnel { list-style: none; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.funnel li { display: flex; flex-direction: column; gap: 2px; padding-left: 14px; border-left: 3px solid var(--ok-bg); }
+.evolution { list-style: none; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.evolution li { display: grid; grid-template-columns: 56px 96px 1fr; gap: 12px; align-items: baseline; line-height: 1.5; }
+.evolution-version { font-weight: 600; color: var(--accent); }
+@media (max-width: 640px) { .evolution li { grid-template-columns: 48px 1fr; } .evolution li > span:last-child { grid-column: 1 / -1; } }
+
+/* --- «Проверить, есть ли похожее» в форме идеи --- */
+.similar { display: flex; flex-direction: column; gap: 10px; }
+.similar .review-form { align-items: center; }
+.similar-result { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+.similar-result .h3 { margin: 4px 0 0; }
+.similar-result .list { margin: 0; }
+.similar-quote { margin: 4px 0; line-height: 1.5; }
+/* --- задание методики и тип связи у идеи --- */
+.idea-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 16px; margin: 0; }
+.idea-facts div { display: flex; flex-direction: column; gap: 2px; }
+.idea-facts dt { font-size: 13px; color: var(--text-muted); }
+.idea-facts dd { margin: 0; }
+.field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 16px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.field-row legend { padding: 0; margin-bottom: 6px; font-weight: 500; }
+.field-row select { width: 100%; }
+.weight-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.idea-facts .weight-change { margin-left: 8px; min-height: 32px; padding: 0 10px; font-size: 13px; }
+.field-row .field-hint { grid-column: 1 / -1; margin: 0; font-size: 13px; }
 
 /* --- анализ данных: карточки рекомендаций --- */
 .reco-list { display: flex; flex-direction: column; gap: 12px; }

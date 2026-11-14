@@ -324,6 +324,49 @@ describe("Подсказка на карточке проверки", () => {
 });
 
 describe("Карточка идеи", () => {
+  it("показывает задание методики с названием и тип связи, а если их нет — так и пишет", async () => {
+    api({
+      hypotheses: [
+        { ...HYP, refs: [], methodology_node: "[Н1]", methodology_node_title: "[задание]", effect: "increases", target_kind: "nonfinancial" },
+        { ...HYP, code: "H-002", title: "[без связи]", refs: [], methodology_node: "", methodology_node_title: "", effect: "", target_kind: "" },
+      ],
+    });
+    renderAt("/hypotheses");
+    await screen.findByText("[без связи]");
+    expect(screen.getByText("повышает · нефинансовые результаты")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "[Н1] [задание]" })).toHaveAttribute("href", "/methodology");
+    expect(screen.getByText("не указан")).toBeInTheDocument();
+    expect(screen.getByText("не указано")).toBeInTheDocument();
+  });
+
+  it("сила связи видна с автором; рецензент меняет её, исследователь — нет", async () => {
+    const h = { ...HYP, refs: [], status: "proposed", weight: 2, weight_set_by: "[автор]" };
+    api({ hypotheses: [h] });
+    renderAt("/hypotheses");
+    expect(await screen.findByText(/поставил \[автор\]/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Изменить" })).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
+
+    const puts: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.includes("/auth/me")) return Promise.resolve(json({ ...USER, role: "reviewer" }));
+        if (init?.method === "PUT") {
+          puts.push({ url, body: JSON.parse(String(init.body)) });
+          return Promise.resolve(json({ ...h, weight: 3, weight_set_by: "[рецензент]" }));
+        }
+        if (url.includes("/hypotheses")) return Promise.resolve(json([h]));
+        return Promise.resolve(json([]));
+      }),
+    );
+    renderAt("/hypotheses");
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    await userEvent.selectOptions(screen.getByLabelText("Сила связи"), "3");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(puts).toEqual([{ url: "/api/hypotheses/H-001/weight", body: { weight: 3 } }]));
+  });
+
   it("у предложенной идеи источники раскрыты: они нужны для решения", async () => {
     const refs = [{ kind: "article", kbrag_id: "d", title: "[статья]", doi: "", quote: "[цитата]" }];
     api({ hypotheses: [{ ...HYP, status: "proposed", refs }, { ...HYP, code: "H-002", title: "[вторая]", status: "testing", refs }] });
@@ -331,5 +374,59 @@ describe("Карточка идеи", () => {
     await screen.findByText("[идея]");
     const [first] = screen.getAllByText(/Источники в банке статей/).map((el) => el.closest("details"));
     expect(first).toHaveAttribute("open");
+  });
+});
+
+describe("Форма идеи: есть ли похожее", () => {
+  const hit = (doc_id: string, title: string) => ({
+    chunk_id: 1, doc_id, ord: 0, title, year: null, journal: null, url: "https://doi.org/10.0000/[doi]", authors: [], headings: [], pages: [3], text: "[фрагмент]", score: 1,
+  });
+  function stubForm() {
+    const posts: string[] = [];
+    const bodies: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          posts.push(url);
+          bodies.push(JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>);
+          if (url.includes("/hypotheses/similar")) {
+            return Promise.resolve(json([{ code: "H-001", title: "[похожая идея]", status: "proposed", source: "qwen", share: 0.5 }]));
+          }
+          return Promise.resolve(json({ detail: "нет правила" }, 500));
+        }
+        if (url.includes("/auth/me")) return Promise.resolve(json({ ...USER, role: "reader" }));
+        // один документ двумя фрагментами — в списке он один
+        if (url.includes("/kb/search")) return Promise.resolve(json({ hits: [hit("d1", "[статья банка]"), hit("d1", "[статья банка]")] }));
+        if (url.includes("/hypotheses")) return Promise.resolve(json([]));
+        return Promise.resolve(json([]));
+      }),
+    );
+    return { posts, bodies };
+  }
+
+  it("показывает похожие идеи и статьи, статью можно взять источником, ничего не отправляя", async () => {
+    const { posts, bodies } = stubForm();
+    const ui = userEvent.setup();
+    renderAt("/hypotheses");
+    await ui.click(await screen.findByRole("button", { name: "Предложить идею" }));
+    const check = screen.getByRole("button", { name: "Проверить, есть ли похожее" });
+    expect(check).toBeDisabled();
+    await ui.type(screen.getByLabelText("Коротко, о чём идея"), "[[новая идея]"); // «[[» — буквальная скобка для user-event
+    await ui.click(check);
+    expect(await screen.findByRole("link", { name: "H-001" })).toHaveAttribute("href", "#H-001");
+    expect(screen.getByText("[похожая идея]", { exact: false })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "[статья банка]" })).toHaveLength(1);
+    await ui.click(screen.getByRole("button", { name: "взять источником" }));
+    expect(screen.getByRole("button", { name: "уже источник" })).toBeDisabled();
+    expect(screen.getByText(/Источник в банке статей/)).toBeInTheDocument();
+    expect(posts).toEqual(["/api/hypotheses/similar"]);
+    // источник со всем, что нужно для основания: DOI, ветка банка, цитата, страница
+    await ui.type(screen.getByLabelText("Проверяемое утверждение"), "[[утверждение для проверки]");
+    await ui.click(screen.getByRole("button", { name: "Отправить на рассмотрение" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(bodies[1]?.refs).toEqual([
+      { kind: "article", kbrag_id: "d1", kb_path: "esg", title: "[статья банка]", doi: "10.0000/[doi]", quote: "[фрагмент]", page: 3 },
+    ]);
   });
 });

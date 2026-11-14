@@ -44,6 +44,8 @@ ExperimentLink(experiment_id, kb_ref_id, relation[tests|uses_method|replicates|m
 
 Hypothesis(id, code H-001 UNIQUE, title, statement, rationale, direction,
            status[proposed|accepted|rejected|testing|tested], decision_note, decided_by,
+           effect[increases|decreases|no_effect|mixed|""], target_kind[financial|nonfinancial|""],
+           weight[1|2|3|NULL], weight_set_by,       -- сила связи: ставит автор, меняет рецензент
            experiment_id, author_id, created_at)
 HypothesisRef(hypothesis_id, kb_ref_id)                 -- опоры гипотезы в базе знаний
      -- узлы платформы (эксперименты) на графе KBRAG
@@ -83,6 +85,7 @@ GET             /kb/kbs                               (дерево баз esg.*
 GET             /kb/search          ?q=&kb=           (→ KBRAG /api/search)
 GET             /kb/articles        ?kb=              (→ /api/documents)
 GET             /kb/articles/{doc_id}                 (→ /api/document, /api/article)
+GET             /kb/pdf             ?doc_id=          (→ /api/pdf: PDF статьи; KBRAG отдаёт его тем, кому видна статья)
 GET             /kb/graph           ?kb=&focus=       (→ /api/network + узлы экспериментов из ExperimentLink)
 GET             /kb/facts           ?entity=&kb=      (→ /api/facts)
 POST            /kb/refs                              (зафиксировать KbRef на статью или факт)
@@ -119,6 +122,8 @@ GET             /datasets/{code}
 POST            /datasets/{code}/snapshots            (загрузка среза датасета)
 
 GET/POST        /hypotheses                          (POST — любой вошедший)
+POST            /hypotheses/similar   {title, statement}  (похожие уже предложенные идеи — подсказка до отправки; любой вошедший)
+PUT             /hypotheses/{code}/weight  {weight: 1|2|3|null}  (сила связи; reviewer, owner)
 GET             /hypotheses/{code}
 POST            /hypotheses/{code}/refs              (автор или researcher+)
 PATCH           /hypotheses/{code}                   (reviewer/owner: accepted | rejected с причиной)
@@ -136,6 +141,7 @@ POST            /runs/{id}/stop
 
 GET             /methodology          (текущая версия + разделы)
 GET             /methodology/versions, /methodology/versions/{v}, /methodology/diff?from=&to=
+                -- versions: [{version, notes, created_at, points, rules}] — points: пунктов в версии, rules: из них разделов-правил
 GET/POST        /change-requests
 PATCH           /change-requests/{code}            (смена статуса с проверкой инварианта; title/description/proposed_content/new_title — правка текста researcher+, пока нет одобряющей рецензии)
 POST            /reviews

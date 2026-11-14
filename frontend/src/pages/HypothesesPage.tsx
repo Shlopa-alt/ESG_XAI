@@ -4,22 +4,183 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
   decideHypothesis,
+  type Effect,
+  EFFECT_LABEL,
   H_BADGE,
   H_STATUS_LABEL,
   type HStatus,
   type Hypothesis,
   type KbRefIn,
   listHypotheses,
+  linkType,
   proposeHypothesis,
+  setHypothesisWeight,
+  similarHypotheses,
+  TARGET_KIND_LABEL,
+  type TargetKind,
+  type Weight,
+  WEIGHT_LABEL,
+  WEIGHTS,
 } from "../api/hypotheses";
+import { kbSearch } from "../api/kb";
 import { useMe } from "../auth/useAuth";
 import { NodeSelect } from "../components/NodeSelect";
 import { ProposalPanel } from "../components/ProposalPanel";
 import { canReview, canRun, HypothesisPath, hypothesisNext, NextStep } from "../components/Ux";
+import { refFromHit } from "./KbLive";
 
 /** Опора, переданная со страницы базы знаний («Предложить гипотезу по этой статье»). */
 export interface ProposeState {
   ref?: KbRefIn;
+}
+
+const ARTICLES_SHOWN = 3;
+
+/** Есть ли похожее: уже предложенные идеи и статьи банка о том же. Ничего не отправляет. */
+function SimilarCheck({ title, statement, refs, onAddRef }: {
+  title: string;
+  statement: string;
+  refs: KbRefIn[];
+  onAddRef: (r: KbRefIn) => void;
+}) {
+  const check = useMutation({
+    mutationFn: async () => {
+      const q = `${title} ${statement}`.trim();
+      // статьи ищутся по смыслу: русский запрос находит и английские статьи
+      const [ideas, hits] = await Promise.all([similarHypotheses(title, statement), kbSearch(q, "esg").catch(() => null)]);
+      const seen = new Set<string>();
+      const articles = (hits ?? []).filter((h) => !seen.has(h.doc_id) && seen.add(h.doc_id)).slice(0, ARTICLES_SHOWN);
+      return { ideas, articles, bankDown: hits === null };
+    },
+  });
+  const ready = title.trim().length >= 5;
+  const r = check.data;
+  return (
+    <div className="similar">
+      <div className="review-form">
+        <button type="button" className="btn-ghost" disabled={!ready || check.isPending} onClick={() => check.mutate()}>
+          {check.isPending ? "Ищем похожее…" : "Проверить, есть ли похожее"}
+        </button>
+        <span className="muted">{ready ? "Найдём похожие идеи и статьи банка о том же." : "Сначала коротко опишите идею."}</span>
+      </div>
+      {check.isError && (
+        <p className="error" role="alert">
+          Не удалось проверить: {check.error.message}
+        </p>
+      )}
+      {r && (
+        <div className="similar-result" aria-live="polite">
+          <h3 className="h3">Похожие идеи</h3>
+          {r.ideas.length === 0 ? (
+            <p className="muted">Похожих среди предложенных идей нет.</p>
+          ) : (
+            <ul className="list">
+              {r.ideas.map((i) => (
+                <li key={i.code}>
+                  <a href={`#${i.code}`} className="mono">
+                    {i.code}
+                  </a>{" "}
+                  {i.title} <span className={`badge ${H_BADGE[i.status]}`}>{H_STATUS_LABEL[i.status]}</span>
+                  {i.source === "qwen" && <span className="muted"> · предложил ИИ-помощник</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          {r.ideas.length > 0 && (
+            <p className="muted">Если это та же идея, лучше дополнить её, чем предлагать заново. Если ваша отличается — напишите в обосновании чем.</p>
+          )}
+          <h3 className="h3">Статьи о том же</h3>
+          {r.bankDown && <p className="muted">Банк статей сейчас недоступен, статьи не проверены.</p>}
+          {!r.bankDown && r.articles.length === 0 && <p className="muted">В банке статей ничего близкого не нашлось.</p>}
+          {r.articles.length > 0 && (
+            <ul className="list">
+              {r.articles.map((a) => {
+                const taken = refs.some((x) => x.kbrag_id === a.doc_id);
+                return (
+                  <li key={a.doc_id}>
+                    <Link to={`/knowledge/article/${encodeURIComponent(a.doc_id)}`}>{a.title || a.doc_id}</Link>
+                    {a.year && <span className="muted"> · {a.year}</span>}
+                    {a.pages.length > 0 && <span className="muted mono"> · с. {a.pages.join(", ")}</span>}
+                    <p className="muted similar-quote">{a.text.length > 240 ? `${a.text.slice(0, 240).replace(/\s+\S*$/, "")}…` : a.text}</p>
+                    <button type="button" className="link-btn" disabled={taken}
+                      onClick={() => onAddRef(refFromHit(a, "esg"))}>
+                      {taken ? "уже источник" : "взять источником"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Выбор силы связи; пустое значение — «не знаю». */
+function WeightSelect({ value, onChange, id }: { value: Weight | null; onChange: (w: Weight | null) => void; id?: string }) {
+  return (
+    <select id={id} value={value ?? ""} onChange={(e) => onChange(e.target.value ? (Number(e.target.value) as Weight) : null)}>
+      <option value="">не знаю</option>
+      {WEIGHTS.map((w) => (
+        <option key={w} value={w}>
+          {w} — {WEIGHT_LABEL[w]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Сила связи на карточке: кто поставил; рецензент может изменить. */
+function WeightFact({ h, canChange }: { h: Hypothesis; canChange: boolean }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState<Weight | null>(h.weight);
+  const save = useMutation({
+    mutationFn: () => setHypothesisWeight(h.code, value),
+    onSuccess: () => {
+      setEditing(false);
+      void qc.invalidateQueries({ queryKey: ["hypotheses"] });
+    },
+  });
+  const selectId = `weight-${h.code}`;
+  return (
+    <div>
+      <dt>{editing ? <label htmlFor={selectId}>Сила связи</label> : "Сила связи"}</dt>
+      <dd>
+        {editing ? (
+          <span className="weight-edit">
+            <WeightSelect id={selectId} value={value} onChange={setValue} />
+            <button type="button" className="btn-primary" onClick={() => save.mutate()} disabled={save.isPending}>
+              Сохранить
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => { setEditing(false); setValue(h.weight); }}>
+              Отмена
+            </button>
+            {save.error && <span role="alert" className="error">{save.error.message}</span>}
+          </span>
+        ) : (
+          <>
+            {h.weight ? (
+              <>
+                {h.weight} — {WEIGHT_LABEL[h.weight]}
+                {h.weight_set_by && <span className="muted"> · поставил {h.weight_set_by}</span>}
+              </>
+            ) : (
+              <span className="muted">
+                не указана{h.weight_set_by && ` · убрал ${h.weight_set_by}`}
+              </span>
+            )}
+            {canChange && (
+              <button type="button" className="btn-ghost weight-change" onClick={() => setEditing(true)}>
+                Изменить
+              </button>
+            )}
+          </>
+        )}
+      </dd>
+    </div>
+  );
 }
 
 function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () => void }) {
@@ -29,9 +190,12 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
   const [rationale, setRationale] = useState("");
   const [direction, setDirection] = useState("");
   const [node, setNode] = useState("");
+  const [effect, setEffect] = useState<Effect | "">("");
+  const [target, setTarget] = useState<TargetKind | "">("");
+  const [weight, setWeight] = useState<Weight | null>(null);
   const [refs, setRefs] = useState<KbRefIn[]>(initialRef ? [initialRef] : []);
   const m = useMutation({
-    mutationFn: () => proposeHypothesis({ title, statement, rationale, direction, methodology_node: node, refs }),
+    mutationFn: () => proposeHypothesis({ title, statement, rationale, direction, methodology_node: node, effect, target_kind: target, weight, refs }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["hypotheses"] });
       onDone();
@@ -67,6 +231,40 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
         Задание методики
         <NodeSelect id="h-node" value={node} onChange={setNode} />
       </label>
+      <fieldset className="field-row">
+        <legend>Тип связи: как фактор влияет и на какие показатели</legend>
+        <label className="field">
+          Как влияет
+          <select value={effect} onChange={(e) => setEffect(e.target.value as Effect | "")}>
+            <option value="">не знаю</option>
+            {(Object.keys(EFFECT_LABEL) as Effect[]).map((k) => (
+              <option key={k} value={k}>
+                {EFFECT_LABEL[k]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          На какие показатели
+          <select value={target} onChange={(e) => setTarget(e.target.value as TargetKind | "")}>
+            <option value="">не знаю</option>
+            {(Object.keys(TARGET_KIND_LABEL) as TargetKind[]).map((k) => (
+              <option key={k} value={k}>
+                {TARGET_KIND_LABEL[k]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field" htmlFor="h-weight">
+          Сила связи
+          <WeightSelect id="h-weight" value={weight} onChange={setWeight} />
+        </label>
+        <p className="muted field-hint">
+          Сила связи — насколько, по-вашему, заметно влияние: слабая, средняя или сильная. Рецензент может её изменить.
+          Нефинансовые результаты — например, ESG-рейтинг или выбросы. Единого перечня нет, поэтому уточните в утверждении,
+          какой именно показатель.
+        </p>
+      </fieldset>
       <label className="field">
         Направление
         <select value={direction} onChange={(e) => setDirection(e.target.value)}>
@@ -76,6 +274,7 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
           <option value="Методы">Методы</option>
         </select>
       </label>
+      <SimilarCheck title={title} statement={statement} refs={refs} onAddRef={(r) => setRefs([...refs, r])} />
       {refs.length > 0 && (
         <div className="muted">
           Источник в банке статей:
@@ -135,7 +334,7 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
     decide.mutate("rejected");
   };
   return (
-    <article className="card cr">
+    <article className="card cr" id={h.code}>
       <div className="kb-meta">
         <span className="mono">{h.code}</span>
         {h.direction && <span>· {h.direction}</span>}
@@ -153,6 +352,26 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
       </div>
       <h3 className="h3">{h.title}</h3>
       <p>{h.statement}</p>
+      <dl className="idea-facts">
+        <div>
+          <dt>Задание методики</dt>
+          <dd>
+            {h.methodology_node ? (
+              <Link to="/methodology">
+                <span className="mono">{h.methodology_node}</span>
+                {h.methodology_node_title && ` ${h.methodology_node_title}`}
+              </Link>
+            ) : (
+              <span className="muted">не указано</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Тип связи</dt>
+          <dd>{linkType(h.effect, h.target_kind) || <span className="muted">не указан</span>}</dd>
+        </div>
+        <WeightFact h={h} canChange={canDecide} />
+      </dl>
       <HypothesisPath status={h.status} />
       <NextStep
         action={

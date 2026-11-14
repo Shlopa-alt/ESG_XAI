@@ -158,6 +158,30 @@ describe("Банк статей", () => {
   });
 });
 
+describe("Статья", () => {
+  const article = (has_pdf: boolean) => ({
+    doc_id: "d1", title: "[статья]", authors: [], year: 2024, journal: null, doi: "10.0000/[doi]", url: null, pages: 9,
+    chunks: 1, kbs: ["esg.finance"], has_pdf, fragments_total: 1, next_offset: null,
+    fragments: [{ ord: 0, text: "[фрагмент]", headings: [], pages: [3, 4] }],
+  });
+
+  it("открывает PDF статьи целиком и на странице фрагмента", async () => {
+    stub("reader", { "/kb/article": article(true) });
+    renderAt("/knowledge/article/d1");
+    const open = await screen.findByRole("link", { name: "Открыть PDF статьи" });
+    expect(open).toHaveAttribute("href", "/api/kb/pdf?doc_id=d1");
+    expect(open).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link", { name: "Страница 4 в PDF" })).toHaveAttribute("href", "/api/kb/pdf?doc_id=d1#page=4");
+  });
+
+  it("без PDF так и говорит и отправляет к DOI", async () => {
+    stub("reader", { "/kb/article": article(false) });
+    renderAt("/knowledge/article/d1");
+    expect(await screen.findByText("PDF статьи в банке нет — полный текст по ссылке DOI")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /PDF/ })).not.toBeInTheDocument();
+  });
+});
+
 describe("Карта связей", () => {
   const openConcept = async (name: string) => {
     await userEvent.click(await screen.findByRole("button", { name }));

@@ -43,3 +43,65 @@ def test_experiment_from_accepted_hypothesis(make_client) -> None:  # type: igno
     exp = res.get(f"/api/experiments/{code}").json()
     assert exp["status"] == "planned" and exp["hypothesis"] == H["statement"]
     assert exp["links"][0]["relation"] == "motivated_by"
+
+
+# Похожие идеи — подсказка автору до отправки (п. 5 правок по совещанию).
+# SAME — заглушка-перефраз H, OTHER — заглушка на другую тему; не данные статей.
+SAME = {"title": "Раскрытие ESG-отчётности и стоимость долга",
+        "statement": "Чем полнее раскрытие, тем дешевле заёмный капитал."}
+OTHER = {"title": "[другая тема]", "statement": "[утверждение о другом]"}
+
+
+def test_similar_finds_paraphrase_and_changes_nothing(make_client) -> None:  # type: ignore[no-untyped-def]
+    c = make_client("reader1", "reader")
+    c.post("/api/hypotheses", json=H)
+    r = c.post("/api/hypotheses/similar", json=SAME)
+    assert r.status_code == 200, r.text
+    [hit] = r.json()
+    assert hit["code"] == "H-001" and hit["status"] == "proposed" and hit["share"] >= 0.4
+    assert c.post("/api/hypotheses/similar", json=OTHER).json() == []
+    assert len(c.get("/api/hypotheses").json()) == 1  # проверка ничего не создаёт
+
+
+def test_similar_needs_login(client) -> None:  # type: ignore[no-untyped-def]
+    assert client.post("/api/hypotheses/similar", json=SAME).status_code == 401
+
+
+# Тип связи у идеи (п. 6 правок по совещанию): как влияет и на какие показатели.
+def test_link_type_and_task_title(make_client, db_session) -> None:  # type: ignore[no-untyped-def]
+    from app.models import MethodologySection
+
+    db_session.add(MethodologySection(number="Н1", title="[направление]", content="",
+                                      kind="direction", position=1))
+    db_session.commit()
+    c = make_client("reader1", "reader")
+    r = c.post("/api/hypotheses", json={**H, "methodology_node": "Н1", "effect": "increases",
+                                        "target_kind": "nonfinancial"})
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert (body["effect"], body["target_kind"]) == ("increases", "nonfinancial")
+    assert (body["methodology_node"], body["methodology_node_title"]) == ("Н1", "[направление]")
+    # без типа связи — пусто, как у старых идей и идей ИИ-помощника
+    plain = c.post("/api/hypotheses", json=H).json()
+    assert (plain["effect"], plain["target_kind"], plain["methodology_node_title"]) == ("", "", "")
+    assert c.post("/api/hypotheses", json={**H, "effect": "boosts"}).status_code == 422
+
+
+def test_weight_set_by_author_changed_by_reviewer(make_client) -> None:  # type: ignore[no-untyped-def]
+    author = make_client("reader1", "reader")
+    r = author.post("/api/hypotheses", json={**H, "weight": 2})
+    assert r.status_code == 201, r.text
+    assert (r.json()["weight"], r.json()["weight_set_by"]) == (2, "reader1")
+    plain = author.post("/api/hypotheses", json=H).json()
+    assert (plain["weight"], plain["weight_set_by"]) == (None, "")
+    assert author.post("/api/hypotheses", json={**H, "weight": 4}).status_code == 422
+    # автор после отправки вес не меняет — это делает рецензент
+    assert author.put("/api/hypotheses/H-001/weight", json={"weight": 3}).status_code == 403
+    assert make_client("res", "researcher").put("/api/hypotheses/H-001/weight",
+                                                json={"weight": 3}).status_code == 403
+    rev = make_client("rev", "reviewer")
+    r = rev.put("/api/hypotheses/H-001/weight", json={"weight": 3})
+    assert r.status_code == 200 and (r.json()["weight"], r.json()["weight_set_by"]) == (3, "rev")
+    assert rev.put("/api/hypotheses/H-001/weight", json={"weight": 0}).status_code == 422
+    cleared = rev.put("/api/hypotheses/H-001/weight", json={"weight": None}).json()
+    assert (cleared["weight"], cleared["weight_set_by"]) == (None, "rev")

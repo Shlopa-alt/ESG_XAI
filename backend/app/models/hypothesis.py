@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -33,6 +33,14 @@ class Hypothesis(Base):
     # узел методики (задание, вариант или направление), к которому относится
     methodology_node_id: Mapped[int | None] = mapped_column(ForeignKey("methodology_sections.id"),
                                                             nullable=True)
+    # тип связи: как фактор влияет (increases | decreases | no_effect | mixed) и на какие
+    # показатели (financial | nonfinancial); пусто — не указан
+    effect: Mapped[str] = mapped_column(String(16), default="")
+    target_kind: Mapped[str] = mapped_column(String(16), default="")
+    # вес связи 1–3 (слабая, средняя, сильная): ставит автор, менять может рецензент;
+    # None — не указан
+    weight: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weight_set_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
