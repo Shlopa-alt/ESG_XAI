@@ -116,6 +116,7 @@ describe("Подбор сети по статье", () => {
           onLaunch(JSON.parse(String(init?.body)));
           return Promise.resolve(json({ experiment: "EXP-009", run_id: 3 }, 201));
         }
+        if (url.includes("/runs/3")) return Promise.resolve(json({ detail: "[нет]" }, 404));
         return Promise.resolve(json([]));
       }),
     );
@@ -129,5 +130,44 @@ describe("Подбор сети по статье", () => {
       hypothesis: "H-001",
       choice: { as_authors: true, net: "transformer", evidence: "[цитата]", article: "[статья]" },
     });
+  });
+});
+
+describe("Цена расчёта", () => {
+  it("видна до запуска; совет уложиться в лимит меняет параметры", async () => {
+    const estimates: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.includes("/auth/me")) return Promise.resolve(json(user("researcher")));
+        if (url.includes("/run-templates")) return Promise.resolve(json([{ ...TEMPLATE, params: [
+          { name: "trials", label: "[испытаний]", default: 10, min: 3, max: 100, kind: "int", numeric: true, required: true, hint: "" },
+        ] }]));
+        if (url.includes("/analysis/recommend")) return Promise.resolve(json({ ...RECO, recommendations: [RECO.recommendations[0]] }));
+        if (url.includes("/runs/estimate")) {
+          const body = JSON.parse(String(init?.body));
+          estimates.push(body.params);
+          const over = body.params.trials > 5;
+          return Promise.resolve(json({
+            resource: "cpu", minutes: over ? 300 : 40, low: 20, high: 80, limit_min: 240, within_limit: !over,
+            basis: "по формуле метода", resource_why: "[почему процессор]", warnings: [],
+            suggestion: over ? { params: { ...body.params, trials: 5 }, minutes: 150, text: "Уменьшите число испытаний до 5." } : null,
+            queue: { ahead: 1, wait_minutes: 10 },
+            usage: { active: 0, active_limit: 3, minutes_today: 0, minutes_limit: 600, unlimited: false },
+            blocked: over ? "[больше лимита метода]" : "",
+          }));
+        }
+        return Promise.resolve(json([]));
+      }),
+    );
+    renderAt("/analysis");
+    await screen.findByRole("option", { name: /DS-09/ });
+    await userEvent.selectOptions(screen.getByLabelText("Набор данных и версия"), "5");
+    expect(await screen.findByText("[больше лимита метода]")).toBeInTheDocument();
+    expect(screen.getByText(/Впереди в очереди: 1/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Уменьшите число испытаний до 5/ }));
+    expect(await screen.findByText("40 мин")).toBeInTheDocument();
+    expect(screen.queryByText("[больше лимита метода]")).toBeNull();
+    expect(estimates.at(-1)).toMatchObject({ trials: 5 });
   });
 });

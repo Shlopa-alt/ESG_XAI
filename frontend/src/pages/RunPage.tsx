@@ -6,6 +6,7 @@ import { listExperiments } from "../api/experiments";
 import { useMe } from "../auth/useAuth";
 import { ExperimentWizard } from "../components/ExperimentWizard";
 import { defaults, type MethodParam, ParamsEditor, type ParamValue } from "../components/ParamsEditor";
+import { RunCost } from "../components/RunCost";
 import { ChecksTabs } from "../components/SectionTabs";
 import { canRun, NextStep } from "../components/Ux";
 
@@ -231,6 +232,7 @@ function LaunchForm({ templates }: { templates: RunTemplate[] }) {
             </select>
           </label>
           <ParamsEditor params={t.params} snapshotId={snapshot === "" ? null : snapshot} value={params} onChange={setParams} idPrefix="launch" />
+          <RunCost template={t.key} snapshotId={snapshot === "" ? null : snapshot} params={params} onApply={(p) => setParams({ ...params, ...p })} />
         </>
       )}
       {m.isError && (

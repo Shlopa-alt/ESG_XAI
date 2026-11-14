@@ -930,3 +930,9 @@ details[open] > .node-head .node-preview { display: none; }
 .reco .list { font-size: 14px; }
 .quote { margin: 4px 0; padding: 6px 12px; border-left: 3px solid var(--accent); color: var(--text-muted); font-size: 14px; line-height: 1.5; }
 .quote cite { font-style: normal; }
+
+/* --- цена расчёта --- */
+.run-cost { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-soft, #f9faf8); font-size: 14px; }
+.run-cost p { margin: 0; line-height: 1.5; }
+.run-cost-blocked { border-color: #8e2a1b; }
+.run-cost .btn-ghost { align-self: flex-start; }

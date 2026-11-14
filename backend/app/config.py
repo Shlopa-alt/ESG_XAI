@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     runner_token: str = ""
     gpu_runs_per_user: int = 1
+    # Учёт ресурсов (app/services/resources.py): расчётов человека в очереди и в работе, оценённых
+    # минут за сутки (администратора не держит); исполнитель видеокарты подключён — трансформер
+    # может считаться на ней
+    run_active_per_user: int = 3
+    run_cpu_minutes_per_day: int = 600
+    gpu_executor: bool = False
 
     # Датасеты: папка данных сервера (в контейнере и на хосте) — срезы хранятся путями хоста
     esg_data_dir: str = "/data/esg"

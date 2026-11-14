@@ -7,6 +7,7 @@ import { listHypotheses } from "../api/hypotheses";
 import { useMe } from "../auth/useAuth";
 import { NodeSelect } from "../components/NodeSelect";
 import { defaults, ParamsEditor, type ParamValue } from "../components/ParamsEditor";
+import { RunCost } from "../components/RunCost";
 import { canRun, NextStep } from "../components/Ux";
 import { listTemplates, type RunTemplate } from "./RunPage";
 
@@ -86,6 +87,9 @@ function RecoCard({
           <summary>Параметры расчёта (уже заполнены — можно поправить)</summary>
           <ParamsEditor params={template.params} snapshotId={out.snapshot.id} value={params} onChange={setParams} idPrefix={`reco-${rec.key}`} />
         </details>
+      )}
+      {template && rec.runnable && (
+        <RunCost template={rec.template} snapshotId={out.snapshot.id} params={params} onApply={(p) => setParams({ ...params, ...p })} />
       )}
       {go.isError && (
         <p className="error" role="alert">

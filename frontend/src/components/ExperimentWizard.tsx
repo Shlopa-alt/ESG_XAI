@@ -15,6 +15,7 @@ import {
   rejectProposal,
   requestProposal,
 } from "./ProposalPanel";
+import { RunCost } from "./RunCost";
 import { NextStep, Stepper } from "./Ux";
 
 type Mode = "model" | "manual";
@@ -335,6 +336,9 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
             ) : open ? (
               <>
                 <ProposalSummary p={open} />
+                {open.method && open.snapshot_id !== null && (
+                  <RunCost template={open.method} snapshotId={open.snapshot_id} params={open.params as Record<string, ParamValue>} />
+                )}
                 {open.problems && (
                   <p className="blockers" role="status">
                     Модель ошиблась: {open.problems}. Переключитесь на «Задам сам» и поправьте или отклоните предложение.
@@ -414,6 +418,9 @@ export function ExperimentWizard({ initialHypothesis = "" }: { initialHypothesis
                   onChange={setParams}
                   idPrefix="wizard"
                 />
+              )}
+              {t && (
+                <RunCost template={t.key} snapshotId={snapshot === "" ? null : snapshot} params={params} onApply={(p) => setParams({ ...params, ...p })} />
               )}
               <label className="field">
                 Что подтвердит или опровергнет идею (записывается до расчёта)
