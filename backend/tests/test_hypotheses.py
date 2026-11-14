@@ -43,3 +43,25 @@ def test_experiment_from_accepted_hypothesis(make_client) -> None:  # type: igno
     exp = res.get(f"/api/experiments/{code}").json()
     assert exp["status"] == "planned" and exp["hypothesis"] == H["statement"]
     assert exp["links"][0]["relation"] == "motivated_by"
+
+
+# Похожие идеи — подсказка автору до отправки (п. 5 правок по совещанию).
+# SAME — заглушка-перефраз H, OTHER — заглушка на другую тему; не данные статей.
+SAME = {"title": "Раскрытие ESG-отчётности и стоимость долга",
+        "statement": "Чем полнее раскрытие, тем дешевле заёмный капитал."}
+OTHER = {"title": "[другая тема]", "statement": "[утверждение о другом]"}
+
+
+def test_similar_finds_paraphrase_and_changes_nothing(make_client) -> None:  # type: ignore[no-untyped-def]
+    c = make_client("reader1", "reader")
+    c.post("/api/hypotheses", json=H)
+    r = c.post("/api/hypotheses/similar", json=SAME)
+    assert r.status_code == 200, r.text
+    [hit] = r.json()
+    assert hit["code"] == "H-001" and hit["status"] == "proposed" and hit["share"] >= 0.4
+    assert c.post("/api/hypotheses/similar", json=OTHER).json() == []
+    assert len(c.get("/api/hypotheses").json()) == 1  # проверка ничего не создаёт
+
+
+def test_similar_needs_login(client) -> None:  # type: ignore[no-untyped-def]
+    assert client.post("/api/hypotheses/similar", json=SAME).status_code == 401

@@ -15,6 +15,7 @@ from app.db import get_db
 from app.models import Experiment, Hypothesis, HypothesisRef, KbRef, User
 from app.services.codes import next_code
 from app.services.qwen_experiments import close_open_proposals, experiment_from_hypothesis
+from app.services.qwen_hypotheses import PILLARS, idea
 from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/hypotheses", tags=["hypotheses"])
@@ -66,6 +67,44 @@ class HypothesisOut(BaseModel):
     suggested: dict[str, Any]  # от Qwen: датасет, метод, каких данных не хватает
     created_at: datetime
     refs: list[RefOut]
+
+
+class SimilarIn(BaseModel):
+    title: str = Field(min_length=1, max_length=512)
+    statement: str = ""
+
+
+class SimilarOut(BaseModel):
+    code: str
+    title: str
+    status: str
+    source: str
+    share: float  # доля общих содержательных слов от меньшей из двух идей
+
+
+SIMILAR_SHARE = 0.4  # ниже повтора у Qwen (0,5): здесь только подсказка автору, решает он сам
+SIMILAR_MAX = 5
+
+
+def similar_ideas(db: Session, title: str, statement: str) -> list[SimilarOut]:
+    """Уже предложенные идеи с теми же содержательными словами — подсказка до отправки новой.
+
+    Сравниваются название и утверждение по основам слов (как повтор у Qwen); идеи о разных
+    E, S, G при тех же остальных словах не считаются похожими."""
+    new = idea(f"{title} {statement}")
+    if not new:
+        return []
+    found: list[SimilarOut] = []
+    for h in db.scalars(select(Hypothesis)):
+        old = idea(f"{h.title} {h.statement}")
+        if not old or (new & PILLARS and old & PILLARS and not new & old & PILLARS):
+            continue
+        share = len(new & old) / min(len(new), len(old))
+        if share >= SIMILAR_SHARE:
+            found.append(SimilarOut(code=h.code, title=h.title, status=h.status, source=h.source,
+                                    share=round(share, 2)))
+    found.sort(key=lambda s: (-s.share, s.code))
+    return found[:SIMILAR_MAX]
 
 
 class DecisionIn(BaseModel):
@@ -136,6 +175,12 @@ def propose(
         _add_ref(db, h, ref)
     db.commit()
     return _out(db, h)
+
+
+@router.post("/similar", response_model=list[SimilarOut], dependencies=[Depends(current_user)])
+def similar(body: SimilarIn, db: Annotated[Session, Depends(get_db)]) -> list[SimilarOut]:
+    """Похожие уже предложенные идеи: показываются автору до отправки, ничего не меняют."""
+    return similar_ideas(db, body.title, body.statement)
 
 
 @router.post("/{code}/refs", response_model=HypothesisOut)

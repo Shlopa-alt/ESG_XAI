@@ -943,3 +943,11 @@ details[open] > .node-head .node-preview { display: none; }
 .evolution li { display: grid; grid-template-columns: 56px 96px 1fr; gap: 12px; align-items: baseline; line-height: 1.5; }
 .evolution-version { font-weight: 600; color: var(--accent); }
 @media (max-width: 640px) { .evolution li { grid-template-columns: 48px 1fr; } .evolution li > span:last-child { grid-column: 1 / -1; } }
+
+/* --- «Проверить, есть ли похожее» в форме идеи --- */
+.similar { display: flex; flex-direction: column; gap: 10px; }
+.similar .review-form { align-items: center; }
+.similar-result { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
+.similar-result .h3 { margin: 4px 0 0; }
+.similar-result .list { margin: 0; }
+.similar-quote { margin: 4px 0; line-height: 1.5; }

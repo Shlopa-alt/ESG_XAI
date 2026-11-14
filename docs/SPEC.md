@@ -120,6 +120,7 @@ GET             /datasets/{code}
 POST            /datasets/{code}/snapshots            (загрузка среза датасета)
 
 GET/POST        /hypotheses                          (POST — любой вошедший)
+POST            /hypotheses/similar   {title, statement}  (похожие уже предложенные идеи — подсказка до отправки; любой вошедший)
 GET             /hypotheses/{code}
 POST            /hypotheses/{code}/refs              (автор или researcher+)
 PATCH           /hypotheses/{code}                   (reviewer/owner: accepted | rejected с причиной)
