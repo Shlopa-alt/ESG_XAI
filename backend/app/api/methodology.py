@@ -51,10 +51,13 @@ class VersionOut(BaseModel):
 
 
 def _counts(content: object) -> tuple[int, int]:
-    """Пункты и разделы-правила снимка версии; у старых снимков без вида узел считается разделом."""
+    """Пункты и разделы-правила снимка версии.
+
+    У старых снимков без вида узел считается разделом."""
     if not isinstance(content, dict):
         return 0, 0
-    kinds = [n.get("kind", "section") if isinstance(n, dict) else "section" for n in content.values()]
+    kinds = [n.get("kind", "section") if isinstance(n, dict) else "section"
+             for n in content.values()]
     return len(kinds), kinds.count("section")
 
 
