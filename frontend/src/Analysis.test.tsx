@@ -81,3 +81,53 @@ describe("Анализ данных", () => {
     expect(screen.queryByRole("button", { name: "Запустить расчёт" })).toBeNull();
   });
 });
+
+describe("Подбор сети по статье", () => {
+  const IDEA = {
+    code: "H-001", title: "[идея]", statement: "[утверждение]", rationale: "", direction: "", status: "accepted",
+    decision_note: "", author: "", decided_by: "", experiment: "", methodology_node: "", source: "qwen",
+    suggested: { dataset: "DS-09" }, created_at: "2026-11-01T00:00:00Z",
+    refs: [{ kind: "article", kbrag_id: "[doc]", title: "[статья]", doi: "", quote: "" }],
+  };
+  const AUTHORS_RECO = {
+    ...RECO,
+    authors: { net: "transformer", title: "[трансформер]", quote: "[цитата]", runnable: true, nearest_title: "",
+      article_title: "[статья]", doc_id: "[doc]" },
+    authors_note: "",
+    hypothesis: { code: "H-001", title: "[идея]", statement: "[утверждение]", status: "accepted", node: "" },
+    recommendations: [
+      { key: "authors:transformer", template: "lab-mlp", title: "Как у авторов: [трансформер]", method_title: "[метод]",
+        params: {}, why: ["[цитата из статьи]"], warnings: [], primary: true, runnable: true, net: "transformer",
+        as_authors: true, evidence: "[цитата]" },
+      { ...RECO.recommendations[0], key: "lab-mlp:mlp", primary: false, net: "mlp", as_authors: false, evidence: "" },
+    ],
+  };
+
+  it("по идее со статьёй подставляет её данные и первой ставит «как у авторов»; выбор уходит в проверку", async () => {
+    const onLaunch = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.includes("/auth/me")) return Promise.resolve(json(user("researcher")));
+        if (url.includes("/run-templates")) return Promise.resolve(json([TEMPLATE]));
+        if (url.includes("/hypotheses")) return Promise.resolve(json([IDEA]));
+        if (url.includes("/analysis/recommend")) return Promise.resolve(json(AUTHORS_RECO));
+        if (url.includes("/analysis/launch")) {
+          onLaunch(JSON.parse(String(init?.body)));
+          return Promise.resolve(json({ experiment: "EXP-009", run_id: 3 }, 201));
+        }
+        return Promise.resolve(json([]));
+      }),
+    );
+    vi.stubGlobal("EventSource", class { close() {} });
+    renderAt("/analysis?h=H-001");
+    expect(await screen.findByText("Как у авторов: [трансформер]")).toBeInTheDocument();
+    expect(screen.getByText("Как у авторов")).toBeInTheDocument();
+    expect(screen.getByLabelText("Набор данных и версия")).toHaveValue("5");
+    await userEvent.click(screen.getAllByRole("button", { name: "Запустить расчёт" })[0] as HTMLElement);
+    expect(onLaunch.mock.calls[0]?.[0]).toMatchObject({
+      hypothesis: "H-001",
+      choice: { as_authors: true, net: "transformer", evidence: "[цитата]", article: "[статья]" },
+    });
+  });
+});

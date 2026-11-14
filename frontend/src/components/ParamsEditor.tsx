@@ -6,10 +6,11 @@ export interface MethodParam {
   default: unknown;
   min: number;
   max: number;
-  kind: "int" | "column" | "columns" | "sheet";
+  kind: "int" | "column" | "columns" | "sheet" | "choice";
   numeric: boolean;
   required: boolean;
   hint: string;
+  options?: Array<{ value: string; label: string }>; // choice: например, нейросеть метода
 }
 
 export type ParamValue = number | string | string[];
@@ -36,6 +37,7 @@ export function defaults(params: MethodParam[], given: Record<string, unknown> =
       const v = given[p.name] ?? p.default;
       if (p.kind === "int") return [p.name, typeof v === "number" ? v : Number(v ?? p.min)];
       if (p.kind === "column" || p.kind === "sheet") return [p.name, typeof v === "string" ? v : ""];
+      if (p.kind === "choice") return [p.name, typeof v === "string" ? v : String(p.default ?? "")];
       return [p.name, Array.isArray(v) ? v.map(String) : []];
     }),
   );
@@ -55,7 +57,7 @@ export function ParamsEditor({
   onChange: (v: Record<string, ParamValue>) => void;
   idPrefix: string;
 }) {
-  const needColumns = params.some((p) => p.kind !== "int");
+  const needColumns = params.some((p) => p.kind !== "int" && p.kind !== "choice");
   const sheetParam = params.find((p) => p.kind === "sheet");
   const sheet = sheetParam ? String(value[sheetParam.name] ?? "") : "";
   const cols = useQuery({
@@ -95,6 +97,21 @@ export function ParamsEditor({
                   {sheets.map((sh) => (
                     <option key={sh} value={sh}>
                       {sh}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          }
+          if (p.kind === "choice") {
+            return (
+              <label key={p.name} className="field span-2" htmlFor={id}>
+                {p.label}
+                {p.hint && <span className="muted"> — {p.hint}</span>}
+                <select id={id} value={String(value[p.name] ?? p.default ?? "")} onChange={(e) => set(p.name, e.target.value)}>
+                  {(p.options ?? []).map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
                     </option>
                   ))}
                 </select>

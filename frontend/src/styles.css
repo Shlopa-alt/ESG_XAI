@@ -928,3 +928,5 @@ details[open] > .node-head .node-preview { display: none; }
 .reco { display: flex; flex-direction: column; gap: 8px; }
 .reco-primary { border: 2px solid var(--accent); padding: 19px; }
 .reco .list { font-size: 14px; }
+.quote { margin: 4px 0; padding: 6px 12px; border-left: 3px solid var(--accent); color: var(--text-muted); font-size: 14px; line-height: 1.5; }
+.quote cite { font-style: normal; }

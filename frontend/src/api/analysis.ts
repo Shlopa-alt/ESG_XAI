@@ -14,6 +14,18 @@ export interface Recommendation {
   primary: boolean;
   runnable: boolean;
   net: string;
+  as_authors: boolean;
+  evidence: string;
+}
+
+export interface AuthorsNet {
+  net: string;
+  title: string;
+  quote: string;
+  runnable: boolean;
+  nearest_title: string;
+  article_title: string;
+  doc_id: string;
 }
 
 export interface RecommendOut {
@@ -27,6 +39,14 @@ export interface RecommendOut {
   target_candidates: Array<{ column: string; reason: string }>;
   task: { key: string; title: string; text: string };
   recommendations: Recommendation[];
+  authors: AuthorsNet | null;
+  authors_note: string;
+  hypothesis: { code: string; title: string; statement: string; status: string; node: string } | null;
+}
+
+export interface Catalog {
+  tasks: Array<{ key: string; title: string; example: string; nets: string[] }>;
+  nets: Array<{ key: string; title: string; family: string; runnable: boolean; nearest: string }>;
 }
 
 export interface Choice {
@@ -35,6 +55,10 @@ export interface Choice {
   why: string[];
   primary: boolean;
   net: string;
+  as_authors: boolean;
+  evidence: string;
+  article: string;
+  task: string;
 }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -48,7 +72,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-export const recommend = (b: { snapshot_id: number; sheet: string; target: string; node: string }) =>
+export const getCatalog = () => call<Catalog>("/analysis/catalog");
+
+export const recommend = (b: { snapshot_id: number; sheet: string; target: string; node: string; hypothesis: string }) =>
   call<RecommendOut>("/analysis/recommend", { method: "POST", body: JSON.stringify(b) });
 
 export const launchAnalysis = (b: {
@@ -56,5 +82,6 @@ export const launchAnalysis = (b: {
   template: string;
   params: Record<string, ParamValue>;
   node: string;
+  hypothesis: string;
   choice: Choice;
 }) => call<{ experiment: string; run_id: number }>("/analysis/launch", { method: "POST", body: JSON.stringify(b) });

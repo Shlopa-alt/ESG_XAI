@@ -263,7 +263,8 @@ def list_templates(db: Annotated[Session, Depends(get_db)]) -> list[TemplateOut]
             key=t.key, title=t.title, description=t.description, scope=t.scope, experiment=t.experiment,
             dataset=t.dataset, resource=t.resource, limit_min=t.limit_min,
             params=[{"name": p.name, "label": p.label, "default": p.default, "min": p.min, "max": p.max,
-                     "kind": p.kind, "numeric": p.numeric, "required": p.required, "hint": p.hint}
+                     "kind": p.kind, "numeric": p.numeric, "required": p.required, "hint": p.hint,
+                     "options": [{"value": v, "label": lb} for v, lb in p.options]}
                     for p in t.params],
             snapshots=[{"id": s.id, "dataset": code, "version": s.version, "sha256": s.sha256,
                         "row_count": s.row_count} for s, code in snaps],

@@ -1,26 +1,29 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
-import { launchAnalysis, recommend, type Recommendation } from "../api/analysis";
+import { getCatalog, launchAnalysis, recommend, type Recommendation, type RecommendOut } from "../api/analysis";
+import { listHypotheses } from "../api/hypotheses";
 import { useMe } from "../auth/useAuth";
 import { NodeSelect } from "../components/NodeSelect";
 import { defaults, ParamsEditor, type ParamValue } from "../components/ParamsEditor";
 import { canRun, NextStep } from "../components/Ux";
 import { listTemplates, type RunTemplate } from "./RunPage";
 
-/** Карточка рекомендации: метод, почему, параметры, запуск. */
+/** Карточка рекомендации: метод и сеть, почему, параметры, запуск. */
 function RecoCard({
   rec,
+  out,
   template,
-  snapshotId,
   node,
+  hypothesis,
   canLaunch,
 }: {
   rec: Recommendation;
+  out: RecommendOut;
   template: RunTemplate | undefined;
-  snapshotId: number;
   node: string;
+  hypothesis: string;
   canLaunch: boolean;
 }) {
   const qc = useQueryClient();
@@ -30,23 +33,42 @@ function RecoCard({
   const go = useMutation({
     mutationFn: () =>
       launchAnalysis({
-        snapshot_id: snapshotId,
+        snapshot_id: out.snapshot.id,
         template: rec.template,
         params,
         node,
-        choice: { key: rec.key, title: rec.title, why: rec.why, primary: rec.primary, net: rec.net },
+        hypothesis,
+        choice: {
+          key: rec.key,
+          title: rec.title,
+          why: rec.why,
+          primary: rec.primary,
+          net: rec.net,
+          as_authors: rec.as_authors,
+          evidence: rec.evidence,
+          article: rec.as_authors ? (out.authors?.article_title ?? "") : "",
+          task: out.task.key,
+        },
       }),
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ["experiments"] });
+      void qc.invalidateQueries({ queryKey: ["hypotheses"] });
       void qc.invalidateQueries({ queryKey: ["runs"] });
       navigate(`/run/${r.run_id}`);
     },
   });
+  const badge = rec.as_authors ? (
+    <span className="badge st-done">Как у авторов</span>
+  ) : rec.primary ? (
+    <span className="badge st-done">Рекомендуем</span>
+  ) : (
+    <span className="badge st-planned">Альтернатива</span>
+  );
   return (
     <article className={rec.primary ? "card reco reco-primary" : "card reco"} aria-label={rec.title}>
       <div className="kb-meta">
-        {rec.primary ? <span className="badge st-done">Рекомендуем</span> : <span className="badge st-planned">Альтернатива</span>}
-        <span className="muted">{rec.method_title}</span>
+        {badge}
+        {rec.method_title && <span className="muted">{rec.method_title}</span>}
       </div>
       <h3 className="h3">{rec.title}</h3>
       <ul className="list">
@@ -62,7 +84,7 @@ function RecoCard({
       {template && rec.runnable && (
         <details>
           <summary>Параметры расчёта (уже заполнены — можно поправить)</summary>
-          <ParamsEditor params={template.params} snapshotId={snapshotId} value={params} onChange={setParams} idPrefix={`reco-${rec.key}`} />
+          <ParamsEditor params={template.params} snapshotId={out.snapshot.id} value={params} onChange={setParams} idPrefix={`reco-${rec.key}`} />
         </details>
       )}
       {go.isError && (
@@ -81,10 +103,57 @@ function RecoCard({
   );
 }
 
+/** Классификация «тип задачи → сети»: что платформа рекомендует и что умеет считать. */
+function CatalogTable() {
+  const c = useQuery({ queryKey: ["analysis-catalog"], queryFn: getCatalog, staleTime: Infinity });
+  if (!Array.isArray(c.data?.tasks) || !Array.isArray(c.data?.nets)) return null;
+  const nets = new Map(c.data.nets.map((n) => [n.key, n]));
+  return (
+    <details className="card details-card">
+      <summary>Как платформа подбирает сеть: тип задачи → сети</summary>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th scope="col">Тип задачи</th>
+              <th scope="col">Пример</th>
+              <th scope="col">Сети и методы — по порядку рекомендации</th>
+            </tr>
+          </thead>
+          <tbody>
+            {c.data.tasks.map((t) => (
+              <tr key={t.key}>
+                <td>{t.title}</td>
+                <td className="muted">{t.example}</td>
+                <td>
+                  {t.nets.map((k, i) => {
+                    const n = nets.get(k);
+                    return (
+                      <span key={k}>
+                        {i > 0 && " → "}
+                        {n?.title ?? k}
+                        {n && !n.runnable && <span className="muted"> (в библиотеке пока нет)</span>}
+                      </span>
+                    );
+                  })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
 export function Analysis() {
   const me = useMe();
   const canLaunch = canRun(me.data?.role);
+  const [search] = useSearchParams();
+  const hypothesis = search.get("h") ?? "";
   const templates = useQuery({ queryKey: ["run-templates"], queryFn: listTemplates });
+  const hyps = useQuery({ queryKey: ["hypotheses"], queryFn: listHypotheses, enabled: hypothesis !== "" });
+  const idea = (Array.isArray(hyps.data) ? hyps.data : []).find((h) => h.code === hypothesis);
   // версии данных-таблицы: их видят общие методы библиотеки
   const snapshots = useMemo(() => {
     const seen = new Map<number, RunTemplate["snapshots"][number]>();
@@ -99,9 +168,16 @@ export function Analysis() {
     setSheet("");
     setTarget("");
   }, [snapshot]);
+  // идея предлагает набор данных — подставляем его последнюю версию
+  const suggested = idea?.suggested.dataset;
+  useEffect(() => {
+    if (snapshot !== "" || !suggested) return;
+    const first = snapshots.find((s) => s.dataset === suggested);
+    if (first) setSnapshot(first.id);
+  }, [suggested, snapshots, snapshot]);
   const q = useQuery({
-    queryKey: ["analysis", snapshot, sheet, target, node],
-    queryFn: () => recommend({ snapshot_id: snapshot as number, sheet, target, node }),
+    queryKey: ["analysis", snapshot, sheet, target, node, hypothesis],
+    queryFn: () => recommend({ snapshot_id: snapshot as number, sheet, target, node, hypothesis }),
     enabled: snapshot !== "",
     retry: false,
   });
@@ -119,6 +195,26 @@ export function Analysis() {
           расчёт. Расчёт попадёт в «Проверки» со всем, что нужно, чтобы его повторить.
         </p>
       </section>
+
+      {hypothesis && (
+        <section className="card" aria-label="Идея для проверки">
+          <span className="eyebrow">ИДЕЯ ДЛЯ ПРОВЕРКИ · {hypothesis}</span>
+          <h2 className="h2">{idea?.title ?? r?.hypothesis?.title ?? "Загрузка…"}</h2>
+          {(idea?.statement ?? r?.hypothesis?.statement) && <p>{idea?.statement ?? r?.hypothesis?.statement}</p>}
+          {idea && idea.status !== "accepted" && (
+            <p className="blockers">Идея ещё не принята к проверке: рекомендации видны, но запустить расчёт по ней нельзя.</p>
+          )}
+          {r?.authors ? (
+            <NextStep>
+              В статье «{r.authors.article_title}» авторы пользуются: <strong>{r.authors.title}</strong>
+              {!r.authors.runnable && r.authors.nearest_title && ` — в библиотеке её пока нет, ближайшая замена: ${r.authors.nearest_title}`}.
+              Первой стоит карточка «Как у авторов», ниже — замены.
+            </NextStep>
+          ) : (
+            r?.authors_note && <p className="muted">{r.authors_note}</p>
+          )}
+        </section>
+      )}
 
       <section className="card wizard" aria-labelledby="an-1">
         <h2 className="h2" id="an-1">
@@ -214,11 +310,21 @@ export function Analysis() {
           {!canLaunch && <p className="muted">Запускать расчёты могут исследователи — рекомендации видны всем.</p>}
           <div className="reco-list">
             {r.recommendations.map((rec) => (
-              <RecoCard key={rec.key} rec={rec} template={byKey(rec.template)} snapshotId={r.snapshot.id} node={node} canLaunch={canLaunch} />
+              <RecoCard
+                key={rec.key}
+                rec={rec}
+                out={r}
+                template={byKey(rec.template)}
+                node={node}
+                hypothesis={idea?.status === "accepted" || !idea ? hypothesis : ""}
+                canLaunch={canLaunch && (!hypothesis || idea?.status === "accepted")}
+              />
             ))}
           </div>
         </section>
       )}
+
+      <CatalogTable />
     </>
   );
 }

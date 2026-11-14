@@ -12,6 +12,7 @@ from typing import Any
 
 from app.models import MethodologySection
 from app.services.data_files import MISSING, Table
+from app.services.net_catalog import NETS, NEURAL, TASKS
 from app.services.run_templates import TEMPLATES
 
 # сколько строк без пропусков нужно методу (runner/methods/*.py: MIN_ROWS и проверки в main)
@@ -47,7 +48,9 @@ class Recommendation:
     warnings: list[str] = field(default_factory=list)
     primary: bool = False
     runnable: bool = True
-    net: str = ""  # сеть из каталога (задача 9); пусто — метод без выбора сети
+    net: str = ""  # сеть из каталога (app/services/net_catalog.py)
+    as_authors: bool = False  # повтор с сетью из статьи-источника
+    evidence: str = ""  # цитата статьи, по которой определена сеть авторов
 
 
 def _filled(v: Any) -> bool:
@@ -122,9 +125,14 @@ def _rows_note(rows: int | None, need: int) -> tuple[bool, str]:
 
 
 def recommend(
-    t: Table, rows: int | None, target: str, node: MethodologySection | None
+    t: Table,
+    rows: int | None,
+    target: str,
+    node: MethodologySection | None,
+    authors: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Тип задачи и рекомендации по данным. target — выбранный показатель (пусто — не выбран)."""
+    """Тип задачи и рекомендации по данным. target — выбранный показатель (пусто — не выбран);
+    authors — сеть из статьи-источника идеи (net_catalog.authors_net + article_title)."""
     numeric = [c for c in t.columns if c in t.numeric]
     cats = categories(t)
     recs: list[Recommendation] = []
@@ -163,12 +171,13 @@ def recommend(
             )
         recs.append(
             Recommendation(
-                key="lab-mlp",
+                key="lab-mlp:mlp",
                 template="lab-mlp",
                 title="Нейросеть лаборатории (перцептрон) с вкладом факторов",
                 method_title=TEMPLATES["lab-mlp"].title,
-                params={**base, "context": cats, "lag": lag},
+                params={**base, "context": cats, "lag": lag, "architecture": "mlp"},
                 why=mlp_why,
+                net="mlp",
                 warnings=(
                     [
                         f"Строк {rows} — меньше {SMALL}: оценка R² будет шумной, нейросеть может не обогнать "
@@ -182,10 +191,29 @@ def recommend(
                 runnable=ok,
             )
         )
+        recs.append(
+            Recommendation(
+                key="lab-mlp:transformer",
+                template="lab-mlp",
+                title="Замена сети: трансформер для таблиц",
+                method_title=TEMPLATES["lab-mlp"].title,
+                params={**base, "context": cats, "lag": lag, "architecture": "transformer"},
+                why=[
+                    "Та же задача и тот же протокол CR-01, другая сеть: каждый показатель — отдельный "
+                    "токен, сеть сама ищет, какие показатели важны вместе (самовнимание).",
+                    "Сравните с перцептроном: если трансформер не лучше, сложная сеть не нужна.",
+                ],
+                warnings=["Считается в несколько раз дольше перцептрона."]
+                + ([why_not] if not ok else []),
+                runnable=ok,
+                net="transformer",
+            )
+        )
         ok2, why_not2 = _rows_note(rows, MIN_ROWS["predictive-check"])
         recs.append(
             Recommendation(
                 key="predictive-check",
+                net="gbm",
                 template="predictive-check",
                 title="Быстрая проверка без нейросети: линейная модель и бустинг",
                 method_title=TEMPLATES["predictive-check"].title,
@@ -234,8 +262,12 @@ def recommend(
                 warnings=[why_not] if not ok else [],
                 primary=ok,
                 runnable=ok,
+                net="rank",
             )
         )
+    note = ""
+    if authors is not None:
+        recs, note = _as_authors(recs, authors, task["key"])
     return {
         "columns": t.columns,
         "numeric": numeric,
@@ -246,7 +278,80 @@ def recommend(
         "target_candidates": target_candidates(node, t),
         "task": task,
         "recommendations": [asdict(r) for r in recs],
+        "authors": authors,
+        "authors_note": note,
     }
+
+
+def _as_authors(
+    recs: list[Recommendation], authors: dict[str, Any], task: str
+) -> tuple[list[Recommendation], str]:
+    """Сначала — «как у авторов» (та же сеть, что в статье), потом альтернативы того же типа задачи.
+    Сети авторов нет в библиотеке — карточка без запуска и ближайшая доступная замена."""
+    net = NETS[authors["net"]]
+    article = authors.get("article_title") or "статья-источник"
+    evidence = f"В статье «{article}» авторы пишут: «{authors['quote']}»"
+    if task not in ("predict",) or net.key == "rank":
+        if net.key in NEURAL:
+            return recs, (
+                f"У авторов — {net.title}. Чтобы повторить их расчёт, выберите целевой показатель: "
+                "сеть предсказывает показатель, а не сравнивает показатели между собой."
+            )
+        return recs, ""
+    # тот же метод библиотеки с теми же параметрами сети (линейная регрессия — внутри быстрой проверки)
+    same = next(
+        (
+            r
+            for r in recs
+            if net.template
+            and r.runnable
+            and r.template == net.template
+            and all(r.params.get(k) == v for k, v in net.params.items())
+        ),
+        None,
+    )
+    if same is not None:
+        for r in recs:
+            r.primary = False
+        lead = Recommendation(
+            **{
+                **asdict(same),
+                "key": f"authors:{net.key}",
+                "title": f"Как у авторов: {net.title}",
+                "why": [
+                    evidence,
+                    "Сначала повторяем выбор авторов на наших данных — так видно, переносится ли их "
+                    "результат; затем сравниваем с заменой сети ниже.",
+                    *same.why[1:],
+                ],
+                "primary": True,
+                "as_authors": True,
+                "evidence": authors["quote"],
+            }
+        )
+        rest = [r for r in recs if r is not same]
+        for r in rest:
+            if r.net in TASKS["predict"].nets and r.net != net.key:
+                r.why = [f"Замена сети авторов ({net.title}) на «{NETS[r.net].title}».", *r.why]
+        return [lead, *rest], ""
+    nearest = net.nearest
+    absent = Recommendation(
+        key=f"authors:{net.key}",
+        template="",
+        title=f"Как у авторов: {net.title} — в библиотеке пока нет",
+        method_title="",
+        params={},
+        why=[evidence]
+        + ([f"Ближайшая доступная замена — «{NETS[nearest].title}»."] if nearest else []),
+        runnable=False,
+        net=net.key,
+        as_authors=True,
+        evidence=authors["quote"],
+    )
+    for r in recs:
+        if nearest and r.net == nearest and r.runnable:
+            r.why = [f"Ближайшая замена сети авторов ({net.title}).", *r.why]
+    return [absent, *recs], ""
 
 
 def question(template: str, params: dict[str, Any]) -> str:

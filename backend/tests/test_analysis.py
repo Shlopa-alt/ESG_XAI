@@ -81,7 +81,9 @@ def test_target_gives_lab_network_with_reasons(
         "[отрасль]"
     ]
     assert first["why"] and any("меньше 100" in w for w in first["warnings"])
-    assert out["recommendations"][1]["template"] == "predictive-check"
+    # альтернативы: та же сеть с заменой на трансформер и быстрая проверка без нейросети
+    assert [r["net"] for r in out["recommendations"]] == ["mlp", "transformer", "gbm"]
+    assert out["recommendations"][2]["template"] == "predictive-check"
 
 
 def test_without_target_compares_columns(make_client, db_session: Session, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]

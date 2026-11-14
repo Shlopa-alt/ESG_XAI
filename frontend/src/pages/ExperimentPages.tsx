@@ -55,6 +55,49 @@ const EXP_FILTERS: Array<{ key: ExpFilter; label: string; test: (e: ExperimentRo
   { key: "inconclusive", label: "Неоднозначно", test: (e) => e.outcome === "inconclusive" },
 ];
 
+interface AnalysisChoice {
+  title?: string;
+  net?: string;
+  as_authors?: boolean;
+  evidence?: string;
+  article?: string;
+  primary?: boolean;
+  why?: string[];
+}
+
+/** Почему этот метод и эта сеть: выбор из «Анализа данных» (config.analysis), видно в карточке проверки. */
+function WhyMethod({ e }: { e: { config?: Record<string, unknown> } }) {
+  const c = (e.config?.analysis ?? null) as AnalysisChoice | null;
+  if (!c) return null;
+  return (
+    <section className="card">
+      <h2 className="h2">Почему этот метод</h2>
+      <p>
+        {c.title || "—"}{" "}
+        {c.as_authors ? (
+          <span className="badge st-done">как у авторов</span>
+        ) : c.primary ? (
+          <span className="badge st-done">рекомендация платформы</span>
+        ) : (
+          <span className="badge st-planned">альтернатива</span>
+        )}
+      </p>
+      {c.as_authors && c.evidence && (
+        <blockquote className="quote">
+          «{c.evidence}»{c.article && <cite> — {c.article}</cite>}
+        </blockquote>
+      )}
+      {(c.why ?? []).length > 0 && (
+        <ul className="list muted">
+          {(c.why ?? []).map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function Head({ eyebrow, title, lead }: { eyebrow: string; title: string; lead: string }) {
   return (
     <section className="page-head">
@@ -363,6 +406,7 @@ export function Experiment() {
           <p>{e.hypothesis || "—"}</p>
           {e.method && <p className="muted">Метод: {e.method}</p>}
         </section>
+        <WhyMethod e={e} />
         {e.setup.length > 0 ? (
           <Block title="Постановка" items={e.setup} />
         ) : (
