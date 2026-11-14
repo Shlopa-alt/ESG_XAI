@@ -365,7 +365,7 @@ describe("Форма идеи: есть ли похожее", () => {
     await ui.click(await screen.findByRole("button", { name: "Предложить идею" }));
     const check = screen.getByRole("button", { name: "Проверить, есть ли похожее" });
     expect(check).toBeDisabled();
-    await ui.type(screen.getByLabelText("Коротко, о чём идея"), "[новая идея]");
+    await ui.type(screen.getByLabelText("Коротко, о чём идея"), "[[новая идея]"); // «[[» — буквальная скобка для user-event
     await ui.click(check);
     expect(await screen.findByRole("link", { name: "H-001" })).toHaveAttribute("href", "#H-001");
     expect(screen.getByText("[похожая идея]", { exact: false })).toBeInTheDocument();
