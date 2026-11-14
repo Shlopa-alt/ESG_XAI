@@ -13,13 +13,15 @@ interface NavItem {
   also?: string[]; // другие адреса того же раздела
 }
 
-// Шесть пунктов: человек за один взгляд видит всё, связанное живёт вкладками внутри раздела
+// Семь пунктов: человек за один взгляд видит всё, связанное живёт вкладками внутри раздела.
+// «Анализ данных» вернули по просьбе лаборатории (docs/DATA_ANALYSIS.md)
 const NAV: NavItem[] = [
   { to: "/", label: "Обзор", end: true },
   { to: "/methodology", label: "Методика" },
   { to: "/knowledge", label: "Банк статей" },
   { to: "/hypotheses", label: "Идеи для проверки" },
   { to: "/experiments", label: "Проверки", also: ["/run", "/runs"] },
+  { to: "/analysis", label: "Анализ данных" },
   { to: "/data", label: "Данные", also: ["/datasets", "/data-drafts"] },
 ];
 const OWNER_NAV: NavItem[] = [
