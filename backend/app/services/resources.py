@@ -23,7 +23,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import Run, User
+from app.models import DatasetSnapshot, Run, User
+from app.services.data_files import EXCEL, to_container
 from app.services.run_templates import Template
 
 CALIBRATE = 3  # завершённых расчётов метода, после которых формула поправляется по факту
@@ -64,9 +65,13 @@ class Estimate:
         return asdict(self)
 
 
+def _list(v: Any) -> list[Any]:
+    return v if isinstance(v, list) else []
+
+
 def _inputs(params: dict[str, Any]) -> int:
-    feats = params.get("features") or []
-    ctx = params.get("context") or []
+    feats = _list(params.get("features"))
+    ctx = _list(params.get("context"))
     # текстовые параметры Z раскрываются в несколько столбцов — в среднем три значения
     return max(1, len(feats) + 3 * len(ctx))
 
@@ -104,7 +109,7 @@ def formula_minutes(t: Template, params: dict[str, Any], rows: int) -> tuple[flo
         fits = splits * 2 * 2  # линейная и бустинг, данные и плацебо
         sec = 5 + fits * (0.05 + rows * inputs * 2e-5)
     elif t.key == "rank-agreement":
-        k = len(params.get("columns") or []) or 2
+        k = len(_list(params.get("columns"))) or 2
         resamples = _int(params, "n_boot", 10_000) + _int(params, "n_perm", 10_000)
         fits = k * (k - 1) // 2 * resamples
         sec = 3 + fits * (rows * 2e-6 + 1e-4)
@@ -116,8 +121,13 @@ def formula_minutes(t: Template, params: dict[str, Any], rows: int) -> tuple[flo
     return sec / 60, fits
 
 
-def calibration(db: Session, template: str) -> tuple[float, int]:
-    """Поправка формулы по фактическому времени прошлых расчётов метода: (множитель, сколько)."""
+def _arch(params: Any) -> str:
+    return str((params or {}).get("architecture") or "mlp") if isinstance(params, dict) else "mlp"
+
+
+def calibration(db: Session, template: str, arch: str = "mlp") -> tuple[float, int]:
+    """Поправка формулы по фактическому времени прошлых расчётов метода с той же сетью
+    (перцептрон и трансформер считаются по-разному): (множитель, сколько расчётов)."""
     ratios = []
     runs = db.scalars(
         select(Run)
@@ -126,6 +136,8 @@ def calibration(db: Session, template: str) -> tuple[float, int]:
         .limit(20)
     )
     for r in runs:
+        if template == "lab-mlp" and _arch((r.config or {}).get("params")) != arch:
+            continue
         est = (r.config or {}).get("estimate") or {}
         minutes = est.get("minutes") if isinstance(est, dict) else None
         if (
@@ -176,7 +188,7 @@ def estimate(
         warnings.append(f"Число строк версии данных не записано — оценка для {UNKNOWN_ROWS} строк.")
     n = rows or UNKNOWN_ROWS
     base, fits = formula_minutes(t, params, n)
-    k, past = calibration(db, t.key)
+    k, past = calibration(db, t.key, _arch(params))
     resource, minutes, why = _resource(t, params, base * k, settings)
     basis = (
         f"по формуле метода, поправленной по {past} прошлым расчётам (×{k:.2f})"
@@ -253,7 +265,8 @@ def _fit_limit(
 def _today(db: Session, user: User) -> float:
     since = datetime.now(UTC) - timedelta(days=1)
     total = 0.0
-    for r in db.scalars(select(Run).where(Run.created_by == user.id)):
+    recent = select(Run).where(Run.created_by == user.id).order_by(Run.id.desc()).limit(500)
+    for r in db.scalars(recent):
         created = r.created_at
         if created is not None and created.tzinfo is None:
             created = created.replace(tzinfo=UTC)
@@ -281,6 +294,27 @@ def usage(db: Session, settings: Settings, user: User) -> dict[str, Any]:
         "minutes_limit": settings.run_cpu_minutes_per_day,
         "unlimited": user.role == "owner",
     }
+
+
+def rows_of(settings: Settings, snap: DatasetSnapshot, sheet: str = "") -> int | None:
+    """Строк в версии данных. У CSV число записано при загрузке; у книги Excel — нет, поэтому
+    считаем по листу (иначе оценка шла бы по 200 строкам и большой расчёт проходил бы лимиты)."""
+    if snap.row_count is not None:
+        return snap.row_count
+    path = to_container(settings, snap.storage_path) if snap.storage_path else None
+    if path is None or not path.is_file() or path.suffix.lower() not in EXCEL:
+        return None
+    try:
+        from openpyxl import load_workbook  # type: ignore[import-untyped]
+
+        wb = load_workbook(path, read_only=True, data_only=True)
+        try:
+            ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb.worksheets[0]
+            return max(0, (ws.max_row or 1) - 1)  # без строки заголовка
+        finally:
+            wb.close()
+    except Exception:  # noqa: BLE001 — не прочитали книгу: оценка по умолчанию с предупреждением
+        return None
 
 
 def _run_minutes(r: Run) -> float:

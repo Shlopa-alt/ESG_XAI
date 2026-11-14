@@ -317,7 +317,7 @@ def main() -> int:
              "reference": {"value": 0, "label": "прогноз средним"},
              "rows": [{"name": k, **{q: v[q] for q in ("mean", "min", "max")}} for k, v in res["real"].items()]
                      + [{"name": f"{model_name()} · плацебо", **{q: pl[q] for q in ("mean", "min", "max")}}],
-             "interpretation": f"Модель лаборатории {verdict}: средний R² {fmt(m['mean'], True)}, у линейной "
+             "interpretation": f"{'Модель лаборатории' if ARCH == 'mlp' else model_name()} {verdict}: средний R² {fmt(m['mean'], True)}, у линейной "
                                f"{fmt(lin['mean'], True)}, на перемешанной цели — до {fmt(pl['max'], True)}."
                                f"{vs_linear}{small}"},
             {"id": "shap", "kind": "bars", "unit": target,

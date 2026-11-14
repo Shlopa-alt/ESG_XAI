@@ -121,7 +121,10 @@ def test_methodology_item_ranks_target_candidates(
         .json()
     )
     cands = [c["column"] for c in out["target_candidates"]]
-    assert cands[:2] == ["[ROA_2022]", "[ROA_2021]"]  # поздний год — результат, ранний — прошлый период
+    assert cands[:2] == [
+        "[ROA_2022]",
+        "[ROA_2021]",
+    ]  # поздний год — результат, ранний — прошлый период
     assert "рентабельность активов" in out["target_candidates"][0]["reason"]
 
 
@@ -201,8 +204,24 @@ def test_outcome_columns_beat_input_columns_sharing_words() -> None:
     from app.services.analysis import target_candidates
     from app.services.data_files import Table
 
-    node = MethodologySection(number="1.1.1", title="[задание]: рентабельность активов (ROA) от ESG-инвестиций",
-                              content="", kind="task")
+    node = MethodologySection(
+        number="1.1.1",
+        title="[задание]: рентабельность активов (ROA) от ESG-инвестиций",
+        content="",
+        kind="task",
+    )
     cols = ["[ESG-инвестиции: экология]", "[ROA 2022]", "[размер]"]
     t = Table(columns=cols, numeric=set(cols))
     assert [c["column"] for c in target_candidates(node, t)] == ["[ROA 2022]"]
+
+
+def test_future_years_and_ids_are_not_inputs() -> None:
+    """Показатель ROA 2021: ROA 2022 — его будущее (утечка ответа), «год» и «ИНН» — не показатели."""
+    from app.services.analysis import recommend
+    from app.services.data_files import Table
+
+    cols = ["[ROA 2020]", "[ROA 2021]", "[ROA 2022]", "[год]", "[ИНН]", "[x1]"]
+    t = Table(columns=cols, numeric=set(cols), sample=[])
+    first = recommend(t, 120, "[ROA 2021]", None)["recommendations"][0]
+    assert first["params"]["features"] == ["[x1]"] and first["params"]["lag"] == "[ROA 2020]"
+    assert any("[ROA 2022]" in w and "подсмотрел" in w for w in first["why"])

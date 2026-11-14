@@ -751,7 +751,8 @@ def _exp_prompt(c: dict[str, Any]) -> str:
         f"- {m['key']} ({m['scope']}{', датасет ' + m['dataset'] if m['dataset'] else ''}): {m['title']}. "
         f"{m['description']} Параметры: " + "; ".join(
             f"{p['name']} ({p['kind']}{', ' + str(p['min']) + '…' + str(p['max']) if p['kind'] == 'int' else ''}"
-            f"{', по умолчанию ' + json.dumps(p['default'], ensure_ascii=False) if p['default'] not in (None, '', []) else ''})"
+            f"{', по умолчанию ' + json.dumps(p['default'], ensure_ascii=False) if p['default'] not in (None, '', []) else ''}"
+            f"{', варианты: ' + ' | '.join(p['options']) if p.get('options') else ''})"
             for p in m["params"]) for m in c["methods"])
     snaps = "\n".join(
         f"- срез {s['id']}: {s['dataset']} «{s['title']}», версия {s['version']}, строк {s['rows'] or '?'}. "
@@ -1099,10 +1100,14 @@ def job_data_links(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
             }
             try:
                 item["file"] = L.fetch_table(link["url"], limit)
-            except L.FetchError as exc:
+            except Exception as exc:  # noqa: BLE001 — одна плохая ссылка не останавливает обход статей
                 item["failure"] = str(exc)[:1000]
-            post_retry(ctx["platform"], "link-drafts", {"job": job["id"], "drafts": [item]})
             known.add((doc_id, link["url"].lower()))
+            try:
+                post_retry(ctx["platform"], "link-drafts", {"job": job["id"], "drafts": [item]})
+            except RuntimeError as exc:  # платформа отказала (4xx) — ссылку пропускаем, обход идёт дальше
+                skipped.append(f"{doc_id}: {link['url']} — платформа не приняла: {exc}"[:300])
+                continue
             sent += 1
             log(f"  {doc_id}: {link['url']} → " + (f"файл {item['file']['name']}" if item["file"] else item["failure"]))
     if asked and failed == asked and not sent:

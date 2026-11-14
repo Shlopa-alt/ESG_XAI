@@ -83,5 +83,6 @@ export const launchAnalysis = (b: {
   params: Record<string, ParamValue>;
   node: string;
   hypothesis: string;
+  expected: string; // по идее — что подтвердит или опровергнет её
   choice: Choice;
 }) => call<{ experiment: string; run_id: number }>("/analysis/launch", { method: "POST", body: JSON.stringify(b) });

@@ -12,16 +12,18 @@
 """
 
 import hashlib
+import http.client
 import io
 import ipaddress
 import json
 import re
 import socket
+import ssl
 import zipfile
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPHandler, HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
 UA = "ESG-Open-Research/0.1 (article data links)"
 TABLE_EXT = (".csv", ".tsv", ".xlsx", ".xlsm")
@@ -130,17 +132,50 @@ def find_links(text: str) -> list[dict[str, str]]:
 # --- скачивание только с публичных адресов ---
 
 
-def check_public(url: str) -> None:
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.hostname:
-        raise FetchError(f"не http(s): {url}")
+def public_ip(host: str, port: int | None) -> str:
+    """Адрес имени, если все его адреса публичные; иначе FetchError. Соединяться — именно с ним."""
     try:
-        infos = socket.getaddrinfo(parts.hostname, parts.port or None, proto=socket.IPPROTO_TCP)
-    except OSError as exc:
-        raise FetchError(f"адрес {parts.hostname} не найден") from exc
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except (OSError, ValueError) as exc:
+        raise FetchError(f"адрес {host} не найден") from exc
     for info in infos:
         if not ipaddress.ip_address(info[4][0]).is_global:
-            raise FetchError(f"ссылка ведёт во внутреннюю сеть ({parts.hostname}) — не скачиваю")
+            raise FetchError(f"ссылка ведёт во внутреннюю сеть ({host}) — не скачиваю")
+    return str(infos[0][4][0])
+
+
+def check_public(url: str) -> None:
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError as exc:  # порт не число
+        raise FetchError(f"неверная ссылка: {url[:200]}") from exc
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise FetchError(f"не http(s): {url[:200]}")
+    public_ip(parts.hostname, port)
+
+
+# Соединение — с тем адресом, который проверен: иначе DNS может на проверку ответить публичным
+# адресом, а на соединение — внутренним (DNS rebinding). Сертификат HTTPS сверяется по имени.
+class _PinnedHTTP(http.client.HTTPConnection):
+    def connect(self) -> None:
+        self.sock = socket.create_connection((public_ip(self.host, self.port), self.port), self.timeout)
+
+
+class _PinnedHTTPS(http.client.HTTPSConnection):
+    def connect(self) -> None:
+        raw = socket.create_connection((public_ip(self.host, self.port), self.port), self.timeout)
+        self.sock = self._context.wrap_socket(raw, server_hostname=self.host)  # type: ignore[attr-defined]
+
+
+class _HTTP(HTTPHandler):
+    def http_open(self, req):  # type: ignore[no-untyped-def]
+        return self.do_open(_PinnedHTTP, req)
+
+
+class _HTTPS(HTTPSHandler):
+    def https_open(self, req):  # type: ignore[no-untyped-def]
+        return self.do_open(_PinnedHTTPS, req, context=ssl.create_default_context())
 
 
 class _PublicOnly(HTTPRedirectHandler):
@@ -149,7 +184,7 @@ class _PublicOnly(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-_opener = build_opener(_PublicOnly)
+_opener = build_opener(_HTTP, _HTTPS, _PublicOnly)
 
 
 def get(url: str, limit: int, timeout_s: float = 60) -> tuple[bytes, str, str]:
@@ -161,7 +196,7 @@ def get(url: str, limit: int, timeout_s: float = 60) -> tuple[bytes, str, str]:
             final, ctype = r.geturl(), r.headers.get("Content-Type", "")
     except HTTPError as exc:
         raise FetchError(f"{_host(url)} ответил {exc.code}") from exc
-    except (URLError, TimeoutError, OSError) as exc:
+    except (URLError, TimeoutError, OSError, http.client.HTTPException) as exc:
         raise FetchError(f"{_host(url)} недоступен: {exc}") from exc
     if len(data) > limit:
         raise FetchError(f"файл больше {limit // 2**20} МБ")
@@ -187,12 +222,17 @@ def figshare_id(url: str) -> str:
 def _api_files(url: str, limit: int) -> list[tuple[str, str]]:
     """Файлы записи Zenodo или figshare: [(имя, ссылка)]."""
     zid, fid = zenodo_id(url), figshare_id(url)
-    if zid:
-        data = json.loads(get(f"https://zenodo.org/api/records/{zid}", 5 * 2**20)[0])
-        return [(f.get("key", ""), (f.get("links") or {}).get("self", "")) for f in data.get("files") or []]
-    if fid:
-        data = json.loads(get(f"https://api.figshare.com/v2/articles/{fid}", 5 * 2**20)[0])
-        return [(f.get("name", ""), f.get("download_url", "")) for f in data.get("files") or []]
+    try:
+        if zid:
+            data = json.loads(get(f"https://zenodo.org/api/records/{zid}", 5 * 2**20)[0])
+            return [(str(f.get("key", "")), str((f.get("links") or {}).get("self", "")))
+                    for f in data.get("files") or [] if isinstance(f, dict)]
+        if fid:
+            data = json.loads(get(f"https://api.figshare.com/v2/articles/{fid}", 5 * 2**20)[0])
+            return [(str(f.get("name", "")), str(f.get("download_url", "")))
+                    for f in data.get("files") or [] if isinstance(f, dict)]
+    except (ValueError, AttributeError) as exc:  # не JSON или не тот JSON
+        raise FetchError(f"репозиторий ответил непонятно: {exc}") from exc
     return []
 
 
@@ -222,7 +262,10 @@ def from_zip(data: bytes, limit: int) -> tuple[bytes, str]:
         if info.filename.lower().endswith(TABLE_EXT) and not info.filename.startswith("__MACOSX"):
             if info.file_size > limit:
                 raise FetchError(f"{info.filename} в архиве больше {limit // 2**20} МБ")
-            return z.read(info), info.filename
+            try:
+                return z.read(info), info.filename
+            except (RuntimeError, zipfile.BadZipFile, OSError, EOFError) as exc:  # пароль, битый архив
+                raise FetchError(f"{info.filename} в архиве не читается: {exc}") from exc
     raise FetchError("в архиве нет CSV или XLSX")
 
 
@@ -231,7 +274,12 @@ def fetch_table(url: str, limit: int) -> dict[str, Any]:
     Нельзя — FetchError с причиной."""
     import base64
 
-    files = resolve(url, limit)
+    try:
+        files = resolve(url, limit)
+    except FetchError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — одна плохая ссылка не должна останавливать обход статей
+        raise FetchError(f"ссылку не разобрать: {type(exc).__name__}: {exc}") from exc
     if not files:
         raise FetchError("по ссылке нет файла таблицы, который можно скачать автоматически "
                          "(страница, вход или капча) — скачайте вручную")
@@ -248,4 +296,6 @@ def fetch_table(url: str, limit: int) -> dict[str, Any]:
                     "size": len(data), "content_b64": base64.b64encode(data).decode()}
         except FetchError as exc:
             reasons.append(f"{name}: {exc}")
+        except Exception as exc:  # noqa: BLE001 — то же: причина в черновик, обход продолжается
+            reasons.append(f"{name}: {type(exc).__name__}: {exc}")
     raise FetchError("; ".join(reasons))

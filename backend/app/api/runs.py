@@ -321,7 +321,8 @@ def start_run(db: Session, settings: Settings, user: User, template: str, snapsh
     except ParamError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     # цена расчёта и лимиты — на сервере (app/services/resources.py), ресурс — по оценке
-    est = resources.estimate(db, settings, t, checked, snap.row_count)
+    est = resources.estimate(db, settings, t, checked,
+                                 resources.rows_of(settings, snap, str(checked.get("sheet") or "")))
     try:
         resources.check_limits(db, settings, user, est)
     except resources.LimitError as exc:
@@ -375,7 +376,8 @@ def run_estimate(body: EstimateIn, db: Annotated[Session, Depends(get_db)],
         params = check_params(t, body.params)
     except ParamError:  # параметры ещё правят — оценка по тому, что есть, поверх значений по умолчанию
         params = {**{p.name: p.default for p in t.params}, **body.params}
-    est = resources.estimate(db, settings, t, params, snap.row_count)
+    est = resources.estimate(db, settings, t, params,
+                             resources.rows_of(settings, snap, str(params.get("sheet") or "")))
     try:
         resources.check_limits(db, settings, user, est)
         blocked = ""

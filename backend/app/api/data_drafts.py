@@ -260,15 +260,23 @@ def approve(
             "Файл по ссылке не скачан или в нём нет таблицы — скачайте данные по ссылке источника "
             "и загрузите их в набор данных вручную" if d.source_kind == "link" else "В таблице меньше трёх строк",
         )
+    original = Path(d.file_path) if d.source_kind == "link" and d.file_path else None
+    from_file = original is not None and original.is_file() and not svc.edited(d)
+    cut = ""
+    if d.source_kind == "link" and not from_file and len(d.rows or []) >= svc.MAX_ROWS:
+        # правленая таблица — только строки черновика; остальное есть в исходном файле по ссылке
+        cut = (f"В набор вошли первые {svc.MAX_ROWS} строк правленой таблицы черновика; "
+               "полный файл — по ссылке источника.")
     description = "\n\n".join(
-        x for x in (body.description.strip() or d.description, svc.provenance(d)) if x
+        x for x in (body.description.strip() or d.description, svc.provenance(d), cut) if x
     )
+    # по ссылке из статьи — адрес самих данных; таблица статьи — ссылка на статью
+    source = d.source_url if d.source_kind == "link" else (f"https://doi.org/{d.doi}" if d.doi else "")
     ds = Dataset(
         code=next_code(db, Dataset.code, "DS", 2),
         title=body.title.strip(),
         description=description[:20000],
-        # по ссылке из статьи — адрес самих данных; таблица статьи — ссылка на статью
-        source_url=d.source_url if d.source_kind == "link" else (f"https://doi.org/{d.doi}" if d.doi else ""),
+        source_url=source[:1024],  # поле набора короче, чем у черновика
         license="",
         access_level=body.access_level,
     )
@@ -276,8 +284,7 @@ def approve(
     db.flush()
     version = _version(db, ds, "")
     stem = re.sub(r"[^\w.-]+", "_", f"{d.doc_id}_t{d.table_number}").strip("_.")[:120] or "table"
-    original = Path(d.file_path) if d.source_kind == "link" and d.file_path else None
-    if original is not None and original.is_file() and not svc.edited(d):
+    if from_file and original is not None:
         # исходный файл как есть: все строки и листы, тот же sha256, что скачал агент
         target = _root(settings, ds) / "snapshots" / version / original.name
         target.parent.mkdir(parents=True, exist_ok=True)

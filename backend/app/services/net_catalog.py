@@ -32,7 +32,7 @@ NETS: dict[str, Net] = {
             "lab-mlp",
             {"architecture": "mlp"},
             pattern=r"\bmlp\b|multi-?layer perceptron|perceptron|перцептрон|feed-?forward neural|"
-            r"полносвязн\w* (?:нейрон|сет)|artificial neural network|\bann\b|"
+            r"полносвязн\w* (?:нейрон|сет)|artificial neural network|(?-i:\bANNs?\b)|"
             r"искусственн\w* нейронн\w* сет|back-?propagation neural|\bbpnn\b",
         ),
         Net(
@@ -185,9 +185,25 @@ def _sentence(text: str, start: int, end: int) -> str:
     return quote
 
 
+REFERENCES = re.compile(
+    r"\n\s*(?:\d+\.?\s*)?(?:references|bibliography|literature cited|works cited|список литературы|"
+    r"литература|библиографический список|список источников)\s*\n",
+    re.IGNORECASE,
+)
+
+
+def body_text(text: str) -> str:
+    """Текст статьи без списка литературы: сети из названий чужих работ — не сети авторов.
+    Список отрезается, только если он во второй половине текста (заголовок в оглавлении — не он)."""
+    found = list(REFERENCES.finditer(text))
+    if found and found[-1].start() > len(text) // 2:
+        return text[: found[-1].start()]
+    return text
+
+
 def detect(text: str) -> list[dict[str, Any]]:
-    """Какие сети и методы упоминает текст: [{net, count, quote}] — сначала нейросети, потом по
-    числу упоминаний (сеть, о которой пишут чаще, — скорее всего, основная у авторов)."""
+    """Какие сети и методы упоминает текст: [{net, count, quote}] — по числу упоминаний (сеть,
+    о которой пишут чаще, — скорее всего, основная у авторов); при равенстве — нейросеть."""
     found: list[dict[str, Any]] = []
     for n in NETS.values():
         matches = list(re.finditer(n.pattern, text, flags=re.IGNORECASE))
@@ -201,13 +217,14 @@ def detect(text: str) -> list[dict[str, Any]]:
                     "quote": _sentence(text, m.start(), m.end()),
                 }
             )
-    found.sort(key=lambda f: (f["net"] not in NEURAL, -f["count"]))
+    # основная сеть авторов — та, о которой пишут чаще; при равенстве — нейросеть
+    found.sort(key=lambda f: (-f["count"], f["net"] not in NEURAL))
     return found
 
 
 def authors_net(text: str) -> dict[str, Any] | None:
     """Сеть авторов: самая упоминаемая нейросеть, иначе самый упоминаемый метод; нет — None."""
-    found = detect(text)
+    found = detect(body_text(text))
     if not found:
         return None
     top = found[0]
