@@ -1,3 +1,24 @@
+/** Тип связи: как фактор влияет и на какие показатели (design/GLOSSARY.md). */
+export type Effect = "increases" | "decreases" | "no_effect" | "mixed";
+export type TargetKind = "financial" | "nonfinancial";
+
+export const EFFECT_LABEL: Record<Effect, string> = {
+  increases: "повышает",
+  decreases: "снижает",
+  no_effect: "не влияет",
+  mixed: "влияет по-разному",
+};
+
+export const TARGET_KIND_LABEL: Record<TargetKind, string> = {
+  financial: "финансовые результаты",
+  nonfinancial: "нефинансовые результаты",
+};
+
+/** «повышает · финансовые результаты»; пусто — тип связи не указан. */
+export function linkType(effect: Effect | "", target: TargetKind | ""): string {
+  return [effect ? EFFECT_LABEL[effect] : "", target ? TARGET_KIND_LABEL[target] : ""].filter(Boolean).join(" · ");
+}
+
 export type HStatus = "proposed" | "accepted" | "rejected" | "testing" | "tested";
 
 export interface KbRefIn {
@@ -22,6 +43,9 @@ export interface Hypothesis {
   decided_by: string;
   experiment: string;
   methodology_node: string;
+  methodology_node_title: string;
+  effect: Effect | "";
+  target_kind: TargetKind | "";
   source: "human" | "qwen";
   suggested: { dataset?: string; method?: string; data_needed?: string };
   created_at: string;
@@ -49,6 +73,8 @@ export const proposeHypothesis = (h: {
   rationale: string;
   direction: string;
   methodology_node?: string;
+  effect?: Effect | "";
+  target_kind?: TargetKind | "";
   refs: KbRefIn[];
 }) => call<Hypothesis>("/hypotheses", { method: "POST", body: JSON.stringify(h) });
 /** Уже предложенная идея с теми же словами: подсказка автору до отправки. */

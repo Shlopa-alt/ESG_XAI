@@ -65,3 +65,23 @@ def test_similar_finds_paraphrase_and_changes_nothing(make_client) -> None:  # t
 
 def test_similar_needs_login(client) -> None:  # type: ignore[no-untyped-def]
     assert client.post("/api/hypotheses/similar", json=SAME).status_code == 401
+
+
+# Тип связи у идеи (п. 6 правок по совещанию): как влияет и на какие показатели.
+def test_link_type_and_task_title(make_client, db_session) -> None:  # type: ignore[no-untyped-def]
+    from app.models import MethodologySection
+
+    db_session.add(MethodologySection(number="Н1", title="[направление]", content="", kind="direction",
+                                      position=1))
+    db_session.commit()
+    c = make_client("reader1", "reader")
+    r = c.post("/api/hypotheses", json={**H, "methodology_node": "Н1", "effect": "increases",
+                                        "target_kind": "nonfinancial"})
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert (body["effect"], body["target_kind"]) == ("increases", "nonfinancial")
+    assert (body["methodology_node"], body["methodology_node_title"]) == ("Н1", "[направление]")
+    # без типа связи — пусто, как у старых идей и идей ИИ-помощника
+    plain = c.post("/api/hypotheses", json=H).json()
+    assert (plain["effect"], plain["target_kind"], plain["methodology_node_title"]) == ("", "", "")
+    assert c.post("/api/hypotheses", json={**H, "effect": "boosts"}).status_code == 422

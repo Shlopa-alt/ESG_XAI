@@ -930,3 +930,12 @@ details[open] > .node-head .node-preview { display: none; }
 .similar-result .h3 { margin: 4px 0 0; }
 .similar-result .list { margin: 0; }
 .similar-quote { margin: 4px 0; line-height: 1.5; }
+/* --- задание методики и тип связи у идеи --- */
+.idea-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 16px; margin: 0; }
+.idea-facts div { display: flex; flex-direction: column; gap: 2px; }
+.idea-facts dt { font-size: 13px; color: var(--text-muted); }
+.idea-facts dd { margin: 0; }
+.field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 16px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.field-row legend { padding: 0; margin-bottom: 6px; font-weight: 500; }
+.field-row select { width: 100%; }
+.field-row .field-hint { grid-column: 1 / -1; margin: 0; font-size: 13px; }
