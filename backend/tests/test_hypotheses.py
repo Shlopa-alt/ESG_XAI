@@ -85,3 +85,23 @@ def test_link_type_and_task_title(make_client, db_session) -> None:  # type: ign
     plain = c.post("/api/hypotheses", json=H).json()
     assert (plain["effect"], plain["target_kind"], plain["methodology_node_title"]) == ("", "", "")
     assert c.post("/api/hypotheses", json={**H, "effect": "boosts"}).status_code == 422
+
+
+def test_weight_set_by_author_changed_by_reviewer(make_client) -> None:  # type: ignore[no-untyped-def]
+    author = make_client("reader1", "reader")
+    r = author.post("/api/hypotheses", json={**H, "weight": 2})
+    assert r.status_code == 201, r.text
+    assert (r.json()["weight"], r.json()["weight_set_by"]) == (2, "reader1")
+    plain = author.post("/api/hypotheses", json=H).json()
+    assert (plain["weight"], plain["weight_set_by"]) == (None, "")
+    assert author.post("/api/hypotheses", json={**H, "weight": 4}).status_code == 422
+    # автор после отправки вес не меняет — это делает рецензент
+    assert author.put("/api/hypotheses/H-001/weight", json={"weight": 3}).status_code == 403
+    assert make_client("res", "researcher").put("/api/hypotheses/H-001/weight",
+                                                json={"weight": 3}).status_code == 403
+    rev = make_client("rev", "reviewer")
+    r = rev.put("/api/hypotheses/H-001/weight", json={"weight": 3})
+    assert r.status_code == 200 and (r.json()["weight"], r.json()["weight_set_by"]) == (3, "rev")
+    assert rev.put("/api/hypotheses/H-001/weight", json={"weight": 0}).status_code == 422
+    cleared = rev.put("/api/hypotheses/H-001/weight", json={"weight": None}).json()
+    assert (cleared["weight"], cleared["weight_set_by"]) == (None, "rev")

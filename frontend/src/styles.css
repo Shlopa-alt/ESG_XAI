@@ -959,4 +959,6 @@ details[open] > .node-head .node-preview { display: none; }
 .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 16px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .field-row legend { padding: 0; margin-bottom: 6px; font-weight: 500; }
 .field-row select { width: 100%; }
+.weight-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.idea-facts .weight-change { margin-left: 8px; min-height: 32px; padding: 0 10px; font-size: 13px; }
 .field-row .field-hint { grid-column: 1 / -1; margin: 0; font-size: 13px; }

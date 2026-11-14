@@ -19,6 +19,11 @@ export function linkType(effect: Effect | "", target: TargetKind | ""): string {
   return [effect ? EFFECT_LABEL[effect] : "", target ? TARGET_KIND_LABEL[target] : ""].filter(Boolean).join(" · ");
 }
 
+/** Сила связи (вес): 1 — слабая, 2 — средняя, 3 — сильная. Ставит автор, менять может рецензент. */
+export type Weight = 1 | 2 | 3;
+export const WEIGHT_LABEL: Record<Weight, string> = { 1: "слабая", 2: "средняя", 3: "сильная" };
+export const WEIGHTS: Weight[] = [1, 2, 3];
+
 export type HStatus = "proposed" | "accepted" | "rejected" | "testing" | "tested";
 
 export interface KbRefIn {
@@ -46,6 +51,8 @@ export interface Hypothesis {
   methodology_node_title: string;
   effect: Effect | "";
   target_kind: TargetKind | "";
+  weight: Weight | null;
+  weight_set_by: string;
   source: "human" | "qwen";
   suggested: { dataset?: string; method?: string; data_needed?: string };
   created_at: string;
@@ -75,6 +82,7 @@ export const proposeHypothesis = (h: {
   methodology_node?: string;
   effect?: Effect | "";
   target_kind?: TargetKind | "";
+  weight?: Weight | null;
   refs: KbRefIn[];
 }) => call<Hypothesis>("/hypotheses", { method: "POST", body: JSON.stringify(h) });
 /** Уже предложенная идея с теми же словами: подсказка автору до отправки. */
@@ -89,6 +97,8 @@ export const similarHypotheses = (title: string, statement: string) =>
   call<SimilarIdea[]>("/hypotheses/similar", { method: "POST", body: JSON.stringify({ title, statement }) });
 export const decideHypothesis = (code: string, status: "accepted" | "rejected", note: string) =>
   call<Hypothesis>(`/hypotheses/${code}`, { method: "PATCH", body: JSON.stringify({ status, note }) });
+export const setHypothesisWeight = (code: string, weight: Weight | null) =>
+  call<Hypothesis>(`/hypotheses/${code}/weight`, { method: "PUT", body: JSON.stringify({ weight }) });
 export const experimentFromHypothesis = (code: string) =>
   call<Hypothesis>(`/hypotheses/${code}/experiment`, { method: "POST" });
 
