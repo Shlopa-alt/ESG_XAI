@@ -158,11 +158,10 @@ export function BarChart({ spec }: { spec: BarSpec }) {
                 const active = hover?.c === ci && hover.s === si;
                 return (
                   <div key={s.name} className="viz-bar-slot">
-                    <span
+                    <button
+                      type="button"
                       className={`viz-bar s${si + 1}${v < 0 ? " neg" : ""}${active ? " active" : ""}`}
                       style={{ left: `${left}%`, width: `${width}%` }}
-                      tabIndex={0}
-                      role="img"
                       aria-label={`${c}, ${s.name}: ${fmt(v, spec.unit)}`}
                       onMouseEnter={() => setHover({ c: ci, s: si })}
                       onFocus={() => setHover({ c: ci, s: si })}
@@ -223,11 +222,10 @@ export function RangeChart({ spec }: { spec: RangeSpec }) {
               <Grid ticks={ticks} pos={pos} reference={spec.reference} />
               <div className="viz-range-slot">
                 <span className="viz-whisker" style={{ left: `${pos(r.min)}%`, width: `${pos(r.max) - pos(r.min)}%` }} />
-                <span
+                <button
+                  type="button"
                   className={`viz-dot${hover === i ? " active" : ""}`}
                   style={{ left: `${pos(r.mean)}%` }}
-                  tabIndex={0}
-                  role="img"
                   aria-label={`${r.name}: среднее ${fmt(r.mean, spec.unit)}, от ${fmt(r.min, spec.unit)} до ${fmt(r.max, spec.unit)}`}
                   onMouseEnter={() => setHover(i)}
                   onFocus={() => setHover(i)}
