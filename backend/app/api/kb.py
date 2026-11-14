@@ -33,6 +33,7 @@ ALLOWED = frozenset(
         "document",
         "article",
         "fragment",
+        "pdf",  # PDF статьи: KBRAG отдаёт его тем же, кому видна сама статья
         "network",
         "facts",
         "datasets",

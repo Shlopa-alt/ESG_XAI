@@ -42,8 +42,23 @@ def test_kb_forwards_platform_token(make_client, calls, settings) -> None:  # ty
 def test_kb_rejects_unknown_endpoint(make_client, calls) -> None:  # type: ignore[no-untyped-def]
     c = make_client("ivanov", "owner")
     assert c.get("/api/kb/chat").status_code == 404
-    assert c.get("/api/kb/pdf").status_code == 404
+    assert c.get("/api/kb/chat/status").status_code == 404
     assert calls == []
+
+
+def test_kb_pdf_passes_through(make_client, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    seen: list[str] = []
+
+    def fake_fetch(url: str, token: str, timeout_s: float) -> tuple[int, bytes, str]:
+        seen.append(url)
+        return 200, b"%PDF-1.7 [...]", "application/pdf"
+
+    monkeypatch.setattr(kb_api, "fetch", fake_fetch)
+    r = make_client("ivanov", "reader").get("/api/kb/pdf", params={"doc_id": "d1"})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF-")
+    assert seen[-1].endswith("/api/pdf?doc_id=d1")
 
 
 def test_kb_unavailable_is_502(make_client, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]

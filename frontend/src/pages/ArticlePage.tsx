@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { listExperiments } from "../api/experiments";
 import type { KbRefIn } from "../api/hypotheses";
-import { kbArticle } from "../api/kb";
+import { kbArticle, kbPdfUrl } from "../api/kb";
 import { listCrs } from "../api/methodology";
 import { useMe } from "../auth/useAuth";
 
@@ -142,6 +142,7 @@ export function Article() {
   const doi = a.doi ?? a.url?.match(/10\.\d{4,9}\/\S+/)?.[0] ?? "";
   const refIn: KbRefIn = { kind: "article", kbrag_id: a.doc_id, kb_path: a.kbs[0] ?? "", title: a.title ?? "", doi };
   const canLink = me.data?.role === "researcher" || me.data?.role === "owner";
+  const hasPdf = Boolean(a.pdf_path);
   return (
     <>
       <div className="muted">
@@ -180,6 +181,13 @@ export function Article() {
           <button type="button" className="btn-primary" onClick={() => navigate("/hypotheses", { state: { ref: refIn } })}>
             Предложить идею по этой статье
           </button>
+          {hasPdf ? (
+            <a className="btn-ghost" href={kbPdfUrl(a.doc_id)} target="_blank" rel="noreferrer">
+              Открыть PDF статьи
+            </a>
+          ) : (
+            <span className="muted">PDF статьи в банке нет{doi ? " — полный текст по ссылке DOI" : ""}</span>
+          )}
         </div>
       </section>
       {canLink && <LinkPanel refIn={refIn} />}
@@ -190,7 +198,21 @@ export function Article() {
             <li key={f.ord}>
               {f.headings.length > 0 && <div className="muted">{f.headings.join(" › ")}</div>}
               <p>{f.text}</p>
-              {f.pages.length > 0 && <div className="muted mono">с. {f.pages.join(", ")}</div>}
+              {f.pages.length > 0 && (
+                <div className="muted mono">
+                  с.{" "}
+                  {hasPdf
+                    ? f.pages.map((n, i) => (
+                        <span key={n}>
+                          {i > 0 && ", "}
+                          <a href={kbPdfUrl(a.doc_id, n)} target="_blank" rel="noreferrer" aria-label={`Страница ${n} в PDF`}>
+                            {n}
+                          </a>
+                        </span>
+                      ))
+                    : f.pages.join(", ")}
+                </div>
+              )}
             </li>
           ))}
         </ol>
