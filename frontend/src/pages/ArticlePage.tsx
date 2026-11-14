@@ -7,6 +7,7 @@ import type { KbRefIn } from "../api/hypotheses";
 import { kbArticle } from "../api/kb";
 import { listCrs } from "../api/methodology";
 import { useMe } from "../auth/useAuth";
+import { FragmentText } from "../components/FragmentText";
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -189,7 +190,7 @@ export function Article() {
           {fragments.map((f) => (
             <li key={f.ord}>
               {f.headings.length > 0 && <div className="muted">{f.headings.join(" › ")}</div>}
-              <p>{f.text}</p>
+              <FragmentText text={f.text} />
               {f.pages.length > 0 && <div className="muted mono">с. {f.pages.join(", ")}</div>}
             </li>
           ))}
