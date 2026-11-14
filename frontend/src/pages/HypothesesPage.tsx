@@ -11,7 +11,9 @@ import {
   type KbRefIn,
   listHypotheses,
   proposeHypothesis,
+  similarHypotheses,
 } from "../api/hypotheses";
+import { kbSearch } from "../api/kb";
 import { useMe } from "../auth/useAuth";
 import { NodeSelect } from "../components/NodeSelect";
 import { ProposalPanel } from "../components/ProposalPanel";
@@ -20,6 +22,89 @@ import { canReview, canRun, HypothesisPath, hypothesisNext, NextStep } from "../
 /** Опора, переданная со страницы базы знаний («Предложить гипотезу по этой статье»). */
 export interface ProposeState {
   ref?: KbRefIn;
+}
+
+const ARTICLES_SHOWN = 3;
+
+/** Есть ли похожее: уже предложенные идеи и статьи банка о том же. Ничего не отправляет. */
+function SimilarCheck({ title, statement, refs, onAddRef }: {
+  title: string;
+  statement: string;
+  refs: KbRefIn[];
+  onAddRef: (r: KbRefIn) => void;
+}) {
+  const check = useMutation({
+    mutationFn: async () => {
+      const q = `${title} ${statement}`.trim();
+      // статьи ищутся по смыслу: русский запрос находит и английские статьи
+      const [ideas, hits] = await Promise.all([similarHypotheses(title, statement), kbSearch(q, "esg").catch(() => null)]);
+      const seen = new Set<string>();
+      const articles = (hits ?? []).filter((h) => !seen.has(h.doc_id) && seen.add(h.doc_id)).slice(0, ARTICLES_SHOWN);
+      return { ideas, articles, bankDown: hits === null };
+    },
+  });
+  const ready = title.trim().length >= 5;
+  const r = check.data;
+  return (
+    <div className="similar">
+      <div className="review-form">
+        <button type="button" className="btn-ghost" disabled={!ready || check.isPending} onClick={() => check.mutate()}>
+          {check.isPending ? "Ищем похожее…" : "Проверить, есть ли похожее"}
+        </button>
+        <span className="muted">{ready ? "Найдём похожие идеи и статьи банка о том же." : "Сначала коротко опишите идею."}</span>
+      </div>
+      {check.isError && (
+        <p className="error" role="alert">
+          Не удалось проверить: {check.error.message}
+        </p>
+      )}
+      {r && (
+        <div className="similar-result" aria-live="polite">
+          <h3 className="h3">Похожие идеи</h3>
+          {r.ideas.length === 0 ? (
+            <p className="muted">Похожих среди предложенных идей нет.</p>
+          ) : (
+            <ul className="list">
+              {r.ideas.map((i) => (
+                <li key={i.code}>
+                  <a href={`#${i.code}`} className="mono">
+                    {i.code}
+                  </a>{" "}
+                  {i.title} <span className={`badge ${H_BADGE[i.status]}`}>{H_STATUS_LABEL[i.status]}</span>
+                  {i.source === "qwen" && <span className="muted"> · предложил ИИ-помощник</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          {r.ideas.length > 0 && (
+            <p className="muted">Если это та же идея, лучше дополнить её, чем предлагать заново. Если ваша отличается — напишите в обосновании чем.</p>
+          )}
+          <h3 className="h3">Статьи о том же</h3>
+          {r.bankDown && <p className="muted">Банк статей сейчас недоступен, статьи не проверены.</p>}
+          {!r.bankDown && r.articles.length === 0 && <p className="muted">В банке статей ничего близкого не нашлось.</p>}
+          {r.articles.length > 0 && (
+            <ul className="list">
+              {r.articles.map((a) => {
+                const taken = refs.some((x) => x.kbrag_id === a.doc_id);
+                return (
+                  <li key={a.doc_id}>
+                    <Link to={`/knowledge/article/${encodeURIComponent(a.doc_id)}`}>{a.title || a.doc_id}</Link>
+                    {a.year && <span className="muted"> · {a.year}</span>}
+                    {a.pages.length > 0 && <span className="muted mono"> · с. {a.pages.join(", ")}</span>}
+                    <p className="muted similar-quote">{a.text.length > 240 ? `${a.text.slice(0, 240).replace(/\s+\S*$/, "")}…` : a.text}</p>
+                    <button type="button" className="link-btn" disabled={taken}
+                      onClick={() => onAddRef({ kind: "article", kbrag_id: a.doc_id, title: a.title, page: a.pages[0] ?? null })}>
+                      {taken ? "уже источник" : "взять источником"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () => void }) {
@@ -76,6 +161,7 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
           <option value="Методы">Методы</option>
         </select>
       </label>
+      <SimilarCheck title={title} statement={statement} refs={refs} onAddRef={(r) => setRefs([...refs, r])} />
       {refs.length > 0 && (
         <div className="muted">
           Источник в банке статей:
@@ -135,7 +221,7 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
     decide.mutate("rejected");
   };
   return (
-    <article className="card cr">
+    <article className="card cr" id={h.code}>
       <div className="kb-meta">
         <span className="mono">{h.code}</span>
         {h.direction && <span>· {h.direction}</span>}

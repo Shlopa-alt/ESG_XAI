@@ -51,6 +51,16 @@ export const proposeHypothesis = (h: {
   methodology_node?: string;
   refs: KbRefIn[];
 }) => call<Hypothesis>("/hypotheses", { method: "POST", body: JSON.stringify(h) });
+/** Уже предложенная идея с теми же словами: подсказка автору до отправки. */
+export interface SimilarIdea {
+  code: string;
+  title: string;
+  status: HStatus;
+  source: "human" | "qwen";
+  share: number;
+}
+export const similarHypotheses = (title: string, statement: string) =>
+  call<SimilarIdea[]>("/hypotheses/similar", { method: "POST", body: JSON.stringify({ title, statement }) });
 export const decideHypothesis = (code: string, status: "accepted" | "rejected", note: string) =>
   call<Hypothesis>(`/hypotheses/${code}`, { method: "PATCH", body: JSON.stringify({ status, note }) });
 export const experimentFromHypothesis = (code: string) =>
