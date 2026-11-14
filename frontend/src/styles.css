@@ -922,3 +922,9 @@ details[open] > .node-head .node-preview { display: none; }
   .graph-canvas { height: 62vh; min-height: 380px; }
   .graph-panel { max-height: none; overflow: visible; }
 }
+
+/* --- анализ данных: карточки рекомендаций --- */
+.reco-list { display: flex; flex-direction: column; gap: 12px; }
+.reco { display: flex; flex-direction: column; gap: 8px; }
+.reco-primary { border: 2px solid var(--accent); padding: 19px; }
+.reco .list { font-size: 14px; }

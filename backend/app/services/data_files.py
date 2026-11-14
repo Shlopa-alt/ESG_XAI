@@ -45,6 +45,7 @@ class Table:
     numeric: set[str]
     sheets: list[str] = field(default_factory=list)  # листы-таблицы книги; у CSV — пусто
     sheet: str = ""  # какой лист прочитан
+    sample: list[list[Any]] = field(default_factory=list)  # первые строки (до SAMPLE) — для подсказок
 
 
 def is_table(path: str | Path) -> bool:
@@ -131,7 +132,7 @@ def table_columns(path: Path, sheet: str = "") -> Table:
         if name not in sheets:
             raise ValueError(f"В книге нет листа-таблицы «{name}»; есть: {', '.join(sheets)}")
         columns, rows = sheets[name]
-        return Table(columns, _numeric(columns, rows), list(sheets), name)
+        return Table(columns, _numeric(columns, rows), list(sheets), name, rows)
     if suffix not in TEXT:
         raise ValueError(f"Общие методы читают CSV и Excel (.xlsx), а срез — {path.suffix or 'без расширения'}")
     if sheet:
@@ -146,4 +147,5 @@ def table_columns(path: Path, sheet: str = "") -> Table:
         reader = csv.reader(f, dialect)
         columns = [c.strip() for c in next(reader, [])]
         rows = [row for _, row in zip(range(SAMPLE), reader, strict=False)]
-    return Table(columns, _numeric(columns, [r[: len(columns)] for r in rows]))
+    rows = [r[: len(columns)] for r in rows]
+    return Table(columns, _numeric(columns, rows), sample=rows)

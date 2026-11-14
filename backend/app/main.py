@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, FastAPI
 
 from app.api import (
+    analysis,
     audit,
     auth,
     data_drafts,
@@ -60,4 +61,5 @@ api.include_router(qwen.router)
 api.include_router(proposals.router)
 api.include_router(reports.router)
 api.include_router(data_drafts.router)
+api.include_router(analysis.router)
 app.include_router(api)
