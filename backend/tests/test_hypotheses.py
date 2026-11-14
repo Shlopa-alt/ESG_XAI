@@ -71,8 +71,8 @@ def test_similar_needs_login(client) -> None:  # type: ignore[no-untyped-def]
 def test_link_type_and_task_title(make_client, db_session) -> None:  # type: ignore[no-untyped-def]
     from app.models import MethodologySection
 
-    db_session.add(MethodologySection(number="Н1", title="[направление]", content="", kind="direction",
-                                      position=1))
+    db_session.add(MethodologySection(number="Н1", title="[направление]", content="",
+                                      kind="direction", position=1))
     db_session.commit()
     c = make_client("reader1", "reader")
     r = c.post("/api/hypotheses", json={**H, "methodology_node": "Н1", "effect": "increases",

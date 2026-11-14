@@ -16,7 +16,8 @@ depends_on = None
 
 def upgrade() -> None:
     # пусто — тип связи не указан (старые гипотезы и гипотезы Qwen)
-    op.add_column("hypotheses", sa.Column("effect", sa.String(16), nullable=False, server_default=""))
+    op.add_column("hypotheses",
+                  sa.Column("effect", sa.String(16), nullable=False, server_default=""))
     op.add_column("hypotheses",
                   sa.Column("target_kind", sa.String(16), nullable=False, server_default=""))
 
