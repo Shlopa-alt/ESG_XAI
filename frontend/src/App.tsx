@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 
 import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
+import { Analysis } from "./pages/AnalysisPage";
 import { Article } from "./pages/ArticlePage";
 import { DataDraftPage, DataDrafts } from "./pages/DataDraftsPage";
 import { DatasetPage } from "./pages/DatasetPage";
@@ -49,6 +50,7 @@ export function App() {
         <Route path="run" element={<Run view="new" />} />
         <Route path="runs" element={<Run view="list" />} />
         <Route path="run/:id" element={<RunDetail />} />
+        <Route path="analysis" element={<Analysis />} />
         <Route path="methodology" element={<Methodology />} />
         <Route path="password" element={<ChangePassword />} />
         {user.role === "owner" && <Route path="users" element={<Users />} />}

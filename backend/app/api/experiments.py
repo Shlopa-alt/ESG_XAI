@@ -75,6 +75,7 @@ class ExperimentOut(BaseModel):
     reproducibility: list[str]
     report_path: str
     report: dict[str, Any] = {}
+    config: dict[str, Any] = {}  # config.analysis — какой метод и сеть выбраны и почему
     created_at: datetime
     finished_at: datetime | None
 

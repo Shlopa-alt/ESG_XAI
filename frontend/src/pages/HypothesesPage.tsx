@@ -376,9 +376,16 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
       <NextStep
         action={
           h.status === "accepted" && canRun(role) ? (
-            <Link to={`/run?h=${encodeURIComponent(h.code)}`} className="btn-primary">
-              Проверить идею
-            </Link>
+            <>
+              <Link to={`/run?h=${encodeURIComponent(h.code)}`} className="btn-primary">
+                Проверить идею
+              </Link>
+              {h.refs.some((r) => r.kind === "article") && (
+                <Link to={`/analysis?h=${encodeURIComponent(h.code)}`} className="btn-ghost">
+                  Подобрать сеть по статье
+                </Link>
+              )}
+            </>
           ) : undefined
         }
       >

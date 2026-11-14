@@ -17,7 +17,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-ParamKind = Literal["int", "column", "columns", "sheet"]
+ParamKind = Literal["int", "column", "columns", "sheet", "choice"]
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,7 @@ class Param:
     numeric: bool = True  # столбцы: только числовые (буквенная шкала рейтингов AAA…CCC — числовая)
     required: bool = True
     hint: str = ""
+    options: tuple[tuple[str, str], ...] = ()  # choice: (значение, подпись на экране)
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,11 @@ class Template:
 
 
 SEED = Param("seed", "Seed", 42, 0, 2**31 - 1)
+# сеть метода лаборатории: «как у авторов» статьи или замена при том же протоколе (net_catalog.py)
+ARCHITECTURE = Param("architecture", "Нейросеть", "mlp", kind="choice", required=False,
+                     options=(("mlp", "перцептрон лаборатории (MLP)"),
+                              ("transformer", "трансформер для таблиц (FT-Transformer)")),
+                     hint="перцептрон — как в постановке лаборатории; трансформер — замена")
 # у книги Excel — какой лист считать (пусто — первый лист-таблица); у CSV параметра не видно
 SHEET = Param("sheet", "Лист книги", "", kind="sheet", required=False, hint="для срезов Excel")
 
@@ -102,6 +108,7 @@ TEMPLATES: dict[str, Template] = {
                           numeric=False, required=False, hint="текстовые — по категориям"),
                     Param("lag", "R прошлого периода", "", kind="column", required=False,
                           hint="для прогноза «как в прошлом году»"),
+                    ARCHITECTURE,
                     SEED,
                     Param("splits", "Случайных разбиений", 30, 5, 200),
                     Param("trials", "Испытаний Optuna на разбиение", 10, 3, 100)),
@@ -155,6 +162,12 @@ def check_params(t: Template, given: dict[str, Any], columns: list[str] | None =
                 if sheets and (value or sheet) not in sheets:
                     raise ParamError(f"В книге нет листа-таблицы «{value}»; есть: {', '.join(sheets)}")
                 value = value or sheet  # пусто — лист, который прочитан (первый лист-таблица)
+            out[p.name] = value
+            continue
+        if p.kind == "choice":
+            allowed = [v for v, _ in p.options]
+            if value not in allowed:
+                raise ParamError(f"«{p.label}»: одно из {', '.join(allowed)}")
             out[p.name] = value
             continue
         if p.kind == "int":

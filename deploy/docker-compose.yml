@@ -49,9 +49,16 @@ services:
       # deploy/windows/kb_import_worker.py на машине KBRAG (токен — KB_IMPORT_TOKEN)
       KB_IMPORT_TOKEN: ${KB_IMPORT_TOKEN:-}
       KB_IMPORT_MAX_MB: ${KB_IMPORT_MAX_MB:-60}
+      # Агент сбора данных по ссылкам из статей: предел файла, который принимает платформа
+      LINK_MAX_MB: ${LINK_MAX_MB:-25}
       # Запуск экспериментов из формы: очередь Celery в Redis, исполнитель runner-cpu
       REDIS_URL: redis://redis:6379/0
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      # Учёт ресурсов (docs/DATA_ANALYSIS.md): расчётов человека в очереди и в работе, минут за сутки,
+      # есть ли исполнитель видеокарты
+      RUN_ACTIVE_PER_USER: ${RUN_ACTIVE_PER_USER:-3}
+      RUN_CPU_MINUTES_PER_DAY: ${RUN_CPU_MINUTES_PER_DAY:-600}
+      GPU_EXECUTOR: ${GPU_EXECUTOR:-false}
       # Qwen по требованию: обработчик очереди runner/qwen/worker.py на машине с видеокартой
       QWEN_TOKEN: ${QWEN_TOKEN:-}
       # Датасеты: срезы загружаются и регистрируются в папке данных сервера

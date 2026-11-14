@@ -109,6 +109,8 @@ function api({
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string, init?: RequestInit) => {
+      // оценка цены расчёта ничего не меняет — не действие, в список отправленного не идёт
+      if (url.includes("/runs/estimate")) return Promise.resolve(json({ detail: "[оценки нет на заглушке]" }, 503));
       if (init?.method === "POST") {
         sent.push({ url, body: JSON.parse(String(init.body ?? "{}")) as Record<string, unknown> });
         const rule = Object.entries(posts).find(([k]) => url.includes(k));

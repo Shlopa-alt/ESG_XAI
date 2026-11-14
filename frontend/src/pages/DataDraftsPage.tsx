@@ -16,6 +16,7 @@ import {
   JOB_STATUS,
   listDrafts,
   rejectDraft,
+  scanLinks,
   scanTables,
 } from "../api/dataDrafts";
 import { useMe } from "../auth/useAuth";
@@ -43,14 +44,16 @@ export function DataDrafts() {
   const isOwner = useMe().data?.role === "owner";
   const q = useQuery({ queryKey: ["data-drafts", filter], queryFn: () => listDrafts(filter) });
   const scan = useMutation({ mutationFn: () => scanTables() });
+  const links = useMutation({ mutationFn: () => scanLinks() });
   return (
     <>
       <section className="page-head">
         <span className="eyebrow">ДАННЫЕ</span>
         <h1 className="page-title">Данные из статей</h1>
         <p className="lead">
-          Таблицы с исходными данными, найденные в статьях банка. Проверьте таблицу, при необходимости поправьте и создайте
-          из неё набор данных: на нём можно считать проверки.
+          Таблицы с исходными данными, найденные в статьях банка, и данные, скачанные по ссылкам из статей. Проверьте
+          таблицу, при необходимости поправьте и создайте из неё набор данных: на нём можно считать проверки. Условия
+          использования таких данных определяет статья.
         </p>
         {isOwner && (
           <div className="run-head">
@@ -60,6 +63,18 @@ export function DataDrafts() {
             {!scan.isSuccess && <span className="muted">Может занять часы и задержать другие задачи ИИ-помощника.</span>}
             {scan.isSuccess && <span className="muted">Задача ИИ-помощника №{scan.data.job} в очереди — черновики появятся здесь.</span>}
             {scan.isError && <span className="error" role="alert">{scan.error.message}</span>}
+          </div>
+        )}
+        {isOwner && (
+          <div className="run-head">
+            <button type="button" className="btn-ghost" disabled={links.isPending || links.isSuccess} onClick={() => links.mutate()}>
+              Найти данные по ссылкам из статей
+            </button>
+            {!links.isSuccess && (
+              <span className="muted">ИИ-помощник найдёт в статьях ссылки на данные авторов и скачает доступное.</span>
+            )}
+            {links.isSuccess && <span className="muted">Задача ИИ-помощника №{links.data.job} в очереди — черновики появятся здесь.</span>}
+            {links.isError && <span className="error" role="alert">{links.error.message}</span>}
           </div>
         )}
       </section>
@@ -96,13 +111,19 @@ export function DataDrafts() {
                 {q.data.map((d) => (
                   <tr key={d.id}>
                     <td>
-                      <Link to={`/data-drafts/${d.id}`}>{d.title || `Таблица ${d.table_number}`}</Link>
+                      <Link to={`/data-drafts/${d.id}`}>{d.title || draftName(d)}</Link>
                     </td>
                     <td>
                       {d.article_title || d.doc_id}
                       <div className="muted">
-                        таблица {d.table_number}
-                        {d.page ? `, с. ${d.page}` : ""}
+                        {d.source_kind === "link" ? (
+                          <span className="badge st-running">ссылка на данные</span>
+                        ) : (
+                          <>
+                            таблица {d.table_number}
+                            {d.page ? `, с. ${d.page}` : ""}
+                          </>
+                        )}
                       </div>
                     </td>
                     <td className="num mono">
@@ -124,6 +145,53 @@ export function DataDrafts() {
         )}
       </section>
     </>
+  );
+}
+
+const draftName = (d: { source_kind: string; table_number: number }) =>
+  d.source_kind === "link" ? "Данные по ссылке из статьи" : `Таблица ${d.table_number}`;
+
+/** Откуда данные по ссылке: статья, источник, скачанный файл, предложение статьи; условия — по статье. */
+function LinkSource({ d }: { d: Draft }) {
+  return (
+    <section className="card">
+      <h2 className="h2">Откуда данные</h2>
+      <dl className="dl">
+        <dt>Статья</dt>
+        <dd>
+          <Link to={`/knowledge/article/${encodeURIComponent(d.doc_id)}`}>{d.article_title || d.doc_id}</Link>
+          {d.doi && (
+            <>
+              {" · "}
+              <a href={`https://doi.org/${d.doi}`} target="_blank" rel="noreferrer" className="mono">
+                DOI {d.doi}
+              </a>
+            </>
+          )}
+        </dd>
+        <dt>Источник данных</dt>
+        <dd>
+          <a href={d.source_url} target="_blank" rel="noreferrer">
+            {d.source_url}
+          </a>
+        </dd>
+        <dt>Скачанный файл</dt>
+        <dd>
+          {d.file_url ? (
+            <>
+              <a href={d.file_url} target="_blank" rel="noreferrer">
+                {d.file_name}
+              </a>{" "}
+              <span className="muted mono">sha256 {d.file_sha256.slice(0, 16)}…</span>
+            </>
+          ) : (
+            <span className="blockers">не скачан автоматически — откройте источник и скачайте данные вручную</span>
+          )}
+        </dd>
+      </dl>
+      {d.link_context && <blockquote className="quote">«{d.link_context}»</blockquote>}
+      <p className="muted">Условия использования определяет статья: при публикации ссылайтесь на неё и на источник данных.</p>
+    </section>
   );
 }
 
@@ -379,12 +447,16 @@ function About({ d, canEdit }: { d: Draft; canEdit: boolean }) {
           <Link to={`/knowledge/article/${encodeURIComponent(d.doc_id)}`}>{d.article_title || d.doc_id}</Link>
           {d.doi && <span className="mono"> · DOI {d.doi}</span>}
         </dd>
-        <dt>Таблица</dt>
-        <dd>
-          {d.table_number}
-          {d.page ? `, с. ${d.page}` : ""}
-          {d.caption && <span className="muted"> — {d.caption}</span>}
-        </dd>
+        {d.source_kind !== "link" && (
+          <>
+            <dt>Таблица</dt>
+            <dd>
+              {d.table_number}
+              {d.page ? `, с. ${d.page}` : ""}
+              {d.caption && <span className="muted"> — {d.caption}</span>}
+            </dd>
+          </>
+        )}
         <dt>Найдена</dt>
         <dd>{day(d.created_at)}</dd>
       </dl>
@@ -419,9 +491,9 @@ export function DataDraftPage() {
     <>
       <section className="page-head">
         <span className="eyebrow">
-          <Link to="/data-drafts">ЧЕРНОВИКИ ДАННЫХ</Link> · ТАБЛИЦА {d.table_number}
+          <Link to="/data-drafts">ЧЕРНОВИКИ ДАННЫХ</Link> · {d.source_kind === "link" ? "ССЫЛКА ИЗ СТАТЬИ" : `ТАБЛИЦА ${d.table_number}`}
         </span>
-        <h1 className="page-title">{d.title || `Таблица ${d.table_number}`}</h1>
+        <h1 className="page-title">{d.title || draftName(d)}</h1>
         <div className="run-head">
           <span className={`badge ${DRAFT_BADGE[d.status]}`}>{DRAFT_STATUS[d.status]}</span>
           {d.dataset && (
@@ -434,7 +506,12 @@ export function DataDraftPage() {
       </section>
       <About key={`${d.title}|${d.description}`} d={d} canEdit={canEdit} />
       {apply.isError && <p className="error" role="alert">{apply.error.message}</p>}
-      <DraftTable d={d} canEdit={canEdit} apply={(ops) => apply.mutate(ops)} pending={apply.isPending} />
+      {d.source_kind === "link" && <LinkSource d={d} />}
+      {d.columns.length > 0 ? (
+        <DraftTable d={d} canEdit={canEdit} apply={(ops) => apply.mutate(ops)} pending={apply.isPending} />
+      ) : (
+        <p className="muted">Таблицы в черновике нет — подробности в журнале ниже.</p>
+      )}
       {canEdit && <QwenCommand d={d} />}
       {canEdit && <Decide d={d} />}
       <section className="card">

@@ -16,7 +16,7 @@ from app.api.deps import current_user, require_role
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import Dataset, DatasetSnapshot, Experiment, Run, User
-from app.services import run_queue
+from app.services import resources, run_queue
 from app.services.report import Report, merge_run_report
 from app.services.data_files import Table, is_table, table_columns, to_container
 from app.services.run_templates import TEMPLATES, ParamError, check_params, script_args
@@ -263,7 +263,8 @@ def list_templates(db: Annotated[Session, Depends(get_db)]) -> list[TemplateOut]
             key=t.key, title=t.title, description=t.description, scope=t.scope, experiment=t.experiment,
             dataset=t.dataset, resource=t.resource, limit_min=t.limit_min,
             params=[{"name": p.name, "label": p.label, "default": p.default, "min": p.min, "max": p.max,
-                     "kind": p.kind, "numeric": p.numeric, "required": p.required, "hint": p.hint}
+                     "kind": p.kind, "numeric": p.numeric, "required": p.required, "hint": p.hint,
+                     "options": [{"value": v, "label": lb} for v, lb in p.options]}
                     for p in t.params],
             snapshots=[{"id": s.id, "dataset": code, "version": s.version, "sha256": s.sha256,
                         "row_count": s.row_count} for s, code in snaps],
@@ -319,15 +320,22 @@ def start_run(db: Session, settings: Settings, user: User, template: str, snapsh
                    else check_params(t, params))
     except ParamError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
-    if t.resource == "gpu":
+    # цена расчёта и лимиты — на сервере (app/services/resources.py), ресурс — по оценке
+    est = resources.estimate(db, settings, t, checked, snap.row_count)
+    try:
+        resources.check_limits(db, settings, user, est)
+    except resources.LimitError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    if est.resource == "gpu":
         busy = db.scalar(select(func.count()).select_from(Run).where(
             Run.created_by == user.id, Run.resource == "gpu", Run.status.in_(("queued", "running"))))
         if (busy or 0) >= settings.gpu_runs_per_user:
             raise HTTPException(status.HTTP_409_CONFLICT,
                                 "На видеокарте уже идёт ваш запуск — дождитесь его или остановите")
-    run = Run(experiment_id=exp.id, status="queued", resource=t.resource, template=t.key,
-              config={"params": checked, "limit_min": t.limit_min}, seeds={},
-              dataset_snapshot_id=snap.id, created_by=user.id)
+    run = Run(experiment_id=exp.id, status="queued", resource=est.resource, template=t.key,
+              config={"params": checked, "limit_min": t.limit_min,
+                      "estimate": {k: getattr(est, k) for k in ("minutes", "low", "high", "resource", "basis")}},
+              seeds={}, dataset_snapshot_id=snap.id, created_by=user.id)
     db.add(run)
     db.flush()
     job = {
@@ -337,12 +345,44 @@ def start_run(db: Session, settings: Settings, user: User, template: str, snapsh
         "dataset_dir_up": t.dataset_dir_up, "limit_min": t.limit_min, "template": t.key,
     }
     try:
-        run.task_id = run_queue.enqueue(settings.redis_url, run.id, job, t.resource)
+        run.task_id = run_queue.enqueue(settings.redis_url, run.id, job, est.resource)
     except Exception as exc:  # noqa: BLE001 — брокер недоступен: запуска нет
         db.rollback()
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             f"Очередь запусков недоступна: {exc}") from exc
     return run
+
+
+class EstimateIn(BaseModel):
+    template: str
+    snapshot_id: int
+    params: dict[str, Any] = {}
+
+
+@router.post("/runs/estimate")
+def run_estimate(body: EstimateIn, db: Annotated[Session, Depends(get_db)],
+                 settings: Annotated[Settings, Depends(get_settings)],
+                 user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
+    """Цена расчёта до запуска: где посчитается, сколько минут, лимит метода, очередь, квота и —
+    если не укладывается — как уложиться. blocked — почему сервер такой запуск не примет."""
+    t = TEMPLATES.get(body.template)
+    if t is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет метода {body.template}")
+    snap = db.get(DatasetSnapshot, body.snapshot_id)
+    if snap is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет среза №{body.snapshot_id}")
+    try:
+        params = check_params(t, body.params)
+    except ParamError:  # параметры ещё правят — оценка по тому, что есть, поверх значений по умолчанию
+        params = {**{p.name: p.default for p in t.params}, **body.params}
+    est = resources.estimate(db, settings, t, params, snap.row_count)
+    try:
+        resources.check_limits(db, settings, user, est)
+        blocked = ""
+    except resources.LimitError as exc:
+        blocked = str(exc)
+    return {**est.as_dict(), "queue": resources.queue(db, est.resource),
+            "usage": resources.usage(db, settings, user), "blocked": blocked}
 
 
 @router.post("/runs", response_model=RunOut, status_code=status.HTTP_201_CREATED)

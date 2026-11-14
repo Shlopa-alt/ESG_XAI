@@ -67,7 +67,7 @@ describe("Меню", () => {
     renderAt("/");
     const nav = await screen.findByRole("navigation", { name: "Разделы платформы" });
     const names = within(nav).getAllByRole("link").map((a) => a.textContent);
-    expect(names).toEqual(["Обзор", "Методика", "Банк статей", "Идеи для проверки", "Проверки", "Данные"]);
+    expect(names).toEqual(["Обзор", "Методика", "Банк статей", "Идеи для проверки", "Проверки", "Анализ данных", "Данные"]);
   });
 
   it("раздел подсвечен и на его вкладках", async () => {

@@ -6,6 +6,9 @@
   context  — параметры Z (необязательно): размер, отрасль, регион, макропоказатели; текстовые
              столбцы (отрасль) — one-hot, редкие значения (< 5 строк) — в «прочее»;
   lag      — R прошлого периода (необязательно): наивный прогноз «как в прошлом году»;
+  architecture — сеть: mlp (по умолчанию — модель лаборатории, п. 3.1) или transformer (трансформер
+             для таблиц: каждый вход — свой токен, самовнимание, FT-Transformer). Замена сети при том же
+             протоколе — чтобы сравнить «как у авторов» статьи с альтернативой;
   seed, splits (разбиений 80/20, по CR-01 — не меньше 30), trials (испытаний Optuna на разбиение).
 
 Модель — п. 3.1 методики: h = σ(W1·[X, Z] + b1), R = W2·h + b2, σ ∈ {ReLU, tanh}; обучение — MSE,
@@ -49,6 +52,13 @@ torch.set_num_threads(2)  # исполнитель считает два зап�
 MIN_ROWS = 20
 RARE = 5
 OPT = {"Adam": torch.optim.Adam, "RMSprop": torch.optim.RMSprop}
+ARCH = "mlp"  # сеть запуска (--params architecture); задаётся в main
+NAME = {"mlp": "MLP лаборатории", "transformer": "Трансформер (FT)"}
+KPI = {"mlp": "R² модели лаборатории (MLP)", "transformer": "R² трансформера для таблиц"}
+
+
+def model_name() -> str:
+    return NAME[ARCH]
 
 
 class LabMLP(nn.Module):
@@ -63,6 +73,32 @@ class LabMLP(nn.Module):
         return self.net(x).squeeze(-1)
 
 
+class TabTransformer(nn.Module):
+    """Трансформер для таблиц (FT-Transformer, Gorishniy et al., 2021): каждый вход — свой токен
+    (x_j · w_j + b_j), служебный токен [CLS], самовнимание по входам, прогноз — по [CLS]."""
+
+    def __init__(self, n_in: int, d: int, heads: int, layers: int, dropout: float = 0.0) -> None:
+        super().__init__()
+        self.w = nn.Parameter(torch.randn(n_in, d) * 0.1)
+        self.b = nn.Parameter(torch.zeros(n_in, d))
+        self.cls = nn.Parameter(torch.zeros(1, 1, d))
+        block = nn.TransformerEncoderLayer(d, heads, dim_feedforward=2 * d, dropout=dropout, batch_first=True)
+        self.enc = nn.TransformerEncoder(block, layers, enable_nested_tensor=False)
+        self.head = nn.Sequential(nn.LayerNorm(d), nn.ReLU(), nn.Linear(d, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        tokens = x.unsqueeze(-1) * self.w + self.b
+        tokens = torch.cat([self.cls.expand(len(x), -1, -1), tokens], dim=1)
+        return self.head(self.enc(tokens)[:, 0]).squeeze(-1)
+
+
+def build(n_in: int, hp: dict) -> nn.Module:
+    """Сеть запуска: модель лаборатории (та же, что в EXP-007) или трансформер — по ARCH."""
+    if ARCH == "transformer":
+        return TabTransformer(n_in, hp["d"], hp["heads"], hp["layers"], hp["dropout"])
+    return LabMLP(n_in, hp["hidden"], hp["act"], hp["dropout"])
+
+
 class Fitted:
     """Обученная сеть со своими нормировками X и y (обе — только по обучающей части)."""
 
@@ -70,7 +106,7 @@ class Fitted:
         self.sx = StandardScaler().fit(x)
         self.my, self.sy = float(y.mean()), float(y.std() or 1.0)
         torch.manual_seed(seed)
-        self.m = LabMLP(x.shape[1], hp["hidden"], hp["act"], hp["dropout"])
+        self.m = build(x.shape[1], hp)
         xt = torch.tensor(self.sx.transform(x), dtype=torch.float32)
         yt = torch.tensor((y - self.my) / self.sy, dtype=torch.float32)
         opt = OPT[hp["optimizer"]](self.m.parameters(), lr=hp["lr"], weight_decay=hp["weight_decay"])
@@ -94,6 +130,16 @@ class Fitted:
 
 
 def space(trial: optuna.Trial) -> dict:
+    if ARCH == "transformer":
+        return {"d": trial.suggest_categorical("d", [16, 32, 64]),
+                "heads": trial.suggest_categorical("heads", [2, 4]),
+                "layers": trial.suggest_int("layers", 1, 3),
+                "dropout": trial.suggest_float("dropout", 0.0, 0.3),
+                "optimizer": trial.suggest_categorical("optimizer", ["Adam", "RMSprop"]),
+                "lr": trial.suggest_float("lr", 1e-4, 1e-2, log=True),
+                "epochs": trial.suggest_int("epochs", 30, 150),
+                "batch": trial.suggest_categorical("batch", [16, 32, 64]),
+                "weight_decay": trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)}
     return {"hidden": trial.suggest_int("hidden", 2, 128, log=True),
             "act": trial.suggest_categorical("act", ["relu", "tanh"]),
             "dropout": trial.suggest_float("dropout", 0.0, 0.3),
@@ -129,7 +175,7 @@ def one_split(x: np.ndarray, y: np.ndarray, lag: np.ndarray | None, seed: int, t
     idx = np.arange(len(y))
     tr, te = train_test_split(idx, test_size=0.2, random_state=seed)
     hp = tune(x[tr], y[tr], trials, seed)
-    out = {"MLP лаборатории": r2(y[te], Fitted(x[tr], y[tr], hp, seed).predict(x[te])),
+    out = {model_name(): r2(y[te], Fitted(x[tr], y[tr], hp, seed).predict(x[te])),
            "Линейная (Ridge)": r2(y[te], make_pipeline(StandardScaler(), Ridge(alpha=1.0)).fit(x[tr], y[tr])
                                   .predict(x[te]))}
     if lag is not None:
@@ -189,8 +235,12 @@ def stats(vals: list[float]) -> dict[str, float]:
 
 
 def main() -> int:
+    global ARCH
     args = parse_args("Метод лаборатории: MLP по протоколу CR-01, SHAP")
     p = args.params
+    ARCH = str(p.get("architecture") or "mlp")
+    if ARCH not in NAME:
+        raise SystemExit(f"Неизвестная сеть «{ARCH}»: есть {', '.join(NAME)}")
     target, features = str(p["target"]), list(p["features"])
     context, lag_col = list(p.get("context") or []), str(p.get("lag") or "")
     seed, splits, trials = int(p.get("seed", 42)), int(p.get("splits", 30)), int(p.get("trials", 10))
@@ -213,7 +263,7 @@ def main() -> int:
     for i in range(splits):
         for k, v in one_split(x, y, lag, seed + i, trials).items():
             real.setdefault(k, []).append(v)
-        placebo.append(one_split(x, y_placebo, None, seed + i, trials)["MLP лаборатории"])
+        placebo.append(one_split(x, y_placebo, None, seed + i, trials)[model_name()])
         event("progress", done=i + 1, total=splits, label="разбиения 80/20 и плацебо")
     res: dict[str, Any] = {"rows": len(frame), "target": target, "features": features, "context": context, "lag": lag_col,
            "real": {k: stats(v) for k, v in real.items()}, "placebo": stats(placebo),
@@ -226,7 +276,7 @@ def main() -> int:
     res["hyperparameters_all_rows"] = hp_all
     (out / "results.json").write_text(json.dumps(res, ensure_ascii=False, indent=2, default=float),
                                       encoding="utf-8")
-    m, pl = res["real"]["MLP лаборатории"], res["placebo"]
+    m, pl = res["real"][model_name()], res["placebo"]
     lin = res["real"]["Линейная (Ridge)"]
     works = m["mean"] > 0.05 and m["share_above_zero"] >= 0.8 and m["mean"] > pl["max"]
     verdict = ("предсказывает лучше среднего и плацебо" if works else
@@ -234,7 +284,7 @@ def main() -> int:
     small = f" Строк всего {len(frame)} — на отложенную часть приходится {round(len(frame) * 0.2)}, " \
             "оценка R² шумная." if len(frame) < 100 else ""
     # главный вопрос к методике: нужна ли нейросеть — сравнение с линейной моделью по тем же разбиениям
-    gain = [a - b for a, b in zip(real["MLP лаборатории"], real["Линейная (Ridge)"], strict=True)
+    gain = [a - b for a, b in zip(real[model_name()], real["Линейная (Ridge)"], strict=True)
             if np.isfinite(a) and np.isfinite(b)]
     beats = float(np.mean([g > 0 for g in gain])) if gain else 0.0
     if not works:
@@ -250,14 +300,14 @@ def main() -> int:
     top = ", ".join(f"{f} ({'+' if s > 0.1 else '−' if s < -0.1 else '±'})" for f, _, s in contrib[:3])
     report = {
         "kpis": [
-            {"label": "R² модели лаборатории (MLP)", "value": fmt(m["mean"], True),
+            {"label": KPI[ARCH], "value": fmt(m["mean"], True),
              "note": f"среднее на {splits} разбиениях; разброс {fmt(m['min'], True)}…{fmt(m['max'], True)}"},
             {"label": "Доля разбиений с R² > 0", "value": f"{round(100 * m['share_above_zero'])} %",
              "note": "0 — прогноз не лучше среднего"},
             {"label": "R² на перемешанной цели (плацебо)", "value": f"до {fmt(pl['max'], True)}",
              "note": "сколько «качества» даёт протокол без связи"},
             {"label": "R² линейной модели (Ridge)", "value": fmt(lin["mean"], True),
-             "note": "та же задача без нейросети — с чем сравнивать MLP"},
+             "note": f"та же задача без нейросети — с чем сравнивать {model_name()}"},
         ],
         "charts": [
             {"id": "r2_splits", "kind": "ranges", "unit": "R²",
@@ -266,7 +316,7 @@ def main() -> int:
                          "обучающей части; точка — среднее, отрезок — от минимума до максимума",
              "reference": {"value": 0, "label": "прогноз средним"},
              "rows": [{"name": k, **{q: v[q] for q in ("mean", "min", "max")}} for k, v in res["real"].items()]
-                     + [{"name": "MLP лаборатории · плацебо", **{q: pl[q] for q in ("mean", "min", "max")}}],
+                     + [{"name": f"{model_name()} · плацебо", **{q: pl[q] for q in ("mean", "min", "max")}}],
              "interpretation": f"Модель лаборатории {verdict}: средний R² {fmt(m['mean'], True)}, у линейной "
                                f"{fmt(lin['mean'], True)}, на перемешанной цели — до {fmt(pl['max'], True)}."
                                f"{vs_linear}{small}"},
@@ -283,7 +333,7 @@ def main() -> int:
         ],
     }
     write_run(args, out, "lab_mlp", started, t0, frame, {"split": seed, "splits": splits, "optuna": seed},
-              {"verdict": verdict, "mlp_r2_mean": m["mean"], "ridge_r2_mean": lin["mean"],
+              {"verdict": verdict, "architecture": ARCH, "mlp_r2_mean": m["mean"], "ridge_r2_mean": lin["mean"],
                "placebo_r2_max": pl["max"], "mlp_beats_linear_share": round(beats, 3), "rows": len(frame),
                "top_factors": [f for f, _, _ in contrib[:5]]},
               report)

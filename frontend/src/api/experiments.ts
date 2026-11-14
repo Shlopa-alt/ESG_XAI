@@ -22,6 +22,7 @@ export interface Experiment {
   reproducibility: string[];
   report_path: string;
   report?: Record<string, unknown>;
+  config?: Record<string, unknown>; // config.analysis — выбор метода и сети, причина
 }
 
 export interface ExperimentDetail extends Experiment {
