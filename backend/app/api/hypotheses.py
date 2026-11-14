@@ -227,7 +227,8 @@ def set_weight(
 ) -> HypothesisOut:
     """Вес связи меняет рецензент (или owner) при любом статусе; автор ставит его при отправке."""
     h = _get(db, code)
-    h.weight, h.weight_set_by = body.weight, user.id if body.weight else None
+    # кто менял — помним и при сбросе: иначе не видно, кто убрал вес
+    h.weight, h.weight_set_by = body.weight, user.id
     db.commit()
     return _out(db, h)
 

@@ -104,4 +104,4 @@ def test_weight_set_by_author_changed_by_reviewer(make_client) -> None:  # type:
     assert r.status_code == 200 and (r.json()["weight"], r.json()["weight_set_by"]) == (3, "rev")
     assert rev.put("/api/hypotheses/H-001/weight", json={"weight": 0}).status_code == 422
     cleared = rev.put("/api/hypotheses/H-001/weight", json={"weight": None}).json()
-    assert (cleared["weight"], cleared["weight_set_by"]) == (None, "")
+    assert (cleared["weight"], cleared["weight_set_by"]) == (None, "rev")

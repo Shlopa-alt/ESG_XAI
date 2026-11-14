@@ -167,7 +167,9 @@ function WeightFact({ h, canChange }: { h: Hypothesis; canChange: boolean }) {
                 {h.weight_set_by && <span className="muted"> · поставил {h.weight_set_by}</span>}
               </>
             ) : (
-              <span className="muted">не указана</span>
+              <span className="muted">
+                не указана{h.weight_set_by && ` · убрал ${h.weight_set_by}`}
+              </span>
             )}
             {canChange && (
               <button type="button" className="btn-ghost weight-change" onClick={() => setEditing(true)}>
