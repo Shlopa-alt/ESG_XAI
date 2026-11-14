@@ -322,6 +322,21 @@ describe("Подсказка на карточке проверки", () => {
 });
 
 describe("Карточка идеи", () => {
+  it("показывает задание методики с названием и тип связи, а если их нет — так и пишет", async () => {
+    api({
+      hypotheses: [
+        { ...HYP, refs: [], methodology_node: "[Н1]", methodology_node_title: "[задание]", effect: "increases", target_kind: "nonfinancial" },
+        { ...HYP, code: "H-002", title: "[без связи]", refs: [], methodology_node: "", methodology_node_title: "", effect: "", target_kind: "" },
+      ],
+    });
+    renderAt("/hypotheses");
+    await screen.findByText("[без связи]");
+    expect(screen.getByText("повышает · нефинансовые результаты")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "[Н1] [задание]" })).toHaveAttribute("href", "/methodology");
+    expect(screen.getByText("не указан")).toBeInTheDocument();
+    expect(screen.getByText("не указано")).toBeInTheDocument();
+  });
+
   it("у предложенной идеи источники раскрыты: они нужны для решения", async () => {
     const refs = [{ kind: "article", kbrag_id: "d", title: "[статья]", doi: "", quote: "[цитата]" }];
     api({ hypotheses: [{ ...HYP, status: "proposed", refs }, { ...HYP, code: "H-002", title: "[вторая]", status: "testing", refs }] });

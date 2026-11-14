@@ -33,6 +33,10 @@ class Hypothesis(Base):
     # узел методики (задание, вариант или направление), к которому относится
     methodology_node_id: Mapped[int | None] = mapped_column(ForeignKey("methodology_sections.id"),
                                                             nullable=True)
+    # тип связи: как фактор влияет (increases | decreases | no_effect | mixed) и на какие
+    # показатели (financial | nonfinancial); пусто — не указан
+    effect: Mapped[str] = mapped_column(String(16), default="")
+    target_kind: Mapped[str] = mapped_column(String(16), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

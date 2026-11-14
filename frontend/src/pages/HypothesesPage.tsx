@@ -4,14 +4,19 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
   decideHypothesis,
+  type Effect,
+  EFFECT_LABEL,
   H_BADGE,
   H_STATUS_LABEL,
   type HStatus,
   type Hypothesis,
   type KbRefIn,
   listHypotheses,
+  linkType,
   proposeHypothesis,
   similarHypotheses,
+  TARGET_KIND_LABEL,
+  type TargetKind,
 } from "../api/hypotheses";
 import { kbSearch } from "../api/kb";
 import { useMe } from "../auth/useAuth";
@@ -115,9 +120,11 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
   const [rationale, setRationale] = useState("");
   const [direction, setDirection] = useState("");
   const [node, setNode] = useState("");
+  const [effect, setEffect] = useState<Effect | "">("");
+  const [target, setTarget] = useState<TargetKind | "">("");
   const [refs, setRefs] = useState<KbRefIn[]>(initialRef ? [initialRef] : []);
   const m = useMutation({
-    mutationFn: () => proposeHypothesis({ title, statement, rationale, direction, methodology_node: node, refs }),
+    mutationFn: () => proposeHypothesis({ title, statement, rationale, direction, methodology_node: node, effect, target_kind: target, refs }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["hypotheses"] });
       onDone();
@@ -153,6 +160,35 @@ function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () 
         Задание методики
         <NodeSelect id="h-node" value={node} onChange={setNode} />
       </label>
+      <fieldset className="field-row">
+        <legend>Тип связи: как фактор влияет и на какие показатели</legend>
+        <label className="field">
+          Как влияет
+          <select value={effect} onChange={(e) => setEffect(e.target.value as Effect | "")}>
+            <option value="">не знаю</option>
+            {(Object.keys(EFFECT_LABEL) as Effect[]).map((k) => (
+              <option key={k} value={k}>
+                {EFFECT_LABEL[k]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          На какие показатели
+          <select value={target} onChange={(e) => setTarget(e.target.value as TargetKind | "")}>
+            <option value="">не знаю</option>
+            {(Object.keys(TARGET_KIND_LABEL) as TargetKind[]).map((k) => (
+              <option key={k} value={k}>
+                {TARGET_KIND_LABEL[k]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="muted field-hint">
+          Нефинансовые результаты — например, ESG-рейтинг или выбросы. Единого перечня нет, поэтому уточните в утверждении,
+          какой именно показатель.
+        </p>
+      </fieldset>
       <label className="field">
         Направление
         <select value={direction} onChange={(e) => setDirection(e.target.value)}>
@@ -240,6 +276,25 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
       </div>
       <h3 className="h3">{h.title}</h3>
       <p>{h.statement}</p>
+      <dl className="idea-facts">
+        <div>
+          <dt>Задание методики</dt>
+          <dd>
+            {h.methodology_node ? (
+              <Link to="/methodology">
+                <span className="mono">{h.methodology_node}</span>
+                {h.methodology_node_title && ` ${h.methodology_node_title}`}
+              </Link>
+            ) : (
+              <span className="muted">не указано</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>Тип связи</dt>
+          <dd>{linkType(h.effect, h.target_kind) || <span className="muted">не указан</span>}</dd>
+        </div>
+      </dl>
       <HypothesisPath status={h.status} />
       <NextStep
         action={

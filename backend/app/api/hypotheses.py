@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import current_user, require_role
 from app.api.experiments import node_id, node_number
 from app.db import get_db
-from app.models import Experiment, Hypothesis, HypothesisRef, KbRef, User
+from app.models import Experiment, Hypothesis, HypothesisRef, KbRef, MethodologySection, User
 from app.services.codes import next_code
 from app.services.qwen_experiments import close_open_proposals, experiment_from_hypothesis
 from app.services.qwen_hypotheses import PILLARS, idea
@@ -48,6 +48,9 @@ class HypothesisIn(BaseModel):
     rationale: str = ""
     direction: Literal["Напр. 1", "Напр. 2", "Методы", ""] = ""
     methodology_node: str = ""  # задание (или вариант, направление) методики
+    # тип связи: как влияет и на какие показатели; пусто — автор не указал
+    effect: Literal["increases", "decreases", "no_effect", "mixed", ""] = ""
+    target_kind: Literal["financial", "nonfinancial", ""] = ""
     refs: list[RefIn] = []
 
 
@@ -63,6 +66,9 @@ class HypothesisOut(BaseModel):
     decided_by: str
     experiment: str
     methodology_node: str
+    methodology_node_title: str
+    effect: str
+    target_kind: str
     source: str  # human | qwen
     suggested: dict[str, Any]  # от Qwen: датасет, метод, каких данных не хватает
     created_at: datetime
@@ -124,6 +130,11 @@ def _login(db: Session, uid: int | None) -> str:
     return u.login if u else ""
 
 
+def _node_title(db: Session, nid: int | None) -> str:
+    node = db.get(MethodologySection, nid) if nid else None
+    return node.title if node else ""
+
+
 def _out(db: Session, h: Hypothesis) -> HypothesisOut:
     refs = db.scalars(
         select(KbRef).join(HypothesisRef, HypothesisRef.kb_ref_id == KbRef.id)
@@ -136,6 +147,8 @@ def _out(db: Session, h: Hypothesis) -> HypothesisOut:
         author=_login(db, h.author_id), decided_by=_login(db, h.decided_by),
         experiment=exp.code if exp else "", created_at=h.created_at,
         methodology_node=node_number(db, h.methodology_node_id),
+        methodology_node_title=_node_title(db, h.methodology_node_id),
+        effect=h.effect or "", target_kind=h.target_kind or "",
         source=h.source, suggested=h.suggested or {},
         refs=[RefOut(kind=r.kind, kbrag_id=r.kbrag_id, title=r.title, doi=r.doi, quote=r.quote)
               for r in refs],
@@ -168,7 +181,8 @@ def propose(
     h = Hypothesis(code=next_code(db, Hypothesis.code, "H", 3), title=body.title,
                    statement=body.statement, rationale=body.rationale, direction=body.direction,
                    status="proposed", author_id=user.id,
-                   methodology_node_id=node_id(db, body.methodology_node))
+                   methodology_node_id=node_id(db, body.methodology_node),
+                   effect=body.effect, target_kind=body.target_kind)
     db.add(h)
     db.flush()
     for ref in body.refs:

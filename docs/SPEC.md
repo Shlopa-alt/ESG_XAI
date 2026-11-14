@@ -44,6 +44,7 @@ ExperimentLink(experiment_id, kb_ref_id, relation[tests|uses_method|replicates|m
 
 Hypothesis(id, code H-001 UNIQUE, title, statement, rationale, direction,
            status[proposed|accepted|rejected|testing|tested], decision_note, decided_by,
+           effect[increases|decreases|no_effect|mixed|""], target_kind[financial|nonfinancial|""],
            experiment_id, author_id, created_at)
 HypothesisRef(hypothesis_id, kb_ref_id)                 -- опоры гипотезы в базе знаний
      -- узлы платформы (эксперименты) на графе KBRAG
