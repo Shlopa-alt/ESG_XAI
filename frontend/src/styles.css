@@ -866,6 +866,13 @@ details[open] > .node-head .node-preview { display: none; }
 .overview-block { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; scroll-margin-top: 80px; }
 .overview-band { display: flex; flex-direction: column; gap: 18px; margin-top: 20px; padding: clamp(20px, 3vw, 32px); border-radius: 18px; background: var(--ok-bg); }
 .overview-callout { margin: 0; padding: 14px 18px; max-width: 80ch; border-radius: 12px; background: var(--warn-bg); color: var(--warn-text); line-height: 1.55; }
+.goal-card { display: flex; flex-direction: column; gap: 14px; }
+.goal-state { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.goal-state > span:nth-child(2) { display: flex; flex-direction: column; gap: 2px; flex: 1 1 220px; }
+.goal-note { font-size: 14px; }
+.goal-link { font-weight: 500; }
+.goal-outcomes { list-style: none; margin: 0; padding: 14px 0 0; border-top: 1px solid var(--border); display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.goal-outcomes li { display: flex; flex-direction: column; gap: 2px; line-height: 1.45; }
 .tile { transition: transform 0.12s, border-color 0.12s; }
 .tile:hover { transform: translateY(-2px); }
 .tile-icon, .how-icon, .trust-icon { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--ok-bg); color: var(--accent); }

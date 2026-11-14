@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { listDatasets, listExperiments, OUTCOME_LABEL } from "../api/experiments";
 import { listHypotheses } from "../api/hypotheses";
 import { kbDocuments, kbStats, kbTree } from "../api/kb";
-import { listCrs } from "../api/methodology";
+import { getMethodology, listCrs } from "../api/methodology";
 import { useMe } from "../auth/useAuth";
 import { NewDataset } from "./DatasetPage";
 import { KbLive } from "./KbLive";
@@ -76,7 +76,13 @@ export function Overview() {
   const kb = useQuery({ queryKey: ["kb", "stats", "esg"], queryFn: () => kbStats("esg") });
   const tree = useQuery({ queryKey: ["kb", "kbs"], queryFn: () => kbTree("esg") });
   const lab = useQuery({ queryKey: ["kb", "docs", "esg.lab"], queryFn: () => kbDocuments("esg.lab") });
+  const meth = useQuery({ queryKey: ["methodology"], queryFn: getMethodology });
   const role = useMe().data?.role;
+  // ошибка загрузки методики здесь не показывается: блок цели остаётся понятным и без чисел
+  const methodology = { version: meth.data?.version ?? null, sections: Array.isArray(meth.data?.sections) ? meth.data.sections : [] };
+  const points = methodology.sections;
+  const drafts = points.filter((s) => s.stability === "draft").length;
+  const contested = points.filter((s) => s.stability === "contested").length;
   const experiments = Array.isArray(exps.data) ? exps.data : [];
   const ideas = Array.isArray(hyps.data) ? hyps.data : [];
   const datasets = Array.isArray(ds.data) ? ds.data : [];
@@ -114,6 +120,71 @@ export function Overview() {
           </div>
         </div>
         <HeroArt />
+      </section>
+
+      <section className="overview-block" aria-labelledby="goal-title">
+        <h2 className="section-title" id="goal-title">
+          Наша цель — проверить методику лаборатории
+        </h2>
+        <p className="overview-text">
+          В центре платформы — методика лаборатории: что мы изучаем и по каким правилам считаем. Её написали учёные
+          лаборатории, а здесь её проверяют на научных статьях и настоящих данных. Методика не застывшая: она меняется, когда
+          проверка даёт для этого основание, и каждое изменение читает рецензент.
+        </p>
+        <div className="card goal-card">
+          <div className="goal-state">
+            <span className="tile-icon">
+              <Icon name="edit" />
+            </span>
+            <span>
+              <strong>{methodology.version ? `Методика, версия ${methodology.version}` : "Методика"}</strong>
+              <span className="muted goal-note">
+                {points.length > 0
+                  ? `${points.length} ${word(points.length, "пункт", "пункта", "пунктов")}` +
+                    (drafts ? ` · черновиков: ${drafts}` : "") +
+                    (contested ? ` · оспаривается: ${contested}` : "")
+                  : "Пункты методики появятся здесь, когда её опубликуют"}
+              </span>
+            </span>
+            <Link to="/methodology" className="goal-link">
+              Открыть методику
+            </Link>
+          </div>
+          <ul className="goal-outcomes" aria-label="Чем может закончиться проверка пункта методики">
+            <li>
+              <strong>Подтвердить</strong>
+              <span className="muted">расчёт показал, что правило работает</span>
+            </li>
+            <li>
+              <strong>Опровергнуть</strong>
+              <span className="muted">правило не подтвердилось, и это тоже результат</span>
+            </li>
+            <li>
+              <strong>Доработать</strong>
+              <span className="muted">уточнить правило или добавить новое</span>
+            </li>
+          </ul>
+        </div>
+        <div className="two-grid">
+          <article className="card study-card">
+            <span className="eyebrow">ЗАДАЧА 1</span>
+            <h3 className="h3">Сверить с тем, что уже известно</h3>
+            <p>
+              Предлагал ли кто-то такое правило раньше и считал ли его на данных? Ищем ответ в банке статей: ИИ-помощник
+              выписывает из статей утверждения с цитатами, и их можно открыть и прочитать.
+            </p>
+            <Link to="/knowledge">Банк статей</Link>
+          </article>
+          <article className="card study-card">
+            <span className="eyebrow">ЗАДАЧА 2</span>
+            <h3 className="h3">Улучшать методику по ходу работы</h3>
+            <p>
+              ИИ-помощник читает статьи и предлагает идеи, эксперт выбирает, какие стоит взять. Идею проверяем на данных, и то,
+              что подтвердилось, переносим в методику через предложение её изменить.
+            </p>
+            <Link to="/hypotheses">Идеи для проверки</Link>
+          </article>
+        </div>
       </section>
 
       <section className="tiles" aria-label="Что уже есть на платформе">
