@@ -14,6 +14,7 @@ from app.models import (
     Dataset,
     DatasetSnapshot,
     ExperimentLink,
+    ExperimentProposal,
     Hypothesis,
     HypothesisRef,
     KbRef,
@@ -184,10 +185,16 @@ def test_launch_from_idea_records_choice_and_reason(
 ) -> None:  # type: ignore[type-arg]
     sid = _snapshot(db_session, tmp_path)
     code = _idea(db_session)
+    idea_id = db_session.scalar(select(Hypothesis.id).where(Hypothesis.code == code))
+    db_session.add(
+        ExperimentProposal(hypothesis_id=idea_id, status="proposed", title="[предложение Qwen]")
+    )
+    db_session.commit()
     body = {
         "snapshot_id": sid,
         "template": "lab-mlp",
         "hypothesis": code,
+        "expected": "[подтвердит: R² трансформера выше плацебо]",
         "params": {"target": "[R]", "features": ["[x1]", "[x2]"], "architecture": "transformer"},
         "choice": {
             "key": "authors:transformer",
@@ -214,6 +221,83 @@ def test_launch_from_idea_records_choice_and_reason(
     assert h is not None and h.status == "testing"
     assert db_session.scalars(select(ExperimentLink)).all()  # источник идеи — основание проверки
     assert queue[0]["params"]["architecture"] == "transformer"
+    assert any("Что подтвердит или опровергнет" in x for x in exp["setup"])
+    # как в мастере: ждущие предложения Qwen закрыты, проверка записана одобренным предложением
+    props = db_session.scalars(select(ExperimentProposal)).all()
+    assert [(p.status, p.expected) for p in props] == [
+        ("rejected", ""),
+        ("approved", "[подтвердит: R² трансформера выше плацебо]"),
+    ]
+    # затем — замена сети: второй расчёт той же идеи идёт в ту же проверку, критерий уже записан
+    swap = {
+        **body,
+        "expected": "",
+        "params": {**body["params"], "architecture": "mlp"},
+        "choice": {
+            "key": "lab-mlp:mlp",
+            "title": "[замена]",
+            "why": ["[замена сети]"],
+            "net": "mlp",
+        },
+    }
+    r2 = c.post("/api/analysis/launch", json=swap)
+    assert r2.status_code == 201, r2.text and r2.json()["experiment"] == r.json()["experiment"]
+    runs = c.get(f"/api/experiments/{r.json()['experiment']}").json()["config"]["analysis_runs"]
+    assert [x["net"] for x in runs] == ["transformer", "mlp"] and runs[1]["run_id"] != runs[0][
+        "run_id"
+    ]
+
+
+def test_criterion_is_required_for_an_idea(
+    make_client,
+    db_session: Session,
+    tmp_path: Path,
+    queue: list,  # type: ignore[no-untyped-def,type-arg]
+) -> None:
+    sid = _snapshot(db_session, tmp_path)
+    code = _idea(db_session)
+    body = {
+        "snapshot_id": sid,
+        "template": "lab-mlp",
+        "hypothesis": code,
+        "params": {"target": "[R]", "features": ["[x1]"]},
+    }
+    r = make_client("res", "researcher").post("/api/analysis/launch", json=body)
+    assert (
+        r.status_code == 422 and "подтвердит или опровергнет" in r.json()["detail"] and queue == []
+    )
+
+
+def test_network_changed_by_hand_is_marked(
+    make_client,
+    db_session: Session,
+    tmp_path: Path,
+    queue: list,  # type: ignore[no-untyped-def,type-arg]
+) -> None:
+    """Карточка «как у авторов: перцептрон», а в параметрах выбран трансформер — в проверке написано,
+    что считали трансформер и сеть заменили вручную."""
+    sid = _snapshot(db_session, tmp_path)
+    body = {
+        "snapshot_id": sid,
+        "template": "lab-mlp",
+        "params": {"target": "[R]", "features": ["[x1]"], "architecture": "transformer"},
+        "choice": {
+            "key": "authors:mlp",
+            "title": "[как у авторов: MLP]",
+            "why": ["[причина]"],
+            "primary": True,
+            "net": "mlp",
+            "as_authors": True,
+        },
+    }
+    r = make_client("res", "researcher").post("/api/analysis/launch", json=body)
+    assert r.status_code == 201, r.text
+    exp = make_client("rd", "reader").get(f"/api/experiments/{r.json()['experiment']}").json()
+    c = exp["config"]["analysis"]
+    assert (
+        c["net"] == "transformer" and c["replaced"] == "mlp" and c["edited"] and not c["as_authors"]
+    )
+    assert c["why"][0].startswith("Сеть заменена вручную")
 
 
 def test_launch_needs_accepted_idea(
@@ -234,3 +318,20 @@ def test_launch_needs_accepted_idea(
         make_client("res", "researcher").post("/api/analysis/launch", json=body).status_code == 409
     )
     assert queue == []
+
+
+def test_references_and_names_do_not_decide_the_network() -> None:
+    """Сеть авторов — по тексту статьи: названия чужих работ в списке литературы и имя «Ann» не в счёт."""
+    body = "[введение]. We estimate OLS. Panel OLS is robust. OLS again.\n" + "[текст] " * 40
+    refs = (
+        "\nReferences\n[1] Smith. MLP networks for ESG. [2] Ann Lee. ANN forecasting. MLP. MLP.\n"
+    )
+    found = net_catalog.authors_net(body + refs)
+    assert found is not None and found["net"] == "linear"
+    assert (
+        net_catalog.authors_net("[текст] Ann Lee collected the data. We use OLS.")["net"]
+        == "linear"
+    )  # type: ignore[index]
+    assert (
+        net_catalog.authors_net("[текст] We train an ANN. The ANN has one layer.")["net"] == "mlp"
+    )  # type: ignore[index]

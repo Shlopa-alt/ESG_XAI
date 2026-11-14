@@ -118,6 +118,23 @@ def target_candidates(node: MethodologySection | None, t: Table) -> list[dict[st
     return [{"column": c, "reason": why} for _, c, why, _ in scored[:5]]
 
 
+# столбцы-идентификаторы и годы строк — не показатели, во входы не идут
+ID_LIKE = re.compile(r"(id|инн|огрн|окпо|код|номер|n|№|year|год|fiscal year|отчётный год)")
+
+
+def _bare(column: str) -> str:
+    return re.sub(r"[\[\]()]", "", column).strip().lower()
+
+
+def _same_indicator(a: str, b: str) -> bool:
+    """«ROA 2022» и «ROA 2021» — один показатель за разные годы."""
+
+    def stem(c: str) -> str:
+        return re.sub(r"[\s_\-]+", " ", YEAR.sub("", _bare(c))).strip()
+
+    return bool(stem(a)) and stem(a) == stem(b)
+
+
 def _year(column: str) -> int:
     years = [int(m.group(0)) for m in YEAR.finditer(column)]
     return max(years, default=0)
@@ -162,7 +179,14 @@ def recommend(
         if target not in numeric:
             raise ValueError(f"Показатель «{target}» — не числовой столбец этой версии данных")
         lag = guess_lag(target, numeric)
-        features = [c for c in numeric if c not in (target, lag)]
+        # во входы не берём: будущие годы того же показателя (утечка ответа) и номера/годы строк
+        future = [
+            c
+            for c in numeric
+            if c != target and _same_indicator(c, target) and _year(c) > _year(target)
+        ]
+        ids = [c for c in numeric if ID_LIKE.fullmatch(_bare(c))]
+        features = [c for c in numeric if c not in (target, lag, *future, *ids)]
         if not features:
             raise ValueError(
                 "Кроме показателя, в данных нет числовых столбцов — предсказывать не по чему"
@@ -190,6 +214,11 @@ def recommend(
         if lag:
             mlp_why.append(
                 f"«{lag}» похож на прошлый период показателя — добавлен прогноз «как в прошлом году»."
+            )
+        if future:
+            mlp_why.append(
+                f"Не во входах: {', '.join(future)} — более поздние значения того же показателя, "
+                "по ним прогноз «подсмотрел» бы ответ."
             )
         recs.append(
             Recommendation(
@@ -349,6 +378,7 @@ def _as_authors(
                 "primary": True,
                 "as_authors": True,
                 "evidence": authors["quote"],
+                "net": net.key,  # линейная регрессия авторов считается в быстрой проверке, но сеть — их
             }
         )
         rest = [r for r in recs if r is not same]
@@ -357,13 +387,22 @@ def _as_authors(
                 r.why = [f"Замена сети авторов ({net.title}) на «{NETS[r.net].title}».", *r.why]
         return [lead, *rest], ""
     nearest = net.nearest
+    # сеть в библиотеке есть, но метод на этих данных не считается (мало строк) — так и пишем
+    blocked = bool(net.template) and any(r.template == net.template for r in recs)
+    reason = (
+        next((w for r in recs if r.template == net.template for w in r.warnings), "")
+        if blocked
+        else ""
+    )
     absent = Recommendation(
         key=f"authors:{net.key}",
         template="",
-        title=f"Как у авторов: {net.title} — в библиотеке пока нет",
+        title=f"Как у авторов: {net.title} — "
+        + ("на этих данных не посчитать" if blocked else "в библиотеке пока нет"),
         method_title="",
         params={},
         why=[evidence]
+        + ([f"Причина: {reason}."] if reason else [])
         + ([f"Ближайшая доступная замена — «{NETS[nearest].title}»."] if nearest else []),
         runnable=False,
         net=net.key,

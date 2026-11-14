@@ -10,6 +10,7 @@
 создаётся только из принятой идеи, источники переносятся как основания (SPEC, раздел 3).
 """
 
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -25,15 +26,16 @@ from app.models import (
     Dataset,
     DatasetSnapshot,
     Experiment,
+    ExperimentProposal,
     Hypothesis,
     HypothesisRef,
     KbRef,
     MethodologySection,
     User,
 )
-from app.services import analysis, kb_text, net_catalog
+from app.services import analysis, kb_text, net_catalog, resources
 from app.services.codes import next_code
-from app.services.qwen_experiments import experiment_from_hypothesis
+from app.services.qwen_experiments import close_open_proposals, experiment_from_hypothesis
 from app.services.run_templates import TEMPLATES
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -70,6 +72,8 @@ class LaunchIn(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     node: str = ""
     hypothesis: str = ""
+    # по идее: что подтвердит или опровергнет её — записывается до расчёта, как в мастере
+    expected: str = Field(default="", max_length=2000)
     title: str = Field(default="", max_length=512)
     choice: Choice = Field(default_factory=Choice)
 
@@ -157,7 +161,8 @@ def recommend(
     if node is None and h is not None and h.methodology_node_id:
         node = db.get(MethodologySection, h.methodology_node_id)
     try:
-        out = analysis.recommend(table, snap.row_count, body.target, node, found)
+        rows = resources.rows_of(settings, snap, table.sheet)
+        out = analysis.recommend(table, rows, body.target, node, found)
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     return {
@@ -195,33 +200,49 @@ def launch(
     snap, ds = _snapshot(db, body.snapshot_id)
     node = _node(db, body.node)
     h = _hypothesis(db, body.hypothesis)
-    if h is not None and h.status != "accepted":
+    # идея уже проверяется — следующий расчёт (например, замена сети авторов) идёт в ту же проверку
+    existing = (
+        db.get(Experiment, h.experiment_id)
+        if h is not None and h.status == "testing" and h.experiment_id
+        else None
+    )
+    if h is not None and h.status != "accepted" and existing is None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"{h.code} не принята к проверке — проверку создают только из принятой идеи",
         )
-    title = body.title.strip() or f"{body.choice.title or t.title} · {ds.code}"
+    expected = body.expected.strip()
+    if h is not None and existing is None and len(expected) < 3:
+        # как в мастере проверки: критерий записывается до расчёта (SPEC, «Гипотезы»)
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Запишите до расчёта, что подтвердит или опровергнет идею",
+        )
+    title = (body.title.strip() or f"{body.choice.title or t.title} · {ds.code}")[:512]
     summary = f"{ds.code} · версия {snap.version}"[:512]
     choice = {
         "template": t.key,
         "snapshot_id": snap.id,
         "node": body.node,
-        **body.choice.model_dump(),
+        "hypothesis": h.code if h is not None else "",
+        **_checked_choice(body.choice, t.key, body.params),
     }
+    setup = [*choice["why"][:10]] + (
+        [f"Что подтвердит или опровергнет: {expected}"] if expected else []
+    )
     try:
-        if h is not None:
+        if existing is not None:
+            exp = existing
+        elif h is not None:
             # идея и её источники переносятся в проверку, идея — «проверяется»
             exp = experiment_from_hypothesis(
-                db,
-                h,
-                user.id,
-                title=title,
-                method=t.title,
-                data_summary=summary,
-                setup=[*body.choice.why[:10]],
+                db, h, user.id, title=title, method=t.title, data_summary=summary, setup=setup
             )
             if node is not None:
                 exp.methodology_node_id = node.id
+            close_open_proposals(
+                db, h, user.id
+            )  # человек настроил проверку — ждущие предложения Qwen закрыты
         else:
             exp = Experiment(
                 code=next_code(db, Experiment.code, "EXP", 3),
@@ -238,11 +259,65 @@ def launch(
             )
             db.add(exp)
         exp.status, exp.dataset_snapshot_id = "running", snap.id
-        exp.config = {**(exp.config or {}), "analysis": choice}
         db.flush()
         run = start_run(db, settings, user, t.key, snap.id, body.params, exp.code)
+        # первый выбор — config.analysis; все расчёты проверки с их выбором — config.analysis_runs
+        config: dict[str, Any] = dict(exp.config or {})
+        config.setdefault("analysis", choice)
+        before = config.get("analysis_runs")
+        config["analysis_runs"] = [
+            *(before if isinstance(before, list) else []),
+            {**choice, "run_id": run.id},
+        ]
+        exp.config = config
+        if h is not None and existing is None:
+            # та же запись, что у проверки, настроенной в мастере: история идеи видит её
+            used = run.config.get("params")
+            db.add(
+                ExperimentProposal(
+                    hypothesis_id=h.id,
+                    status="approved",
+                    title=exp.title,
+                    method=t.key,
+                    snapshot_id=snap.id,
+                    params=dict(used) if isinstance(used, dict) else {},
+                    setup=setup[:10],
+                    expected=expected,
+                    decided_by=user.id,
+                    decided_at=datetime.now(UTC),
+                    experiment_id=exp.id,
+                    run_id=run.id,
+                )
+            )
     except HTTPException:
         db.rollback()  # проверка без расчёта в реестре не нужна
         raise
     db.commit()
     return LaunchOut(experiment=exp.code, run_id=run.id)
+
+
+def _actual_net(template: str, params: dict[str, Any]) -> str:
+    """Какая сеть реально считается: метод и параметр «Нейросеть», а не подпись карточки."""
+    if template == "lab-mlp":
+        arch = params.get("architecture") or "mlp"
+        return str(arch) if str(arch) in net_catalog.NETS else "mlp"
+    return {"predictive-check": "gbm", "rank-agreement": "rank"}.get(template, "")
+
+
+def _checked_choice(c: Choice, template: str, params: dict[str, Any]) -> dict[str, Any]:
+    """Выбор с карточки, сверенный с тем, что посчитается: человек сменил сеть в параметрах —
+    в проверке так и написано, «как у авторов» снимается, если сеть уже не их."""
+    out = c.model_dump()
+    actual = _actual_net(template, params)
+    # линейная регрессия авторов считается в быстрой проверке вместе с бустингом
+    same = c.net == actual or (c.net == "linear" and actual == "gbm")
+    if c.net and actual and not same:
+        was, now = net_catalog.NETS.get(c.net), net_catalog.NETS[actual]
+        out["why"] = [
+            f"Сеть заменена вручную: вместо «{was.title if was else c.net}» — «{now.title}».",
+            *out["why"],
+        ][:20]
+        out.update(edited=True, replaced=c.net, net=actual, as_authors=False, primary=False)
+    elif not c.net:
+        out["net"] = actual
+    return out

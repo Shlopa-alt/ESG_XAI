@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { getCatalog, launchAnalysis, recommend, type Recommendation, type RecommendOut } from "../api/analysis";
@@ -18,6 +18,7 @@ function RecoCard({
   template,
   node,
   hypothesis,
+  expected,
   canLaunch,
 }: {
   rec: Recommendation;
@@ -25,6 +26,7 @@ function RecoCard({
   template: RunTemplate | undefined;
   node: string;
   hypothesis: string;
+  expected: string;
   canLaunch: boolean;
 }) {
   const qc = useQueryClient();
@@ -39,6 +41,7 @@ function RecoCard({
         params,
         node,
         hypothesis,
+        expected,
         choice: {
           key: rec.key,
           title: rec.title,
@@ -186,11 +189,23 @@ export function Analysis() {
     retry: false,
   });
   const r = q.data;
-  // пункт методики идеи — сразу в поле, чтобы было видно, к чему относится анализ
+  // пункт методики идеи — сразу в поле, чтобы было видно, к чему относится анализ; один раз —
+  // дальше человек может его сменить или очистить
   const ideaNode = r?.hypothesis?.node ?? "";
+  const nodeSet = useRef(false);
   useEffect(() => {
-    if (ideaNode && !node) setNode(ideaNode);
-  }, [ideaNode, node]);
+    if (ideaNode && !nodeSet.current) {
+      nodeSet.current = true;
+      setNode((n) => n || ideaNode);
+    }
+  }, [ideaNode]);
+  // идея уже проверяется — следующий расчёт (замена сети) добавится в ту же проверку
+  const testing = idea?.status === "testing" && Boolean(idea.experiment);
+  const launchable = !hypothesis || idea?.status === "accepted" || testing;
+  // по новой идее критерий записывается до расчёта — как в мастере проверки
+  const [expected, setExpected] = useState("");
+  const needCriterion = Boolean(hypothesis) && idea?.status === "accepted";
+  const criterionOk = !needCriterion || expected.trim().length >= 3;
   const candidates = new Set((r?.target_candidates ?? []).map((c) => c.column));
   const byKey = (key: string) => (templates.data ?? []).find((t) => t.key === key);
 
@@ -210,14 +225,22 @@ export function Analysis() {
           <span className="eyebrow">ИДЕЯ ДЛЯ ПРОВЕРКИ · {hypothesis}</span>
           <h2 className="h2">{idea?.title ?? r?.hypothesis?.title ?? "Загрузка…"}</h2>
           {(idea?.statement ?? r?.hypothesis?.statement) && <p>{idea?.statement ?? r?.hypothesis?.statement}</p>}
-          {idea && idea.status !== "accepted" && (
+          {idea && !launchable && (
             <p className="blockers">Идея ещё не принята к проверке: рекомендации видны, но запустить расчёт по ней нельзя.</p>
+          )}
+          {testing && idea && (
+            <p className="muted">
+              Идея уже проверяется в <Link to={`/experiments/${idea.experiment}`} className="mono">{idea.experiment}</Link>: новый
+              расчёт — например, с заменой сети — добавится в эту же проверку.
+            </p>
           )}
           {r?.authors ? (
             <NextStep>
               В статье «{r.authors.article_title}» авторы пользуются: <strong>{r.authors.title}</strong>
-              {!r.authors.runnable && r.authors.nearest_title && ` — в библиотеке её пока нет, ближайшая замена: ${r.authors.nearest_title}`}.
-              Первой стоит карточка «Как у авторов», ниже — замены.
+              {!r.authors.runnable && r.authors.nearest_title && ` — в библиотеке её пока нет, ближайшая замена: ${r.authors.nearest_title}`}.{" "}
+              {r.task.key === "predict"
+                ? "Первой стоит карточка «Как у авторов», ниже — замены."
+                : r.authors_note || "Выберите показатель, который предсказываем, — тогда появится карточка «Как у авторов»."}
             </NextStep>
           ) : (
             r?.authors_note && <p className="muted">{r.authors_note}</p>
@@ -317,6 +340,19 @@ export function Analysis() {
             {r.rows !== null && ` В версии данных ${r.rows} строк, числовых столбцов ${r.numeric.length}.`}
           </NextStep>
           {!canLaunch && <p className="muted">Запускать расчёты могут исследователи — рекомендации видны всем.</p>}
+          {canLaunch && needCriterion && (
+            <label className="field" htmlFor="an-expected">
+              Что подтвердит или опровергнет идею (записывается до расчёта)
+              <textarea
+                id="an-expected"
+                rows={2}
+                value={expected}
+                onChange={(e) => setExpected(e.target.value)}
+                placeholder="Например: подтвердится, если R² модели выше, чем на перемешанной цели, в 80 % разбиений"
+              />
+              {!criterionOk && <span className="muted">Без критерия расчёт по идее не запустить.</span>}
+            </label>
+          )}
           <div className="reco-list">
             {r.recommendations.map((rec) => (
               <RecoCard
@@ -325,8 +361,9 @@ export function Analysis() {
                 out={r}
                 template={byKey(rec.template)}
                 node={node}
-                hypothesis={idea?.status === "accepted" || !idea ? hypothesis : ""}
-                canLaunch={canLaunch && (!hypothesis || idea?.status === "accepted")}
+                hypothesis={launchable ? hypothesis : ""}
+                expected={needCriterion ? expected : ""}
+                canLaunch={canLaunch && launchable && criterionOk}
               />
             ))}
           </div>

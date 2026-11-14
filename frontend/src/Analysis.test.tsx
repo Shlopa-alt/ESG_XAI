@@ -125,9 +125,13 @@ describe("Подбор сети по статье", () => {
     expect(await screen.findByText("Как у авторов: [трансформер]")).toBeInTheDocument();
     expect(screen.getByText("Как у авторов")).toBeInTheDocument();
     expect(screen.getByLabelText("Набор данных и версия")).toHaveValue("5");
+    // по идее критерий записывается до расчёта: без него запустить нельзя
+    expect(screen.queryByRole("button", { name: "Запустить расчёт" })).toBeNull();
+    await userEvent.type(screen.getByLabelText(/Что подтвердит или опровергнет идею/), "[[критерий]"); // «[[» — буквальная скобка
     await userEvent.click(screen.getAllByRole("button", { name: "Запустить расчёт" })[0] as HTMLElement);
     expect(onLaunch.mock.calls[0]?.[0]).toMatchObject({
       hypothesis: "H-001",
+      expected: "[критерий]",
       choice: { as_authors: true, net: "transformer", evidence: "[цитата]", article: "[статья]" },
     });
   });
@@ -169,5 +173,37 @@ describe("Цена расчёта", () => {
     expect(await screen.findByText("40 мин")).toBeInTheDocument();
     expect(screen.queryByText("[больше лимита метода]")).toBeNull();
     expect(estimates.at(-1)).toMatchObject({ trials: 5 });
+  });
+});
+
+describe("Сеть авторов без показателя", () => {
+  it("не обещает карточку «как у авторов», а просит выбрать показатель", async () => {
+    const IDEA = {
+      code: "H-001", title: "[идея]", statement: "[утверждение]", rationale: "", direction: "", status: "accepted",
+      decision_note: "", author: "", decided_by: "", experiment: "", methodology_node: "", source: "qwen",
+      suggested: { dataset: "DS-09" }, created_at: "2026-11-01T00:00:00Z",
+      refs: [{ kind: "article", kbrag_id: "[doc]", title: "[статья]", doi: "", quote: "" }],
+    };
+    const AGREE = {
+      ...RECO,
+      task: { key: "agreement", title: "Согласованность показателей", text: "[сравним столбцы]" },
+      authors: { net: "mlp", title: "[перцептрон]", quote: "[цитата]", runnable: true, nearest_title: "",
+        article_title: "[статья]", doc_id: "[doc]" },
+      authors_note: "[выберите целевой показатель]",
+      hypothesis: { code: "H-001", title: "[идея]", statement: "[утверждение]", status: "accepted", node: "" },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url.includes("/auth/me")) return Promise.resolve(json(user("researcher")));
+        if (url.includes("/run-templates")) return Promise.resolve(json([TEMPLATE]));
+        if (url.includes("/hypotheses")) return Promise.resolve(json([IDEA]));
+        if (url.includes("/analysis/recommend")) return Promise.resolve(json(AGREE));
+        return Promise.resolve(json([]));
+      }),
+    );
+    renderAt("/analysis?h=H-001");
+    expect(await screen.findByText(/\[выберите целевой показатель\]/)).toBeInTheDocument();
+    expect(screen.queryByText(/Первой стоит карточка/)).toBeNull();
   });
 });

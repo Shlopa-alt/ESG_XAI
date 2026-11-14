@@ -81,7 +81,8 @@ def context(db: Session, settings: Settings, code: str) -> dict[str, Any]:
         })
     methods = [{"key": t.key, "title": t.title, "description": t.description, "scope": t.scope,
                 "dataset": t.dataset, "params": [{"name": p.name, "label": p.label, "kind": p.kind,
-                                                  "default": p.default, "min": p.min, "max": p.max}
+                                                  "default": p.default, "min": p.min, "max": p.max,
+                                                  "options": [v for v, _ in p.options]}
                                                  for p in t.params]} for t in TEMPLATES.values()]
     return {
         "hypothesis": {"code": h.code, "title": h.title, "statement": h.statement, "rationale": h.rationale,

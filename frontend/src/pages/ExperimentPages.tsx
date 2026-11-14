@@ -62,28 +62,49 @@ interface AnalysisChoice {
   evidence?: string;
   article?: string;
   primary?: boolean;
+  edited?: boolean; // сеть в параметрах сменили вручную — считалась не та, что на карточке
+  task?: string;
+  hypothesis?: string;
+  run_id?: number;
   why?: string[];
 }
 
-/** Почему этот метод и эта сеть: выбор из «Анализа данных» (config.analysis), видно в карточке проверки. */
+const TASK_LABEL: Record<string, string> = { predict: "прогноз числового показателя", agreement: "согласованность показателей" };
+const NET_LABEL: Record<string, string> = {
+  mlp: "перцептрон (MLP)",
+  transformer: "трансформер для таблиц",
+  gbm: "линейная модель и бустинг",
+  linear: "линейная регрессия",
+  rank: "ранговая корреляция",
+};
+
+function ChoiceBadge({ c }: { c: AnalysisChoice }) {
+  if (c.edited) return <span className="badge st-review">сеть заменена вручную</span>;
+  if (c.as_authors) return <span className="badge st-done">как у авторов</span>;
+  if (c.primary) return <span className="badge st-done">рекомендация платформы</span>;
+  return <span className="badge st-planned">альтернатива</span>;
+}
+
+/** Почему этот метод и эта сеть: выбор из «Анализа данных» (config.analysis), все расчёты проверки
+ * (config.analysis_runs) — например, «как у авторов» и затем замена сети. */
 function WhyMethod({ e }: { e: { config?: Record<string, unknown> } }) {
   const c = (e.config?.analysis ?? null) as AnalysisChoice | null;
   if (!c) return null;
+  const runs = (Array.isArray(e.config?.analysis_runs) ? e.config.analysis_runs : []) as AnalysisChoice[];
   // цитата статьи уже стоит отдельным блоком — в причинах её не повторяем
   const why = (c.why ?? []).filter((w) => !(c.as_authors && c.evidence && w.includes(c.evidence)));
   return (
     <section className="card">
       <h2 className="h2">Почему этот метод</h2>
       <p>
-        {c.title || "—"}{" "}
-        {c.as_authors ? (
-          <span className="badge st-done">как у авторов</span>
-        ) : c.primary ? (
-          <span className="badge st-done">рекомендация платформы</span>
-        ) : (
-          <span className="badge st-planned">альтернатива</span>
-        )}
+        {c.title || "—"} <ChoiceBadge c={c} />
       </p>
+      {(c.task || c.net) && (
+        <p className="muted">
+          {c.task && `Тип задачи: ${TASK_LABEL[c.task] ?? c.task}. `}
+          {c.net && `Считалась сеть: ${NET_LABEL[c.net] ?? c.net}.`}
+        </p>
+      )}
       {c.as_authors && c.evidence && (
         <blockquote className="quote">
           «{c.evidence}»{c.article && <cite> — {c.article}</cite>}
@@ -95,6 +116,22 @@ function WhyMethod({ e }: { e: { config?: Record<string, unknown> } }) {
             <li key={w}>{w}</li>
           ))}
         </ul>
+      )}
+      {runs.length > 1 && (
+        <>
+          <h3 className="h3">Расчёты этой проверки</h3>
+          <ol className="list">
+            {runs.map((x, i) => (
+              <li key={x.run_id ?? i}>
+                {x.run_id ? <Link to={`/run/${x.run_id}`}>Расчёт №{x.run_id}</Link> : "Расчёт"}: {NET_LABEL[x.net ?? ""] ?? x.title}{" "}
+                <ChoiceBadge c={x} />
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+      {c.hypothesis && (
+        <Link to={`/analysis?h=${encodeURIComponent(c.hypothesis)}`}>Заменить сеть и посчитать ещё раз</Link>
       )}
     </section>
   );
