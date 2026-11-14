@@ -521,14 +521,20 @@ def _attach_file(d: DataDraft, settings: Settings, file: Any, failure: str) -> N
     target = Path(settings.esg_data_dir) / "_article_data" / str(d.id) / name
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
-    d.file_url = str(file.get("url") or "")[:2048]
+    url = str(file.get("url") or "")
+    # на странице адрес попадает в ссылку — только http(s)
+    d.file_url = url[:2048] if url.startswith(("http://", "https://")) else ""
     d.file_name, d.file_path, d.file_sha256 = name, str(target), sha
     note(d, "download", "агент сбора данных",
-         f"Скачан файл {name} ({len(data)} байт, sha256 {sha[:12]}…) с {d.file_url}")
+         f"Скачан файл {name} ({len(data)} байт, sha256 {sha[:12]}…) с {d.file_url or 'неизвестного адреса'}")
     try:
         d.columns, d.rows, how = table_from_file(target)
     except OpError as exc:
         note(d, "parse", "платформа", f"Таблица не разобрана: {exc}")
+        return
+    except Exception as exc:  # noqa: BLE001 — страница входа под видом .xlsx, битый CSV: черновик без таблицы
+        d.columns, d.rows = [], []
+        note(d, "parse", "платформа", f"Таблица не разобрана: файл не читается как CSV или XLSX ({type(exc).__name__})")
         return
     cut = f" (в черновике первые {MAX_ROWS})" if len(d.rows) >= MAX_ROWS else ""
     note(d, "parse", "платформа", f"Разбор: {how}{cut}")

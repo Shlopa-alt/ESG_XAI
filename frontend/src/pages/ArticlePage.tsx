@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { listExperiments } from "../api/experiments";
+import { scanLinks } from "../api/dataDrafts";
 import type { KbRefIn } from "../api/hypotheses";
 import { kbArticle, kbPdfUrl } from "../api/kb";
 import { listCrs } from "../api/methodology";
@@ -32,6 +33,30 @@ const RELATIONS = [
 ];
 
 /** Привязка статьи к эксперименту и к CR — для researcher и owner. */
+/** Агент сбора данных по одной статье: ссылки на данные авторов → черновики в «Данных из статей». */
+function FindData({ docId }: { docId: string }) {
+  const m = useMutation({ mutationFn: () => scanLinks(docId) });
+  if (m.isSuccess) {
+    return (
+      <span className="muted">
+        Поиск данных поставлен в очередь ИИ-помощника — черновики появятся в <Link to="/data-drafts">«Данных из статей»</Link>.
+      </span>
+    );
+  }
+  return (
+    <>
+      <button type="button" className="btn-ghost" disabled={m.isPending} onClick={() => m.mutate()}>
+        Найти данные по ссылкам в статье
+      </button>
+      {m.isError && (
+        <span className="error" role="alert">
+          {m.error.message}
+        </span>
+      )}
+    </>
+  );
+}
+
 function LinkPanel({ refIn }: { refIn: KbRefIn }) {
   const exps = useQuery({ queryKey: ["experiments"], queryFn: listExperiments });
   const crs = useQuery({ queryKey: ["crs"], queryFn: listCrs });
@@ -189,6 +214,7 @@ export function Article() {
           ) : (
             <span className="muted">PDF статьи в банке нет{doi ? " — полный текст по ссылке DOI" : ""}</span>
           )}
+          {canLink && <FindData docId={a.doc_id} />}
         </div>
       </section>
       {canLink && <LinkPanel refIn={refIn} />}
