@@ -334,15 +334,17 @@ describe("Карточка идеи", () => {
 
 describe("Форма идеи: есть ли похожее", () => {
   const hit = (doc_id: string, title: string) => ({
-    chunk_id: 1, doc_id, ord: 0, title, year: null, journal: null, url: null, authors: [], headings: [], pages: [3], text: "[фрагмент]", score: 1,
+    chunk_id: 1, doc_id, ord: 0, title, year: null, journal: null, url: "https://doi.org/10.0000/[doi]", authors: [], headings: [], pages: [3], text: "[фрагмент]", score: 1,
   });
   function stubForm() {
     const posts: string[] = [];
+    const bodies: Record<string, unknown>[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn((url: string, init?: RequestInit) => {
         if (init?.method === "POST") {
           posts.push(url);
+          bodies.push(JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>);
           if (url.includes("/hypotheses/similar")) {
             return Promise.resolve(json([{ code: "H-001", title: "[похожая идея]", status: "proposed", source: "qwen", share: 0.5 }]));
           }
@@ -355,11 +357,11 @@ describe("Форма идеи: есть ли похожее", () => {
         return Promise.resolve(json([]));
       }),
     );
-    return posts;
+    return { posts, bodies };
   }
 
   it("показывает похожие идеи и статьи, статью можно взять источником, ничего не отправляя", async () => {
-    const posts = stubForm();
+    const { posts, bodies } = stubForm();
     const ui = userEvent.setup();
     renderAt("/hypotheses");
     await ui.click(await screen.findByRole("button", { name: "Предложить идею" }));
@@ -374,5 +376,12 @@ describe("Форма идеи: есть ли похожее", () => {
     expect(screen.getByRole("button", { name: "уже источник" })).toBeDisabled();
     expect(screen.getByText(/Источник в банке статей/)).toBeInTheDocument();
     expect(posts).toEqual(["/api/hypotheses/similar"]);
+    // источник со всем, что нужно для основания: DOI, ветка банка, цитата, страница
+    await ui.type(screen.getByLabelText("Проверяемое утверждение"), "[[утверждение для проверки]");
+    await ui.click(screen.getByRole("button", { name: "Отправить на рассмотрение" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(bodies[1]?.refs).toEqual([
+      { kind: "article", kbrag_id: "d1", kb_path: "esg", title: "[статья банка]", doi: "10.0000/[doi]", quote: "[фрагмент]", page: 3 },
+    ]);
   });
 });

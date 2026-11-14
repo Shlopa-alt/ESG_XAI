@@ -18,6 +18,7 @@ import { useMe } from "../auth/useAuth";
 import { NodeSelect } from "../components/NodeSelect";
 import { ProposalPanel } from "../components/ProposalPanel";
 import { canReview, canRun, HypothesisPath, hypothesisNext, NextStep } from "../components/Ux";
+import { refFromHit } from "./KbLive";
 
 /** Опора, переданная со страницы базы знаний («Предложить гипотезу по этой статье»). */
 export interface ProposeState {
@@ -93,7 +94,7 @@ function SimilarCheck({ title, statement, refs, onAddRef }: {
                     {a.pages.length > 0 && <span className="muted mono"> · с. {a.pages.join(", ")}</span>}
                     <p className="muted similar-quote">{a.text.length > 240 ? `${a.text.slice(0, 240).replace(/\s+\S*$/, "")}…` : a.text}</p>
                     <button type="button" className="link-btn" disabled={taken}
-                      onClick={() => onAddRef({ kind: "article", kbrag_id: a.doc_id, title: a.title, page: a.pages[0] ?? null })}>
+                      onClick={() => onAddRef(refFromHit(a, "esg"))}>
                       {taken ? "уже источник" : "взять источником"}
                     </button>
                   </li>

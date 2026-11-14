@@ -46,11 +46,10 @@ def test_experiment_from_accepted_hypothesis(make_client) -> None:  # type: igno
 
 
 # Похожие идеи — подсказка автору до отправки (п. 5 правок по совещанию).
-# Тексты — заглушки-перефразы H, а не данные статей.
+# SAME — заглушка-перефраз H, OTHER — заглушка на другую тему; не данные статей.
 SAME = {"title": "Раскрытие ESG-отчётности и стоимость долга",
         "statement": "Чем полнее раскрытие, тем дешевле заёмный капитал."}
-OTHER = {"title": "Углеродный налог и выбросы",
-         "statement": "Введение углеродного налога сокращает выбросы предприятий."}
+OTHER = {"title": "[другая тема]", "statement": "[утверждение о другом]"}
 
 
 def test_similar_finds_paraphrase_and_changes_nothing(make_client) -> None:  # type: ignore[no-untyped-def]
