@@ -25,13 +25,11 @@ function cells(line: string): string[] {
 
 function pipeTable(lines: string[]): Block {
   const [first = "", , ...rest] = lines;
-  const head = cells(first);
-  const cols = head.length;
-  const rows = rest.map((l) => {
-    const r = cells(l).slice(0, cols);
-    return r.length < cols ? [...r, ...Array<string>(cols - r.length).fill("")] : r;
-  });
-  return { kind: "table", head, rows };
+  const parsed = rest.map(cells);
+  // ячейки сверх заголовка не отбрасываем: заголовок дополняется пустыми столбцами
+  const cols = Math.max(cells(first).length, ...parsed.map((r) => r.length));
+  const pad = (r: string[]) => (r.length < cols ? [...r, ...Array<string>(cols - r.length).fill("")] : r);
+  return { kind: "table", head: pad(cells(first)), rows: parsed.map(pad) };
 }
 
 /** Абзац из одних пар «строка, столбец = значение» → таблица; иначе null. */
@@ -48,7 +46,13 @@ export function tripleTable(text: string): Block | null {
   const colKeys = [...new Set(found.map((t) => t[1]))];
   // пары должны складываться в сетку: иначе это перечисление в тексте, а не таблица
   if (rowKeys.length < 2 || colKeys.length < 2) return null;
-  const grid = new Map(found.map(([r, c, v]) => [`${r}\u0000${c}`, v]));
+  const grid = new Map<string, string>();
+  for (const [r, c, v] of found) {
+    const key = `${r}\u0000${c}`;
+    // одна ячейка с разными значениями — не таблица: оставляем текст, чтобы не потерять число
+    if (grid.has(key) && grid.get(key) !== v) return null;
+    grid.set(key, v);
+  }
   return {
     kind: "table",
     head: ["", ...colKeys],
