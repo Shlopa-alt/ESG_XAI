@@ -62,8 +62,8 @@ export interface KbArticle {
   pages: number | null;
   chunks: number;
   kbs: string[];
-  /** Есть ли PDF статьи у KBRAG: путь на его компьютере, платформа его не показывает. */
-  pdf_path?: string | null;
+  /** Есть ли у KBRAG PDF статьи (путь к файлу платформа не передаёт). */
+  has_pdf?: boolean;
   fragments?: Array<{ ord: number; text: string; headings: string[]; pages: number[] }>;
   fragments_total?: number;
   next_offset?: number | null;

@@ -142,7 +142,7 @@ export function Article() {
   const doi = a.doi ?? a.url?.match(/10\.\d{4,9}\/\S+/)?.[0] ?? "";
   const refIn: KbRefIn = { kind: "article", kbrag_id: a.doc_id, kb_path: a.kbs[0] ?? "", title: a.title ?? "", doi };
   const canLink = me.data?.role === "researcher" || me.data?.role === "owner";
-  const hasPdf = Boolean(a.pdf_path);
+  const hasPdf = Boolean(a.has_pdf);
   return (
     <>
       <div className="muted">
