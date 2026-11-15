@@ -54,6 +54,9 @@ export function ScanLinks({ run }: { run: RunRow }) {
   const missed = asLinks(run.summary.not_confirmed);
   const same = Array.isArray(run.summary.same_pairs) ? (run.summary.same_pairs as Array<{ a: string; b: string }>) : [];
   const rowsConfirm = typeof run.summary.rows_confirm === "number" ? run.summary.rows_confirm : null;
+  // панель: строки усреднены по столбцу-группе — наблюдение = компания (страна), а не строка
+  const unit = run.summary.unit === "group" ? "групп" : "строк";
+  const panel = typeof run.summary.panel_hint === "string" ? run.summary.panel_hint : "";
   if (run.status !== "done") return null;
   return (
     <section className="card scan-links">
@@ -62,6 +65,13 @@ export function ScanLinks({ run }: { run: RunRow }) {
         ρ — сила и направление связи от −1 до 1 («чем больше одно, тем больше другое» или наоборот); ξ — сила любой
         зависимости от 0 до 1, в том числе немонотонной (U-образной, пороговой).
       </p>
+      {panel && (
+        <p className="error">
+          Похоже на панель: строки повторяются по «{panel}», и есть год. Расчёт шёл без столбца-группы, поэтому годы
+          одного объекта считались независимыми наблюдениями — связи могли «подтвердиться» даже на шуме. Повторите
+          расчёт со столбцом-группой «{panel}».
+        </p>
+      )}
       {links.length > 0 && (
         <p className="muted">
           Каждая связь подтвердилась на отложенной части данных — той, где её не искали. Это кандидат в идею, а не
@@ -70,9 +80,9 @@ export function ScanLinks({ run }: { run: RunRow }) {
       )}
       {links.length === 0 ? (
         <p>
-          Ни одна связь не подтвердилась на отложенной части{rowsConfirm !== null ? ` (${rowsConfirm} строк)` : ""}. Это
+          Ни одна связь не подтвердилась на отложенной части{rowsConfirm !== null ? ` (${rowsConfirm} ${unit})` : ""}. Это
           результат: на этих данных устойчивых связей не нашлось. Это не доказывает, что их нет: при небольшом числе
-          строк слабые связи не видны.
+          {unit} слабые связи не видны.
         </p>
       ) : (
         <ul className="list scan-list">

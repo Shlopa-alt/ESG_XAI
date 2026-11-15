@@ -91,7 +91,7 @@ TEMPLATES: dict[str, Template] = {
                           hint="пусто — все числовые, не больше 40"),
                     Param("group", "Столбец-группа", "", kind="column", required=False,
                           numeric=False,
-                          hint="у панели компания × год — компания: она целиком в одной части"),
+                          hint="у панели компания × год — компания: строки усредняются по ней"),
                     Param("holdout", "Отложенная часть (на подтверждение), %", 50, 20, 70),
                     Param("fdr", "Допустимая доля ложных находок, %", 10, 1, 25),
                     Param("placebo", "Повторов на перемешанных данных", 5, 0, 20),
@@ -222,7 +222,7 @@ def check_params(t: Template, given: dict[str, Any], columns: list[str] | None =
         raise ParamError("Для поиска связей нужны хотя бы два столбца "
                          "(или пусто — все числовые)")
     if t.key == "correlation-scan" and out["group"] and out["group"] in out["columns"]:
-        raise ParamError("Столбец-группа делит строки и не ищется в связях — "
+        raise ParamError("По столбцу-группе усредняются строки, в связях он не ищется — "
                          "уберите его из столбцов")
     if t.key == "correlation-scan" and len(out["columns"]) > 40:
         raise ParamError("Не больше 40 столбцов: иначе пар больше 780 "

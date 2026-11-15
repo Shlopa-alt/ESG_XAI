@@ -127,6 +127,26 @@ def _bare(column: str) -> str:
     return re.sub(r"[\[\]()]", "", column).strip().lower()
 
 
+# год строки — признак панели (компания × год): тогда строки одной компании не независимы
+PANEL_YEAR = re.compile(r"(year|год|fiscal year|отчётный год|период|period)")
+
+
+def panel_group(t: Table) -> str:
+    """Столбец-группа панели для поиска связей: при столбце года — текстовый столбец с наибольшим
+    числом разных значений в первых строках (страна, компания). Если это не панель и значения
+    в нём не повторяются, усреднение по нему ничего не меняет; пусто — года нет."""
+    if not any(PANEL_YEAR.fullmatch(_bare(c)) for c in t.columns):
+        return ""
+    best, levels = "", 1
+    for j, c in enumerate(t.columns):
+        if c in t.numeric or PANEL_YEAR.fullmatch(_bare(c)):
+            continue
+        n = len({str(r[j]).strip() for r in t.sample if j < len(r) and _filled(r[j])})
+        if n > levels:
+            best, levels = c, n
+    return best
+
+
 def _same_indicator(a: str, b: str) -> bool:
     """«ROA 2022» и «ROA 2021» — один показатель за разные годы."""
 
@@ -319,13 +339,24 @@ def recommend(
         )
         ok_scan, why_not_scan = _rows_note(rows, MIN_ROWS["correlation-scan"])
         scan_cols = [c for c in numeric if not ID_LIKE.fullmatch(_bare(c))][:MAX_SCAN]
+        group = panel_group(t)
+        panel = (
+            [
+                f"Строки повторяются по годам — данные усредняются по «{group}»: один объект — "
+                "одно наблюдение. Иначе годы одного объекта считались бы независимыми, и связи "
+                "«подтверждались» бы даже на шуме. Ищутся связи между объектами по средним "
+                "за период; нужно не меньше 40 объектов."
+            ]
+            if group
+            else []
+        )
         recs.append(
             Recommendation(
                 key="correlation-scan",
                 template="correlation-scan",
                 title="Поиск неочевидных связей по всем столбцам",
                 method_title=TEMPLATES["correlation-scan"].title,
-                params={"columns": scan_cols, "sheet": t.sheet},
+                params={"columns": scan_cols, "group": group, "sheet": t.sheet},
                 why=[
                     "Не знаете, что с чем связано, — платформа переберёт все пары столбцов: "
                     "и прямые связи, и немонотонные (U-образные, пороговые), которые обычная "
@@ -333,6 +364,7 @@ def recommend(
                     f"Пар — {len(scan_cols) * (len(scan_cols) - 1) // 2}. Чтобы не принять "
                     "случайность за находку: поиск на половине строк, подтверждение на другой, "
                     "поправка на множественное сравнение и повтор на перемешанных данных.",
+                    *panel,
                     "Подтверждённая связь — кандидат в идею для проверки, а не вывод.",
                 ],
                 warnings=[why_not_scan] if not ok_scan else [],

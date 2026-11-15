@@ -82,4 +82,21 @@ describe("Найденные связи на странице расчёта", (
     expect(screen.getByText(/не хватило строк/)).toBeInTheDocument();
     expect(screen.getByText(/Почти совпадают.*«\[ROA 2021\]» и «\[ROA 2022\]»/)).toBeInTheDocument();
   });
+
+  it("панель: наблюдение — группа; расчёт без группы на панели — предупреждение сразу", () => {
+    const { unmount } = render(
+      <MemoryRouter>
+        <ScanLinks run={{ ...RUN, summary: { links: [], not_confirmed: [], rows_confirm: 40, unit: "group" } }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/не подтвердилась на отложенной части \(40 групп\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/Похоже на панель/)).not.toBeInTheDocument();
+    unmount();
+    render(
+      <MemoryRouter>
+        <ScanLinks run={{ ...RUN, summary: { ...RUN.summary, panel_hint: "[страна]", unit: "row" } }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/Похоже на панель: строки повторяются по «\[страна\]».*со столбцом-группой «\[страна\]»/)).toBeInTheDocument();
+  });
 });

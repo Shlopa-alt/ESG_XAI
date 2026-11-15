@@ -86,14 +86,54 @@ def test_ties_are_checked_by_rho_only() -> None:
     assert t is not None and not t["xi_used"] and t["p_xi"] == 1.0 and t["p"] == t["p_rho"]
 
 
-def test_split_by_group_keeps_each_group_in_one_part() -> None:
-    from correlation_scan import split
+def test_by_group_gives_one_row_per_group() -> None:
+    from correlation_scan import by_group
 
-    data = pd.DataFrame({"[v]": range(60)})
-    groups = pd.Series([f"[компания {i // 3}]" for i in range(60)])
-    find, conf = split(data, groups, 0.5, np.random.default_rng(0))
-    assert len(find) + len(conf) == 60
-    assert not set(groups[find.index]) & set(groups[conf.index])
+    data = pd.DataFrame({"[v]": [1.0, 3.0, 10.0, 20.0, 5.0]})
+    groups = pd.Series(["[б]", "[б]", "[а]", "[а]", None])
+    out = by_group(data, groups)
+    assert out["[v]"].tolist() == [15.0, 2.0]  # [а], [б]; строка без группы не берётся
+
+
+def _run(tmp_path: Path, data: Path, params: dict, tag: str) -> dict:
+    res = tmp_path / tag
+    done = subprocess.run(
+        [sys.executable, "correlation_scan.py", str(tmp_path), str(res), "--data", str(data),
+         "--params", json.dumps(params), "--experiment", "EXP-000", "--dataset", "DS-00"],
+        cwd=HERE, env=UTF8, capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    return json.loads(next(res.glob("*/run.json")).read_text(encoding="utf-8"))
+
+
+def test_panel_noise_is_not_confirmed_with_group(tmp_path: Path) -> None:
+    # панель «страна × год» из чистого шума: у каждой страны свой уровень, между столбцами связей нет.
+    # Строки одной страны почти повторяют друг друга — без усреднения по стране связи
+    # «подтверждались» бы десятками, а перемешанные данные показывали бы 0 ложных находок
+    rng = np.random.default_rng(11)
+    n_c, n_y = 80, 12
+    country = np.repeat([f"[страна {i}]" for i in range(n_c)], n_y)
+    cols = {f"[шум {j}]": np.repeat(rng.normal(size=n_c), n_y) + 0.3 * rng.normal(size=n_c * n_y)
+            for j in range(8)}
+    path = tmp_path / "panel.csv"
+    pd.DataFrame({"[страна]": country, "[год]": np.tile(np.arange(2010, 2010 + n_y), n_c), **cols}).to_csv(
+        path, index=False)
+
+    run = _run(tmp_path, path, {"group": "[страна]", "seed": 1}, "grouped")
+    s = run["summary"]
+    assert s["unit"] == "group" and s["rows_find"] + s["rows_confirm"] == n_c
+    assert s["confirmed"] == 0 and "[год]" not in s["columns_used"]
+    assert run["dataset"]["row_count"] == n_c * n_y  # в run.json — строки среза, не группы
+    assert any(k["label"] == "Наблюдение — группа" for k in run["report"]["kpis"])
+
+    plain = _run(tmp_path, path, {"seed": 1}, "plain")
+    assert plain["summary"]["panel_hint"] == "[страна]"
+    assert any(k["label"] == "Похоже на панель" for k in plain["report"]["kpis"])
+
+
+def test_no_panel_hint_without_year(synthetic: Path, tmp_path: Path) -> None:
+    run = _run(tmp_path, synthetic, {"seed": 3}, "flat")
+    assert run["summary"]["panel_hint"] == "" and run["summary"]["unit"] == "row"
 
 
 def test_noise_only_gives_no_links_and_says_so(tmp_path: Path) -> None:

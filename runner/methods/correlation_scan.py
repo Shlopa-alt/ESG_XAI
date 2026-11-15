@@ -3,9 +3,15 @@
 Правка по совещанию «Экономика — правки и идеи по сайту»: «новые корреляции с проверкой всего».
 Найти связь в куче столбцов легко — трудно не найти случайную. Поэтому:
 
-  (1) строки делятся случайно (seed) на две части: поиск и подтверждение (holdout — доля второй);
-      у панели (компания × год) — по группам (group): одна компания целиком в одной части, иначе
-      подтверждение не независимо;
+  (0) панель (компания × год, страна × год) сначала усредняется по группе (group): одна
+      компания — одно наблюдение. Годы одной компании почти повторяют друг друга; если считать
+      их отдельными строками, тесты принимают N лет за N независимых наблюдений, и связь
+      «подтверждается» даже на шуме. Деление на части по группам этого не лечит, а перемешанные
+      данные (5) такую ошибку не видят. Поэтому у панели ищутся связи между группами по средним
+      за период, а не изменения внутри группы во времени. Без group, если строки похожи на
+      панель (есть год и повторяющийся текстовый столбец), в итогах — предупреждение;
+  (1) строки (у панели — группы) делятся случайно (seed) на две части: поиск и подтверждение
+      (holdout — доля второй);
   (2) на части поиска для каждой пары — ρ Спирмена (монотонная связь) и ξ Чаттерджи (любая
       зависимость, в том числе немонотонная: U-образная, пороговая); p пары — меньший из двух,
       с поправкой Бонферрони на два теста. Асимптотика p для ξ выведена для непрерывных данных:
@@ -26,7 +32,8 @@
 
 Параметры (--params): columns — столбцы (пусто — все числовые; больше MAX_COLUMNS — отказ, а у
 «все числовые» — первые MAX_COLUMNS, остальные перечислены в итогах), group — столбец-группа
-(необязательно), holdout, fdr, seed, placebo (сколько раз повторить плацебо), sheet.
+панели (необязательно; по нему строки усредняются), holdout, fdr, seed, placebo (сколько раз
+повторить плацебо), sheet.
 Действующие значения всех параметров пишутся в summary.params.
 """
 
@@ -43,6 +50,7 @@ from scipy.stats import norm, rankdata, spearmanr
 MAX_COLUMNS = 40  # пар — до 780
 MIN_PART = 20  # строк в каждой части; меньше — асимптотика грубая и подтверждать не на чем
 MIN_ROWS = 2 * MIN_PART
+YEAR_COL = ("year", "год", "fiscal year", "отчётный год", "период", "period")  # признак панели
 MIN_PAIR_ROWS = MIN_PART  # у пары в части меньше строк без пропусков — пара не считается
 SAME = 0.98  # |ρ| не меньше — два названия одного показателя
 CONFIRM_ALPHA = 0.05
@@ -111,19 +119,36 @@ def name(r: dict) -> str:
     return f"{r['a']} — {r['b']}"
 
 
-def split(data: pd.DataFrame, groups: pd.Series | None, holdout: float,
+def _bare(column: object) -> str:
+    return str(column).strip("[]() ").lower()
+
+
+def by_group(data: pd.DataFrame, groups: pd.Series) -> pd.DataFrame:
+    """Одна строка на группу — среднее за все её строки; строки без группы не берутся."""
+    keep = groups.notna()
+    return data[keep].groupby(groups[keep].astype(str), sort=True).mean().reset_index(drop=True)
+
+
+def panel_hint(df: pd.DataFrame) -> str:
+    """Текстовый столбец, по которому повторяются строки, если рядом есть год: похоже на панель."""
+    if not any(_bare(c) in YEAR_COL for c in df.columns):
+        return ""
+    best, levels = "", 0
+    for c in df.columns:
+        if _bare(c) in YEAR_COL or numeric(df, c).notna().mean() > 0.5:
+            continue
+        n = int(df[c].nunique(dropna=True))
+        if MIN_PART <= n < len(df) and n > levels:
+            best, levels = str(c), n
+    return best
+
+
+def split(data: pd.DataFrame, holdout: float,
           rng: np.random.Generator) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Поиск и подтверждение: по строкам или, с group, по группам — одна группа целиком в одной части."""
-    if groups is None:
-        idx = rng.permutation(len(data))
-        n_conf = round(len(data) * holdout)
-        return data.iloc[idx[n_conf:]], data.iloc[idx[:n_conf]]
-    names = rng.permutation(np.array(sorted(groups.dropna().astype(str).unique()), dtype=object))
-    n_conf = round(len(names) * holdout)
-    conf = set(names[:n_conf])
-    key = groups.astype(str)
-    in_conf = key.isin(conf) & groups.notna()
-    return data[~in_conf & groups.notna()], data[in_conf]
+    """Поиск и подтверждение: строки (у панели — уже группы, by_group) делятся случайно."""
+    idx = rng.permutation(len(data))
+    n_conf = round(len(data) * holdout)
+    return data.iloc[idx[n_conf:]], data.iloc[idx[:n_conf]]
 
 
 def shuffled(data: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
@@ -144,24 +169,30 @@ def main() -> int:
         raise SystemExit(f"Столбцов — {len(asked)}, не больше {MAX_COLUMNS}: иначе пар слишком много")
     if group and group not in df.columns:
         raise SystemExit(f"В срезе нет столбца-группы «{group}»")
-    cols = asked or [c for c in df.columns if c != group
+    # год строки — не показатель: у «все числовые» он не ищется
+    cols = asked or [c for c in df.columns if c != group and _bare(c) not in YEAR_COL
                      and numeric(df, c).notna().sum() >= max(2, len(df) // 2)]
     skipped = cols[MAX_COLUMNS:]  # «все числовые» — первые MAX_COLUMNS в порядке файла
     cols = [c for c in cols[:MAX_COLUMNS] if c != group]
     data = pd.DataFrame({c: numeric(df, c) for c in cols})
+    hint = "" if group else panel_hint(df)
+    if group:  # панель: одна группа — одно наблюдение (см. (0) в начале файла)
+        data = by_group(data, df[group])
+    unit = "групп" if group else "строк"
     data = data.loc[:, data.nunique() > 1]
     if data.shape[1] < 2:
         raise SystemExit("Нужно хотя бы два числовых столбца с разными значениями")
     if len(data) < MIN_ROWS:
-        raise SystemExit(f"Строк — {len(data)}, нужно хотя бы {MIN_ROWS}: иначе не на чем подтверждать")
+        raise SystemExit(f"{unit.capitalize()} — {len(data)}, нужно хотя бы {MIN_ROWS}: иначе не на чем "
+                         "подтверждать")
     rng = np.random.default_rng(seed)
-    find, confirm = split(data, df[group] if group else None, holdout, rng)
+    find, confirm = split(data, holdout, rng)
     if min(len(find), len(confirm)) < MIN_PART:
-        raise SystemExit(f"В части поиска {len(find)} строк, в отложенной — {len(confirm)}: нужно в каждой "
+        raise SystemExit(f"В части поиска {len(find)} {unit}, в отложенной — {len(confirm)}: нужно в каждой "
                          f"хотя бы {MIN_PART}. Измените долю на подтверждение или возьмите больше данных")
     pairs = list(combinations(data.columns, 2))
 
-    event("progress", done=0, total=3 + n_placebo, label=f"поиск: {len(pairs)} пар на {len(find)} строках")
+    event("progress", done=0, total=3 + n_placebo, label=f"поиск: {len(pairs)} пар на {len(find)} {unit}")
     rows = scan(find, pairs, q)
     for r in rows:
         r["same"] = bool("rho" in r and abs(r["rho"]) >= SAME)
@@ -170,7 +201,7 @@ def main() -> int:
     found = [r for r in rows if r.get("found") and not r["same"] and not {r["a"], r["b"]} & aliases]
     event("metric", name="найдено на части поиска", value=len(found))
 
-    event("progress", done=1, total=3 + n_placebo, label=f"подтверждение: {len(found)} находок на {len(confirm)} строках")
+    event("progress", done=1, total=3 + n_placebo, label=f"подтверждение: {len(found)} находок на {len(confirm)} {unit}")
     alpha = CONFIRM_ALPHA / max(1, len(found))
     for r in found:
         by_rho = r["p_rho"] <= r["p_xi"]  # подтверждаем тем тестом, которым нашли
@@ -221,19 +252,29 @@ def main() -> int:
                "links": [brief(r) for r in confirmed][:50], "links_total": len(confirmed),
                "not_confirmed": [brief(r) for r in missed_all][:50], "not_confirmed_total": len(missed_all),
                "same_pairs": [{"a": r["a"], "b": r["b"], "rho": round(r["rho"], 3)} for r in rows if r["same"]],
-               "excluded_columns": sorted(aliases)}
+               "excluded_columns": sorted(aliases),
+               # панель: наблюдение — группа (среднее её строк); без группы — подсказка, если похоже на панель
+               "unit": "group" if group else "row", "rows_raw": len(df), "panel_hint": hint}
     top = sorted(confirmed, key=lambda r: -abs(r["confirm"]["rho"]))
     missed = sorted(missed_all, key=lambda r: -abs(r["rho"] if r["kind"] == "монотонная" else r["xi"]))
     report = {
         "kpis": [
             {"label": "Пар проверено", "value": str(len(pairs)), "note": f"{data.shape[1]} столбцов"},
             {"label": "Найдено на части поиска", "value": str(len(found)),
-             "note": f"{len(find)} строк, доля ложных находок не больше {round(q * 100)} %"},
+             "note": f"{len(find)} {unit}, доля ложных находок не больше {round(q * 100)} %"},
             {"label": "Подтверждено на отложенной части", "value": str(len(confirmed)),
-             "note": f"{len(confirm)} строк, порог p ≤ {fmt(alpha)}"},
+             "note": f"{len(confirm)} {unit}, порог p ≤ {fmt(alpha)}"},
             {"label": "Ложных находок поиска на перемешанных данных",
              "value": fmt(float(np.mean(placebo))) if placebo else "—",
              "note": "в среднем за повторы, только этап поиска; связей там нет по построению"},
+            *([{"label": "Наблюдение — группа", "value": str(len(data)),
+                "note": f"строки усреднены по «{group}»: {len(df)} строк → {len(data)} групп. Ищутся связи "
+                        "между группами по средним за период, а не изменения внутри группы во времени"}]
+              if group else []),
+            *([{"label": "Похоже на панель", "value": f"«{hint}»",
+                "note": f"строки повторяются по «{hint}», и есть год. Без столбца-группы годы одного "
+                        "объекта считаются независимыми наблюдениями, и связи «подтверждаются» даже на "
+                        f"шуме. Повторите расчёт со столбцом-группой «{hint}»"}] if hint else []),
             *([{"label": "Столбцов не вошло", "value": str(len(skipped)),
                 "note": f"берутся первые {MAX_COLUMNS} числовых в порядке файла; не вошли: "
                         + ", ".join(map(str, skipped))[:300]}] if skipped else []),
@@ -273,7 +314,7 @@ def main() -> int:
             }] if missed else []),
         ],
     }
-    write_run(args, out, "scan", started, t0, data,
+    write_run(args, out, "scan", started, t0, df,  # row_count — строки среза, не группы
               {"split": seed, "placebo": [[seed, i + 1] for i in range(n_placebo)], "group": group},
               summary, report)
     return 0
