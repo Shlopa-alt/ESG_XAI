@@ -32,6 +32,8 @@ import { refFromHit } from "./KbLive";
 /** Опора, переданная со страницы базы знаний («Предложить гипотезу по этой статье»). */
 export interface ProposeState {
   ref?: KbRefIn;
+  /** Черновик идеи, например по связи из «Поиска связей»: человек допишет и решит, отправлять ли. */
+  draft?: { title: string; statement: string; rationale: string };
 }
 
 const ARTICLES_SHOWN = 3;
@@ -183,11 +185,19 @@ function WeightFact({ h, canChange }: { h: Hypothesis; canChange: boolean }) {
   );
 }
 
-function ProposeForm({ initialRef, onDone }: { initialRef?: KbRefIn; onDone: () => void }) {
+function ProposeForm({
+  initialRef,
+  initialDraft,
+  onDone,
+}: {
+  initialRef?: KbRefIn;
+  initialDraft?: ProposeState["draft"];
+  onDone: () => void;
+}) {
   const qc = useQueryClient();
-  const [title, setTitle] = useState("");
-  const [statement, setStatement] = useState("");
-  const [rationale, setRationale] = useState("");
+  const [title, setTitle] = useState(initialDraft?.title ?? "");
+  const [statement, setStatement] = useState(initialDraft?.statement ?? "");
+  const [rationale, setRationale] = useState(initialDraft?.rationale ?? "");
   const [direction, setDirection] = useState("");
   const [node, setNode] = useState("");
   const [effect, setEffect] = useState<Effect | "">("");
@@ -479,7 +489,8 @@ export function Hypotheses() {
   const location = useLocation();
   const navigate = useNavigate();
   const initialRef = (location.state as ProposeState | null)?.ref;
-  const [proposing, setProposing] = useState(Boolean(initialRef));
+  const initialDraft = (location.state as ProposeState | null)?.draft;
+  const [proposing, setProposing] = useState(Boolean(initialRef || initialDraft));
   const [filter, setFilter] = useState<HFilter>("all");
   const q = useQuery({ queryKey: ["hypotheses"], queryFn: listHypotheses });
   const all = Array.isArray(q.data) ? q.data : [];
@@ -516,7 +527,7 @@ export function Hypotheses() {
           </div>
         )}
       </section>
-      {proposing && <ProposeForm initialRef={initialRef} onDone={close} />}
+      {proposing && <ProposeForm initialRef={initialRef} initialDraft={initialDraft} onDone={close} />}
       <div className="filters" role="group" aria-label="Статус идеи">
         {FILTERS.map((f) => (
           <button

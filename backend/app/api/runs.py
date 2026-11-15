@@ -65,6 +65,7 @@ class RunOut(BaseModel):
     config: dict[str, Any]
     runner_commit: str
     dataset: str
+    snapshot_id: int | None  # версия данных: «Анализ данных» по найденной связи — на ней же
     dataset_sha256: str
     env_lock_sha256: str
     python: str
@@ -128,7 +129,8 @@ def _out(db: Session, run: Run) -> RunOut:
     return RunOut(
         id=run.id, experiment=exp.code if exp else "", status=run.status, resource=run.resource,
         template=run.template, config=run.config or {}, runner_commit=run.runner_commit,
-        dataset=ds.code if ds else "", dataset_sha256=snap.sha256 if snap else "",
+        dataset=ds.code if ds else "", snapshot_id=snap.id if snap else None,
+        dataset_sha256=snap.sha256 if snap else "",
         env_lock_sha256=run.env_lock_sha256, python=run.python, seeds=run.seeds or {},
         parts=run.parts or {}, summary=run.summary or {}, results_path=run.results_path,
         mlflow_run_id=run.mlflow_run_id, message=run.message, author=user.login if user else "",

@@ -18,6 +18,7 @@ from app.services.run_templates import TEMPLATES
 # сколько строк без пропусков нужно методу (runner/methods/*.py: MIN_ROWS и проверки в main)
 MIN_ROWS = {"lab-mlp": 20, "predictive-check": 30, "rank-agreement": 5, "correlation-scan": 40}
 MAX_COMPARE = 8  # столбцов в согласованности по умолчанию: пар — до 28
+MAX_SCAN = 40  # столбцов в поиске связей: пар — до 780 (runner/methods/correlation_scan.py)
 MAX_LEVELS = 30  # текстовый столбец с большим числом значений — не категория (имя компании)
 SMALL = 100  # строк меньше — оценки качества шумные
 
@@ -316,6 +317,28 @@ def recommend(
                 net="rank",
             )
         )
+        ok_scan, why_not_scan = _rows_note(rows, MIN_ROWS["correlation-scan"])
+        scan_cols = [c for c in numeric if not ID_LIKE.fullmatch(_bare(c))][:MAX_SCAN]
+        recs.append(
+            Recommendation(
+                key="correlation-scan",
+                template="correlation-scan",
+                title="Поиск неочевидных связей по всем столбцам",
+                method_title=TEMPLATES["correlation-scan"].title,
+                params={"columns": scan_cols, "sheet": t.sheet},
+                why=[
+                    "Не знаете, что с чем связано, — платформа переберёт все пары столбцов: "
+                    "и прямые связи, и немонотонные (U-образные, пороговые), которые обычная "
+                    "корреляция не видит.",
+                    f"Пар — {len(scan_cols) * (len(scan_cols) - 1) // 2}. Чтобы не принять "
+                    "случайность за находку: поиск на половине строк, подтверждение на другой, "
+                    "поправка на множественное сравнение и плацебо на перемешанных данных.",
+                    "Подтверждённая связь — кандидат в идею для проверки, а не вывод.",
+                ],
+                warnings=[why_not_scan] if not ok_scan else [],
+                runnable=ok_scan and len(scan_cols) >= 2,
+            )
+        )
     note = ""
     if authors is not None:
         recs, note = _as_authors(recs, authors, task["key"])
@@ -417,6 +440,11 @@ def _as_authors(
 
 def question(template: str, params: dict[str, Any]) -> str:
     """Вопрос проверки словами — в поле «гипотеза» карточки, когда идеи для проверки нет."""
+    if template == "correlation-scan":
+        cols = params.get("columns") or []
+        what = f"{len(cols)} столбцами" if cols else "всеми числовыми столбцами"
+        return (f"Какие связи между {what} подтверждаются на отложенной части данных, "
+                "а не только на той, где их нашли?")
     if template == "rank-agreement":
         cols = params.get("columns") or []
         return f"Согласуются ли показатели {', '.join(map(str, cols))} между собой?"

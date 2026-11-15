@@ -976,3 +976,8 @@ details[open] > .node-head .node-preview { display: none; }
 .run-cost p { margin: 0; line-height: 1.5; }
 .run-cost-blocked { border-color: #8e2a1b; }
 .run-cost .btn-ghost { align-self: flex-start; }
+
+/* --- «Поиск связей»: найденные связи на странице расчёта --- */
+.scan-links { display: flex; flex-direction: column; gap: 10px; }
+.scan-list > li { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.scan-list > li:last-child { border-bottom: 0; }

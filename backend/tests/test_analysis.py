@@ -101,6 +101,12 @@ def test_without_target_compares_columns(make_client, db_session: Session, tmp_p
         "[x1]",
         "[x2]",
     ]
+    # вторая карточка — поиск связей по всем столбцам; не основная, и на малых данных не запускается
+    scan = out["recommendations"][1]
+    assert (scan["template"], scan["primary"]) == ("correlation-scan", False)
+    assert scan["params"]["columns"] == ["[ROA_2021]", "[ROA_2022]", "[x1]", "[x2]"]
+    if out["rows"] is not None and out["rows"] < 40:
+        assert not scan["runnable"] and scan["warnings"]
 
 
 def test_methodology_item_ranks_target_candidates(

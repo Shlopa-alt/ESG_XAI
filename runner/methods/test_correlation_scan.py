@@ -66,6 +66,10 @@ def test_scan_end_to_end(synthetic: Path, tmp_path: Path) -> None:
     confirmed = run["report"]["charts"][0]["categories"]
     assert "[x] — [y]" in confirmed and "[x] — [u]" in confirmed
     assert not any("копия" in c for c in confirmed)
+    # связи — списком для страницы расчёта: подтверждённые и отдельно не подтвердившиеся
+    assert {(x["a"], x["b"]) for x in s["links"]} >= {("[x]", "[y]"), ("[x]", "[u]")}
+    assert all(x["rho_confirm"] is not None for x in s["links"])
+    assert all((x["a"], x["b"]) not in {(y["a"], y["b"]) for y in s["links"]} for x in s["not_confirmed"])
     # всё для повтора расчёта (правило 3)
     assert run["dataset"]["sha256"] and run["seeds"]["split"] == 3 and run["env_lock_sha256"]
 

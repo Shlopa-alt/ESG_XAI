@@ -7,6 +7,7 @@ import { useMe } from "../auth/useAuth";
 import { ExperimentWizard } from "../components/ExperimentWizard";
 import { defaults, type MethodParam, ParamsEditor, type ParamValue } from "../components/ParamsEditor";
 import { RunCost } from "../components/RunCost";
+import { ScanLinks } from "../components/ScanLinks";
 import { ChecksTabs } from "../components/SectionTabs";
 import { canRun, NextStep } from "../components/Ux";
 
@@ -21,6 +22,7 @@ export interface RunRow {
   config: { params?: Record<string, unknown>; limit_min?: number };
   runner_commit: string;
   dataset: string;
+  snapshot_id: number | null;
   dataset_sha256: string;
   env_lock_sha256: string;
   python: string;
@@ -509,6 +511,7 @@ export function RunDetail() {
           </div>
         </section>
       )}
+      {r.template === "correlation-scan" && <ScanLinks run={r} />}
       <div className="grid-2">
         <section className="card">
           <h2 className="h2">Параметры и повторение расчёта</h2>

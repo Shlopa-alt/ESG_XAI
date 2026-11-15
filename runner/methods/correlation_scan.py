@@ -160,9 +160,18 @@ def main() -> int:
              | ({"confirm": {k: round(v, 4) if isinstance(v, float) else v for k, v in r["confirm"].items()}}
                 if r.get("confirm") else {}) for r in rows]
     (out / "results.json").write_text(json.dumps(clean, ensure_ascii=False, indent=2), encoding="utf-8")
+    def brief(r: dict) -> dict:
+        c = r.get("confirm") or {}
+        return {"a": r["a"], "b": r["b"], "kind": r.get("kind", ""), "rho": round(r["rho"], 3),
+                "xi": round(r["xi"], 3), "rho_confirm": round(c["rho"], 3) if c else None,
+                "xi_confirm": round(c["xi"], 3) if c else None, "n": r["n"]}
+
     summary = {"columns": data.shape[1], "pairs": len(pairs), "rows_find": len(find), "rows_confirm": len(confirm),
                "found": len(found), "confirmed": len(confirmed), "same": sum(1 for r in rows if r["same"]),
-               "placebo_found": placebo, "fdr": q, "holdout": holdout}
+               "placebo_found": placebo, "fdr": q, "holdout": holdout,
+               # для страницы расчёта: «проверить сетями» и «сделать идеей» по каждой связи
+               "links": [brief(r) for r in found if r["confirmed"]][:50],
+               "not_confirmed": [brief(r) for r in found if not r["confirmed"]][:50]}
     top = sorted(confirmed, key=lambda r: -abs(r["confirm"]["rho"]))
     missed = sorted((r for r in found if not r["confirmed"]), key=lambda r: -abs(r["rho"]))
     report = {

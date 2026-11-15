@@ -168,10 +168,17 @@ export function Analysis() {
     return [...seen.values()];
   }, [templates.data]);
   const [node, setNode] = useState("");
-  const [snapshot, setSnapshot] = useState<number | "">("");
+  // из «Поиска связей»: ?snapshot=…&target=… — та же версия данных и показатель найденной связи
+  const fromSnapshot = Number(search.get("snapshot")) || "";
+  const [snapshot, setSnapshot] = useState<number | "">(fromSnapshot);
   const [sheet, setSheet] = useState("");
-  const [target, setTarget] = useState("");
+  const [target, setTarget] = useState(search.get("target") ?? "");
+  const firstSnapshot = useRef(true);
   useEffect(() => {
+    if (firstSnapshot.current) {
+      firstSnapshot.current = false; // показатель из адреса не сбрасываем при первом выборе данных
+      return;
+    }
     setSheet("");
     setTarget("");
   }, [snapshot]);
