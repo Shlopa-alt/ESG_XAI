@@ -100,7 +100,7 @@ describe("Обзор", () => {
     expect(screen.getByRole("link", { name: "Открыть методику" })).toHaveAttribute("href", "/methodology");
   });
 
-  it("показывает, как менялась методика: версии от первой к последней и путь от статей к изменениям", async () => {
+  it("показывает, как менялась методика: версии от первой к последней, принятые изменения — в плитке", async () => {
     stub("reader", {
       "/methodology/versions": [
         { version: "[в2]", notes: "[CR-2]: [второе изменение]", created_at: "2026-02-01T00:00:00Z", points: 6, rules: 2 },
@@ -112,8 +112,9 @@ describe("Обзор", () => {
     const list = await screen.findByRole("list", { name: "Версии методики" });
     expect(within(list).getAllByRole("listitem").map((li) => li.querySelector(".mono")?.textContent)).toEqual(["[в1]", "[в2]"]);
     expect(within(list).getByText(/6 пунктов \(\+2\)/)).toBeInTheDocument();
-    const funnel = screen.getByRole("list", { name: "Путь от статей к изменениям методики" });
-    expect(within(funnel).getByText("изменений методики принято").previousSibling?.textContent).toBe("1");
+    // путь «статьи → изменения» — в плитках: принятые изменения методики и открытые предложения
+    const tiles = screen.getByRole("region", { name: "Что уже есть на платформе" });
+    expect(await within(tiles).findByRole("link", { name: /1 изменение методики принято.*открытых предложений: 0/ })).toHaveAttribute("href", "/methodology");
   });
 
   it("без версий методики говорит, когда появится первая", async () => {

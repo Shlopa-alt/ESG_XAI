@@ -1027,3 +1027,15 @@ details[open] > .node-head .node-preview { display: none; }
   .nets-table td.net-empty { display: none; }
   .nets-table td.net-holds { background: none; }
 }
+
+/* --- «Обзор» без повторов: версии методики — в её карточке, словарь — свёрнут --- */
+.goal-history { margin: 0; padding-top: 12px; border-top: 1px solid var(--border); }
+.goal-history > summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+.goal-history[open] > .evolution { margin: 12px 0; }
+.overview-details > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; }
+.overview-details > summary::-webkit-details-marker { display: none; }
+.overview-details > summary::before { content: "▸"; color: var(--accent); font-size: 18px; }
+.overview-details[open] > summary::before { content: "▾"; }
+.idea-more > summary { cursor: pointer; color: var(--accent); font-size: 14px; font-weight: 500; }
+.idea-more[open] > summary { margin-bottom: 10px; }
+.idea-more > .stepper { margin: 10px 0; }
