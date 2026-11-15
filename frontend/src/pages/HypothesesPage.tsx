@@ -442,12 +442,6 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
     <article className="card cr" id={h.code}>
       <div className="kb-meta">
         <span className="mono">{h.code}</span>
-        {h.direction && <span>· {h.direction}</span>}
-        {h.methodology_node && (
-          <Link to="/methodology" className="mono">
-            · {h.methodology_node}
-          </Link>
-        )}
         <span className={`badge ${H_BADGE[h.status]}`}>{H_STATUS_LABEL[h.status]}</span>
         {h.source === "qwen" && <span className="badge st-running">предложил ИИ-помощник</span>}
         <span className="muted">
@@ -457,27 +451,6 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
       </div>
       <h3 className="h3">{h.title}</h3>
       <p>{h.statement}</p>
-      <dl className="idea-facts">
-        <div>
-          <dt>Задание методики</dt>
-          <dd>
-            {h.methodology_node ? (
-              <Link to="/methodology">
-                <span className="mono">{h.methodology_node}</span>
-                {h.methodology_node_title && ` ${h.methodology_node_title}`}
-              </Link>
-            ) : (
-              <span className="muted">не указано</span>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>Тип связи</dt>
-          <dd>{linkType(h.effect, h.target_kind) || <span className="muted">не указан</span>}</dd>
-        </div>
-        <WeightFact h={h} canChange={canDecide} />
-      </dl>
-      <HypothesisPath status={h.status} />
       <NextStep
         action={
           h.status === "accepted" && canRun(role) ? (
@@ -496,20 +469,6 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
       >
         {hypothesisNext(h.status, role, h.code, h.experiment)}
       </NextStep>
-      {h.rationale && <p className="muted">Обоснование: {h.rationale}</p>}
-      {h.source === "qwen" && (h.suggested.dataset || h.suggested.method || h.suggested.data_needed) && (
-        <p className="muted">
-          Проверить:{" "}
-          {h.suggested.dataset && (
-            <>
-              на <Link to={`/datasets/${h.suggested.dataset}`} className="mono">{h.suggested.dataset}</Link>
-              {h.suggested.method ? ", " : ""}
-            </>
-          )}
-          {h.suggested.method && <>метод: {h.suggested.method}</>}
-          {h.suggested.data_needed && <> · нужны данные: {h.suggested.data_needed}</>}
-        </p>
-      )}
       {h.refs.length > 0 && (
         // раскрыты сразу при любом статусе: источник — то, на чём держится идея; свернуть можно вручную
         <details open>
@@ -529,11 +488,58 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
           </ul>
         </details>
       )}
-      {h.decision_note && (
-        <p className="muted">
+      {/* причина отклонения видна сразу: это итог идеи */}
+      {h.decision_note && h.status === "rejected" && (
+        <p>
           Решение{h.decided_by ? ` (${h.decided_by})` : ""}: {h.decision_note}
         </p>
       )}
+      {/* остальное — по запросу; рецензенту, который решает, — раскрыто: обоснование нужно для решения */}
+      <details className="idea-more" open={h.status === "proposed" && canDecide}>
+        <summary>Подробнее: задание методики, тип и сила связи, обоснование</summary>
+        <dl className="idea-facts">
+          <div>
+            <dt>Задание методики</dt>
+            <dd>
+              {h.methodology_node ? (
+                <Link to="/methodology">
+                  <span className="mono">{h.methodology_node}</span>
+                  {h.methodology_node_title && ` ${h.methodology_node_title}`}
+                </Link>
+              ) : (
+                <span className="muted">не указано</span>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>Тип связи</dt>
+            <dd>{linkType(h.effect, h.target_kind) || <span className="muted">не указан</span>}</dd>
+          </div>
+          <WeightFact h={h} canChange={canDecide} />
+        </dl>
+        <HypothesisPath status={h.status} />
+        {h.rationale && <p className="muted">Обоснование: {h.rationale}</p>}
+        {h.source === "qwen" && (h.suggested.dataset || h.suggested.method || h.suggested.data_needed) && (
+          <p className="muted">
+            Проверить:{" "}
+            {h.suggested.dataset && (
+              <>
+                на <Link to={`/datasets/${h.suggested.dataset}`} className="mono">{h.suggested.dataset}</Link>
+                {h.suggested.method ? ", " : ""}
+              </>
+            )}
+            {h.suggested.method && <>метод: {h.suggested.method}</>}
+            {h.suggested.data_needed && <> · нужны данные: {h.suggested.data_needed}</>}
+          </p>
+        )}
+        {h.decision_note && h.status !== "rejected" && (
+          <p className="muted">
+            Решение{h.decided_by ? ` (${h.decided_by})` : ""}: {h.decision_note}
+          </p>
+        )}
+        {/* править и одобрять предложение ИИ-помощника — в мастере на странице расчёта; здесь только история */}
+        {h.status !== "accepted" && <ProposalPanel code={h.code} status={h.status} />}
+      </details>
       {h.status === "proposed" && canDecide && (
         <div className="review-form">
           <label className="field inline grow">
@@ -557,8 +563,6 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
           </button>
         </div>
       )}
-      {/* править и одобрять предложение ИИ-помощника — в мастере на странице расчёта; здесь только история */}
-      {h.status !== "accepted" && <ProposalPanel code={h.code} status={h.status} />}
       {error && (
         <p className="error" role="alert">
           {error.message}
@@ -568,16 +572,14 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
   );
 }
 
-type HFilter = HStatus | "all" | "qwen" | "mine";
-const FILTERS: Array<{ key: HFilter; label: string }> = [
+type HFilter = "all" | "mine" | "waiting" | "work" | "done";
+// по ходу идеи: ждёт решения → в работе (принята, проверяется) → есть итог (проверена или отклонена)
+const FILTERS: Array<{ key: HFilter; label: string; statuses?: HStatus[] }> = [
   { key: "mine", label: "Ждут моего действия" },
   { key: "all", label: "Все" },
-  { key: "qwen", label: "От ИИ-помощника" },
-  { key: "proposed", label: "Ждут решения" },
-  { key: "accepted", label: "Приняты" },
-  { key: "testing", label: "Проверяются" },
-  { key: "tested", label: "Проверены" },
-  { key: "rejected", label: "Отклонены" },
+  { key: "waiting", label: "Ждут решения", statuses: ["proposed"] },
+  { key: "work", label: "В работе", statuses: ["accepted", "testing"] },
+  { key: "done", label: "С итогом", statuses: ["tested", "rejected"] },
 ];
 
 export function Hypotheses() {
@@ -592,7 +594,7 @@ export function Hypotheses() {
   const all = Array.isArray(q.data) ? q.data : [];
   const role = me.data?.role;
   const match = (h: Hypothesis, f: HFilter) =>
-    f === "all" || (f === "qwen" ? h.source === "qwen" : f === "mine" ? needsMe(h, role) : h.status === f);
+    f === "all" || (f === "mine" ? needsMe(h, role) : (FILTERS.find((x) => x.key === f)?.statuses ?? []).includes(h.status));
   // если что-то ждёт пользователя — сразу показываем это
   const mineCount = all.filter((h) => needsMe(h, role)).length;
   const [touched, setTouched] = useState(false);
@@ -625,7 +627,7 @@ export function Hypotheses() {
       </section>
       {proposing && <ProposeForm initialRef={initialRef} initialDraft={initialDraft} onDone={close} />}
       <div className="filters" role="group" aria-label="Статус идеи">
-        {FILTERS.map((f) => (
+        {FILTERS.filter((f) => f.key !== "mine" || mineCount > 0).map((f) => (
           <button
             key={f.key}
             type="button"

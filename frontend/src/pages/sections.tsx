@@ -56,7 +56,7 @@ const GLOSSARY: Array<[string, string]> = [
 const STEPS: Array<{ icon: Parameters<typeof Icon>[0]["name"]; title: string; text: string; to: string; link: string }> = [
   { icon: "article", title: "Изучаем статьи", text: "Собираем научные статьи и разбираем их. ИИ-помощник выписывает утверждения с цитатами.", to: "/knowledge", link: "Банк статей" },
   { icon: "bulb", title: "Предлагаем идеи", text: "Человек или ИИ-помощник формулирует, что стоит проверить. Рецензент решает, брать ли идею в работу.", to: "/hypotheses", link: "Идеи для проверки" },
-  { icon: "chart", title: "Проверяем на данных", text: "Заранее записываем, что подтвердит идею, считаем и пишем отчёт. Рецензент его читает.", to: "/experiments", link: "Проверки" },
+  { icon: "chart", title: "Проверяем на данных", text: "Ищем связи в данных и проверяем их разными нейросетями. Что подтвердит идею, записываем заранее; отчёт читает рецензент.", to: "/nets", link: "Нейросети" },
   { icon: "edit", title: "Уточняем методику", text: "Если результат что-то меняет, появляется предложение изменить методику, и его тоже рецензируют.", to: "/methodology", link: "Методика" },
 ];
 
@@ -97,13 +97,10 @@ export function Overview() {
   // как менялась методика: версии от первой к последней и путь «статьи → идеи → проверки → изменения»
   const history = Array.isArray(vers.data) ? [...vers.data].reverse() : [];
   const crList = Array.isArray(crs.data) ? crs.data : [];
-  const funnel = [
-    { value: kb.data?.documents, label: "статей в банке" },
-    { value: ideas.length, label: "идей предложено", note: `ИИ-помощником: ${ideas.filter((h) => h.source === "qwen").length}` },
-    { value: ideas.filter((h) => h.status === "accepted" || h.status === "testing" || h.status === "tested").length, label: "взято в проверку" },
-    { value: experiments.filter((e) => e.outcome).length, label: "проверок с итогом" },
-    { value: crList.filter((c) => c.status === "accepted").length, label: "изменений методики принято" },
-  ];
+  const taken = ideas.filter((h) => h.status === "accepted" || h.status === "testing" || h.status === "tested").length;
+  const withOutcome = experiments.filter((e) => e.outcome).length;
+  const adopted = crList.filter((c) => c.status === "accepted").length;
+  const lastVersion = history[history.length - 1];
   const topics = (tree.data?.nodes ?? [])
     .filter((n) => n.path.startsWith("esg.") && n.depth === 1 && (n.subtree ?? 0) > 0)
     .sort((a, b) => (b.subtree ?? 0) - (a.subtree ?? 0))
@@ -138,9 +135,8 @@ export function Overview() {
           Наша цель — проверить методику лаборатории
         </h2>
         <p className="overview-text">
-          В центре платформы — методика лаборатории: что мы изучаем и по каким правилам считаем. Её написали учёные
-          лаборатории, а здесь её проверяют на научных статьях и настоящих данных. Методика не застывшая: она меняется, когда
-          проверка даёт для этого основание, и каждое изменение читает рецензент.
+          В центре платформы — методика лаборатории: что мы изучаем и по каким правилам считаем. Здесь её проверяют на
+          научных статьях и настоящих данных, и она меняется, когда проверка даёт для этого основание.
         </p>
         <div className="card goal-card">
           <div className="goal-state">
@@ -175,36 +171,49 @@ export function Overview() {
               <span className="muted">результат неоднозначен или правило работает не везде — уточнить его или добавить новое</span>
             </li>
           </ul>
-        </div>
-        <div className="two-grid">
-          <article className="card study-card">
-            <span className="eyebrow">ЗАДАЧА 1</span>
-            <h3 className="h3">Сверить с тем, что уже известно</h3>
-            <p>
-              Предлагал ли кто-то такое правило раньше и считал ли его на данных? Ищем ответ в банке статей: ИИ-помощник
-              выписывает из статей утверждения с цитатами, и их можно открыть и прочитать.
-            </p>
-            <Link to="/knowledge">Банк статей</Link>
-          </article>
-          <article className="card study-card">
-            <span className="eyebrow">ЗАДАЧА 2</span>
-            <h3 className="h3">Улучшать методику по ходу работы</h3>
-            <p>
-              ИИ-помощник читает статьи и предлагает идеи, эксперт выбирает, какие стоит взять. Идею проверяем на данных, и то,
-              что подтвердилось, переносим в методику через предложение её изменить.
-            </p>
-            <Link to="/hypotheses">Идеи для проверки</Link>
-          </article>
+          {history.length === 0 ? (
+            <p className="muted goal-history">Версий методики пока нет: первая появится, когда примут первое изменение.</p>
+          ) : (
+            <details className="goal-history">
+              <summary>
+                Как менялась методика: {plural(history.length, "версия", "версии", "версий")}
+                {lastVersion && `, последняя — ${lastVersion.version}`}
+              </summary>
+              <ol className="evolution" aria-label="Версии методики">
+                {history.map((v, i) => {
+                  const prev = history[i - 1];
+                  const delta = prev?.points !== undefined && v.points !== undefined ? v.points - prev.points : 0;
+                  return (
+                    <li key={v.version}>
+                      <span className="mono evolution-version">{v.version}</span>
+                      <span className="muted mono">{new Date(v.created_at).toLocaleDateString("ru-RU")}</span>
+                      <span>
+                        {v.notes || "без описания"}
+                        {v.points !== undefined && (
+                          <span className="muted">
+                            {" "}
+                            · {v.points} {word(v.points, "пункт", "пункта", "пунктов")}
+                            {delta > 0 && ` (+${delta})`}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+              <Link to="/methodology">История версий и отличия между ними</Link>
+            </details>
+          )}
         </div>
       </section>
 
       <section className="tiles" aria-label="Что уже есть на платформе">
         <Tile to="/knowledge" icon="article" value={kb.data ? fmt(kb.data.documents) : "—"} label={`${word(kb.data?.documents ?? 0, "статья", "статьи", "статей")} в банке`} note={kb.data?.year_from ? `${kb.data.year_from}–${kb.data.year_to} годы` : undefined} />
         <Tile to="/knowledge/graph" icon="link" value={kb.data?.facts !== undefined ? fmt(kb.data.facts) : "—"} label={`${word(kb.data?.facts ?? 0, "утверждение", "утверждения", "утверждений")} с цитатами`} note="на карте связей" />
-        <Tile to="/hypotheses" icon="bulb" value={fmt(ideas.length)} label={`${word(ideas.length, "идея", "идеи", "идей")} для проверки`} note={waiting ? `ждут решения: ${waiting}` : undefined} />
-        <Tile to="/experiments" icon="chart" value={fmt(experiments.length)} label={word(experiments.length, "проверка", "проверки", "проверок")} note={inReview ? `на рецензии: ${inReview}` : undefined} />
+        <Tile to="/hypotheses" icon="bulb" value={fmt(ideas.length)} label={`${word(ideas.length, "идея", "идеи", "идей")} для проверки`} note={[waiting ? `ждут решения: ${waiting}` : "", taken ? `взято в проверку: ${taken}` : ""].filter(Boolean).join(" · ") || undefined} />
+        <Tile to="/experiments" icon="chart" value={fmt(experiments.length)} label={word(experiments.length, "проверка", "проверки", "проверок")} note={[withOutcome ? `с итогом: ${withOutcome}` : "", inReview ? `на рецензии: ${inReview}` : ""].filter(Boolean).join(" · ") || undefined} />
         <Tile to="/data" icon="data" value={fmt(datasets.length)} label={`${word(datasets.length, "набор", "набора", "наборов")} данных`} note={datasets.length ? `с файлами: ${withFiles}` : undefined} />
-        <Tile to="/methodology" icon="edit" value={fmt(proposals.length)} label={word(proposals.length, "открытое предложение", "открытых предложения", "открытых предложений")} note="изменить методику" />
+        <Tile to="/methodology" icon="edit" value={fmt(adopted)} label={`${word(adopted, "изменение", "изменения", "изменений")} методики принято`} note={`открытых предложений: ${proposals.length}`} />
       </section>
 
       <section className="overview-block" aria-labelledby="what-esg">
@@ -351,54 +360,6 @@ export function Overview() {
         )}
       </section>
 
-      <section className="overview-block" aria-labelledby="evolution-title">
-        <h2 className="section-title" id="evolution-title">
-          Как меняется методика
-        </h2>
-        <p className="overview-text">
-          Итог работы — не только отдельные проверки, но и сама методика: какой она была в начале и какой стала после
-          разбора статей и расчётов. Каждое изменение опирается на проверку, факт с цитатой или статью с DOI и прошло рецензию.
-        </p>
-        <ol className="card funnel" aria-label="Путь от статей к изменениям методики">
-          {funnel.map((f) => (
-            <li key={f.label}>
-              <span className="tile-value">{f.value === undefined ? "—" : fmt(f.value)}</span>
-              <span className="tile-label">{f.label}</span>
-              {f.note && <span className="muted tile-note">{f.note}</span>}
-            </li>
-          ))}
-        </ol>
-        {history.length === 0 ? (
-          <p className="muted">Версий методики пока нет: первая появится, когда примут первое изменение.</p>
-        ) : (
-          <ol className="card evolution" aria-label="Версии методики">
-            {history.map((v, i) => {
-              const prev = history[i - 1];
-              const delta = prev?.points !== undefined && v.points !== undefined ? v.points - prev.points : 0;
-              return (
-                <li key={v.version}>
-                  <span className="mono evolution-version">{v.version}</span>
-                  <span className="muted mono">{new Date(v.created_at).toLocaleDateString("ru-RU")}</span>
-                  <span>
-                    {v.notes || "без описания"}
-                    {v.points !== undefined && (
-                      <span className="muted">
-                        {" "}
-                        · {v.points} {word(v.points, "пункт", "пункта", "пунктов")}
-                        {delta > 0 && ` (+${delta})`}
-                      </span>
-                    )}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-        <p>
-          <Link to="/methodology">История версий и отличия между ними</Link>
-        </p>
-      </section>
-
       <section className="overview-block" aria-labelledby="trust-title">
         <h2 className="section-title" id="trust-title">
           Почему этому можно доверять
@@ -433,10 +394,12 @@ export function Overview() {
         </section>
       )}
 
-      <section className="overview-block" aria-labelledby="words-title">
-        <h2 className="section-title" id="words-title">
-          Основные слова
-        </h2>
+      <details className="overview-block overview-details" aria-labelledby="words-title">
+        <summary>
+          <h2 className="section-title" id="words-title">
+            Основные слова
+          </h2>
+        </summary>
         <dl className="glossary card">
           {GLOSSARY.map(([term, text]) => (
             <div key={term}>
@@ -445,7 +408,7 @@ export function Overview() {
             </div>
           ))}
         </dl>
-      </section>
+      </details>
 
       <section className="overview-block" aria-labelledby="start-title">
         <h2 className="section-title" id="start-title">

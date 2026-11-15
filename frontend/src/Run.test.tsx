@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -461,5 +461,28 @@ describe("Форма идеи: есть ли похожее", () => {
     expect(bodies[1]?.refs).toEqual([
       { kind: "article", kbrag_id: "d1", kb_path: "esg", title: "[статья банка]", doi: "10.0000/[doi]", quote: "[фрагмент]", page: 3 },
     ]);
+  });
+});
+
+describe("Карточка идеи без перегруза", () => {
+  it("главное сразу, остальное — «Подробнее»; рецензенту при решении — раскрыто; четыре фильтра", async () => {
+    const ideas = [
+      { ...HYP, refs: [], status: "testing", rationale: "[обоснование]" },
+      { ...HYP, code: "H-002", title: "[отклонённая]", refs: [], status: "rejected", decision_note: "[почему нет]", decided_by: "[рецензент]" },
+    ];
+    api({ hypotheses: ideas });
+    renderAt("/hypotheses");
+    await screen.findByText("[отклонённая]");
+    const filters = screen.getByRole("group", { name: "Статус идеи" });
+    expect(within(filters).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Все (2)", "Ждут решения (0)", "В работе (1)", "С итогом (1)",
+    ]);
+    // причина отклонения — итог идеи, видна сразу; обоснование — под «Подробнее», свёрнуто
+    expect(screen.getByText("Решение ([рецензент]): [почему нет]").closest("details")).toBeNull();
+    const more = screen.getByText("Обоснование: [обоснование]").closest("details");
+    expect(more).not.toBeNull();
+    expect(more).not.toHaveAttribute("open");
+    await userEvent.click(within(filters).getByRole("button", { name: "С итогом (1)" }));
+    expect(screen.queryByText("[обоснование]", { exact: false })).not.toBeInTheDocument();
   });
 });
