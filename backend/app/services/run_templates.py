@@ -78,6 +78,26 @@ TEMPLATES: dict[str, Template] = {
                     Param("n_perm", "Перестановок", 10_000, 100, 100_000)),
         ),
         Template(
+            key="correlation-scan",
+            title="Поиск связей (все пары столбцов, с подтверждением)",
+            description="Ищет связи между всеми парами столбцов: монотонные (ρ Спирмена) и "
+                        "немонотонные (ξ Чаттерджи). Строки делятся на поиск и подтверждение; "
+                        "поправка на множественное сравнение (Бенджамини — Хохберг), каждая "
+                        "находка перепроверяется на отложенной части, поиск повторяется на "
+                        "перемешанных данных. Итог — кандидаты в идеи, не выводы.",
+            workdir="methods", script="correlation_scan.py", resource="cpu", limit_min=60,
+            params=(SHEET,
+                    Param("columns", "Столбцы", [], kind="columns", required=False,
+                          hint="пусто — все числовые, не больше 40"),
+                    Param("group", "Столбец-группа", "", kind="column", required=False,
+                          numeric=False,
+                          hint="у панели компания × год — компания: строки усредняются по ней"),
+                    Param("holdout", "Отложенная часть (на подтверждение), %", 50, 20, 70),
+                    Param("fdr", "Допустимая доля ложных находок, %", 10, 1, 25),
+                    Param("placebo", "Повторов на перемешанных данных", 5, 0, 20),
+                    SEED),
+        ),
+        Template(
             key="predictive-check",
             title="Предсказательная проверка (протокол CR-01)",
             description="Предсказывают ли признаки целевой показатель лучше среднего: линейная модель и "
@@ -198,6 +218,15 @@ def check_params(t: Template, given: dict[str, Any], columns: list[str] | None =
         raise ParamError("Для согласованности нужны хотя бы два столбца")
     if t.key == "rank-agreement" and not set(out["invert"]) <= set(out["columns"]):
         raise ParamError("Обращать можно только сравниваемые столбцы")
+    if t.key == "correlation-scan" and len(out["columns"]) == 1:
+        raise ParamError("Для поиска связей нужны хотя бы два столбца "
+                         "(или пусто — все числовые)")
+    if t.key == "correlation-scan" and out["group"] and out["group"] in out["columns"]:
+        raise ParamError("По столбцу-группе усредняются строки, в связях он не ищется — "
+                         "уберите его из столбцов")
+    if t.key == "correlation-scan" and len(out["columns"]) > 40:
+        raise ParamError("Не больше 40 столбцов: иначе пар больше 780 "
+                         "и поправка съедает все находки")
     if t.key == "predictive-check" and out["target"] in out["features"]:
         raise ParamError("Целевой показатель не может быть признаком")
     if t.key == "lab-mlp":

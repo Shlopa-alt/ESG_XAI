@@ -57,6 +57,25 @@ function renderAt(path: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Анализ данных", () => {
+  it("из «Поиска связей»: версия данных и показатель — из адреса, сразу в рекомендации", async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.includes("/auth/me")) return Promise.resolve(json(user("researcher")));
+        if (url.includes("/run-templates")) return Promise.resolve(json([TEMPLATE]));
+        if (url.includes("/analysis/recommend")) {
+          bodies.push(JSON.parse(String(init?.body)));
+          return Promise.resolve(json(RECO));
+        }
+        return Promise.resolve(json([]));
+      }),
+    );
+    renderAt(`/analysis?snapshot=5&target=${encodeURIComponent("[R]")}`);
+    expect(await screen.findByText("[нейросеть лаборатории]")).toBeInTheDocument();
+    expect(bodies[0]).toMatchObject({ snapshot_id: 5, target: "[R]" });
+  });
+
   it("по набору данных показывает рекомендацию с причиной и запускает расчёт одной кнопкой", async () => {
     const onLaunch = vi.fn();
     stub("researcher", onLaunch);

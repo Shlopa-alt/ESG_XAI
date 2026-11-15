@@ -39,11 +39,12 @@ def queue(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     return sent
 
 
-def _snapshot(db: Session, tmp_path: Path, code: str = "DS-09", access: str = "public") -> int:
+def _snapshot(db: Session, tmp_path: Path, code: str = "DS-09", access: str = "public",
+              rows: int = ROWS) -> int:
     path = tmp_path / code / "v1" / "t.csv"
     path.parent.mkdir(parents=True)
     lines = [",".join(HEADER)] + [
-        f"[c{i}],[отрасль {i % 3}],{i},{i + 1},{i * 2},{i % 7}" for i in range(ROWS)
+        f"[c{i}],[отрасль {i % 3}],{i},{i + 1},{i * 2},{i % 7}" for i in range(rows)
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
     ds = Dataset(code=code, title="[набор]", access_level=access)
@@ -54,7 +55,7 @@ def _snapshot(db: Session, tmp_path: Path, code: str = "DS-09", access: str = "p
         version="v1",
         sha256="a" * 64,
         storage_path=f"C:/data/{code}/v1/t.csv",
-        row_count=ROWS,
+        row_count=rows,
     )
     db.add(snap)
     db.commit()
@@ -101,6 +102,22 @@ def test_without_target_compares_columns(make_client, db_session: Session, tmp_p
         "[x1]",
         "[x2]",
     ]
+    # вторая карточка — поиск связей по всем столбцам; не основная, и на малых данных не запускается
+    scan = out["recommendations"][1]
+    assert (scan["template"], scan["primary"]) == ("correlation-scan", False)
+    assert scan["params"]["columns"] == ["[ROA_2021]", "[ROA_2022]", "[x1]", "[x2]"]
+    assert scan["runnable"]  # 40 строк — ровно минимум
+    assert scan["params"]["group"] == ""  # года нет — не панель, строки не усредняются
+
+
+def test_scan_not_runnable_on_small_data(  # type: ignore[no-untyped-def]
+    make_client, db_session: Session, tmp_path: Path,
+) -> None:
+    sid = _snapshot(db_session, tmp_path, rows=30)
+    c = make_client("rd", "reader")
+    out = c.post("/api/analysis/recommend", json={"snapshot_id": sid}).json()
+    scan = next(r for r in out["recommendations"] if r["template"] == "correlation-scan")
+    assert not scan["runnable"] and scan["warnings"]
 
 
 def test_methodology_item_ranks_target_candidates(
@@ -225,3 +242,23 @@ def test_future_years_and_ids_are_not_inputs() -> None:
     first = recommend(t, 120, "[ROA 2021]", None)["recommendations"][0]
     assert first["params"]["features"] == ["[x1]"] and first["params"]["lag"] == "[ROA 2020]"
     assert any("[ROA 2022]" in w and "подсмотрел" in w for w in first["why"])
+
+
+def test_panel_scan_groups_by_entity() -> None:
+    """Панель «страна × год»: поиск связей усредняет строки по стране — иначе годы одной страны
+    считаются независимыми наблюдениями и связи «подтверждаются» на шуме."""
+    from app.services.analysis import panel_group, recommend
+    from app.services.data_files import Table
+
+    cols = ["[страна]", "[регион]", "[год]", "[x1]", "[x2]"]
+    sample = [[f"[страна {i // 5}]", f"[регион {i % 3}]", 2000 + i % 5, i, i % 7] for i in range(60)]
+    t = Table(columns=cols, numeric={"[год]", "[x1]", "[x2]"}, sample=sample)
+    assert panel_group(t) == "[страна]"  # больше разных значений, чем у региона
+    scan = next(r for r in recommend(t, 600, None, None)["recommendations"]
+                if r["template"] == "correlation-scan")
+    assert scan["params"]["group"] == "[страна]" and scan["params"]["columns"] == ["[x1]", "[x2]"]
+    assert any("усредняются по «[страна]»" in w for w in scan["why"])
+    # без столбца года — не панель: группы нет
+    flat = Table(columns=["[компания]", "[x1]", "[x2]"], numeric={"[x1]", "[x2]"},
+                 sample=[[f"[c{i}]", i, i % 7] for i in range(60)])
+    assert panel_group(flat) == ""

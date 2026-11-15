@@ -980,6 +980,10 @@ details[open] > .node-head .node-preview { display: none; }
 .run-cost-blocked { border-color: #8e2a1b; }
 .run-cost .btn-ghost { align-self: flex-start; }
 
+/* --- «Поиск связей»: найденные связи на странице расчёта --- */
+.scan-links { display: flex; flex-direction: column; gap: 10px; }
+.scan-list > li { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.scan-list > li:last-child { border-bottom: 0; }
 /* --- «Что говорят статьи» в методике: цвета — как у стрелок карты связей, подпись рядом всегда --- */
 .articles-form { display: flex; flex-direction: column; gap: 12px; }
 .articles-summary { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }

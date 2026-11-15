@@ -136,7 +136,7 @@ GET             /experiments/compare  ?codes=EXP-001,EXP-003
 
 POST            /runs                 (конфиг из формы → Celery-задача)
 GET             /runs                 (очередь)
-GET             /runs/{id}
+GET             /runs/{id}             (snapshot_id — версия данных; у correlation-scan в summary — links и not_confirmed)
 GET             /runs/{id}/stream     (SSE: события progress, metric, log, status)
 POST            /runs/{id}/stop
 
