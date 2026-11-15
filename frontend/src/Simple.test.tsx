@@ -238,7 +238,7 @@ describe("Методика", () => {
       hypotheses: [],
       findings: [
         { kind: "disputed", leader: "up", agreement: 0.6 },
-        { kind: "check_against", code: "EXP-001", idea: "H-001", outcome: "rejected" },
+        { kind: "check_against", code: "EXP-001", idea: "H-001", outcome: "rejected", claims: "up" },
       ],
     };
     const urls: string[] = [];
@@ -270,18 +270,20 @@ describe("Методика", () => {
     await userEvent.type(screen.getByLabelText("Результат — на что влияет"), "[[результат]");
     expect(screen.getByLabelText("Результат — на что влияет")).toHaveValue("[результат]");
     await userEvent.click(screen.getByRole("button", { name: "Показать, что говорят статьи" }));
-    expect(await screen.findByText(/Статьи расходятся: чаще всего говорят «повышает» — 60 %/)).toBeInTheDocument();
+    expect(await screen.findByText(/Статьи расходятся: чаще всего говорят «повышает», но только 60 %/)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "повышает: 6 статей, снижает: 2 статьи, не влияет: 2 статьи" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "[статья]" })[0]).toHaveAttribute("href", "/knowledge/article/d1");
-    expect(screen.getByText(/Статьи спорят: чаще всего говорят «повышает», но только 60 %/)).toBeInTheDocument();
-    expect(screen.getByText(/расходится с тем, что говорят статьи/)).toBeInTheDocument();
+    expect(screen.getByText(/расходится с большинством статей/)).toBeInTheDocument();
     // читателю предлагать изменение нельзя
     expect(screen.queryByRole("button", { name: "Предложить изменение пункта по статьям" })).not.toBeInTheDocument();
     expect(urls.some((u) => u.includes("/methodology/sections/%D0%9D1.%D0%921.%D0%971/articles?factor="))).toBe(true);
   });
 
   it("исследователь предлагает изменение пункта по статьям — с цитатами-основаниями", async () => {
-    const q = [{ quote: "[цитата]", doc_id: "d1", title: "[статья]", year: 2024, url: "https://doi.org/10.0000/[doi]" }];
+    const q = [
+      { quote: "[цитата]", doc_id: "d1", title: "[статья]", year: 2024, url: "https://doi.org/10.0000/[doi]" },
+      { quote: "[цитата]", doc_id: "d2", title: "[статья без DOI]", year: 2024, url: "" },
+    ];
     const summary = {
       factor: "[фактор]", outcome: "[результат]", total: 4, leader: "up", agreement: 1,
       groups: [
@@ -316,14 +318,16 @@ describe("Методика", () => {
     await userEvent.click(screen.getByRole("button", { name: "Предложить изменение пункта по статьям" }));
     const send = screen.getByRole("button", { name: "Отправить предложение" });
     expect(send).toBeDisabled(); // текст пункта ещё не изменён
-    expect(screen.getByRole("checkbox", { name: /«\[фактор\]» — повышает — «\[результат\]»: \[статья\]/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /\[статья\]: «\[фактор\]» — повышает — «\[результат\]»/ })).toBeChecked();
+    // статья без DOI «требует источника» — отметить нельзя
+    expect(screen.getByRole("checkbox", { name: /\[статья без DOI\]/ })).toBeDisabled();
     await userEvent.type(screen.getByLabelText("Новый текст пункта"), " [[уточнение по статьям]");
     await userEvent.click(send);
     expect(await screen.findByText(/Предложение/)).toBeInTheDocument();
     expect(posts.map((p) => p.url)).toEqual(["/api/change-requests", "/api/change-requests/CR-02/bases"]);
     expect(posts[0]?.body).toMatchObject({ section: "Н1.В1.З1", proposed_content: "[текст пункта] [уточнение по статьям]" });
     expect(posts[1]?.body).toEqual({
-      basis_type: "kb_fact", kbrag_id: "d1", kb_path: "esg", title: "[статья]", doi: "10.0000/[doi]",
+      basis_type: "kb_article", kbrag_id: "d1", kb_path: "esg", title: "[статья]", doi: "10.0000/[doi]",
       quote: "«[фактор]» — повышает — «[результат]»: «[цитата]»",
     });
     expect(screen.getByRole("button", { name: "Открыть CR-02" })).toBeInTheDocument();

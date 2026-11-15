@@ -7,6 +7,9 @@
 """
 
 import json
+import logging
+import threading
+import time
 from typing import Annotated, Any
 from urllib.error import URLError
 from urllib.parse import urlencode
@@ -25,6 +28,12 @@ from app.services import articles_summary as svc
 router = APIRouter(prefix="/methodology/sections", tags=["methodology"])
 
 ROOT_KB = "esg"
+# ответ KBRAG /api/dataset держим недолго: он строит граф, а одно понятие спрашивают снова и снова
+DATASET_FRESH_S = 300.0
+DATASET_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_cache_lock = threading.Lock()
+UNKNOWN = "такого в фактах из статей нет"  # текст ошибки KBRAG о неизвестном понятии (graph/api.py)
+log = logging.getLogger(__name__)
 
 
 def _node(db: Session, number: str) -> MethodologySection:
@@ -39,7 +48,8 @@ def _kbrag(settings: Settings, name: str, params: dict[str, str]) -> tuple[int, 
     try:
         code, body, _ = kb_api.fetch(url, settings.kbrag_token, settings.kbrag_timeout_s)
     except (URLError, TimeoutError, OSError) as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Банк статей недоступен: {exc}") from exc
+        log.warning("KBRAG %s: %s", name, exc)  # адрес KBRAG — в журнал, не в браузер
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Банк статей недоступен") from exc
     try:
         return code, json.loads(body)
     except ValueError as exc:
@@ -47,12 +57,19 @@ def _kbrag(settings: Settings, name: str, params: dict[str, str]) -> tuple[int, 
 
 
 def _dataset(settings: Settings, name: str) -> dict[str, Any]:
+    key = name.strip().lower()
+    with _cache_lock:
+        hit = DATASET_CACHE.get(key)
+    if hit is not None and time.monotonic() - hit[0] < DATASET_FRESH_S:
+        return hit[1]
     code, data = _kbrag(settings, "dataset", {"name": name, "kb": ROOT_KB})
-    if code == 400:
+    if code == 400 and isinstance(data, dict) and data.get("error") == UNKNOWN:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Понятия «{name}» в статьях банка нет")
-    if code != 200:
+    if code != 200 or not isinstance(data, dict) or not isinstance(data.get("facts", []), list):
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Банк статей ответил {code}")
-    return dict(data)
+    with _cache_lock:  # ошибки не кэшируются: следующий запрос спросит KBRAG снова
+        DATASET_CACHE[key] = (time.monotonic(), data)
+    return data
 
 
 @router.get("/{number}/articles", dependencies=[Depends(current_user)])
@@ -72,7 +89,7 @@ def articles(
     summary["experiments"] = [{"code": e.code, "title": e.title, "status": e.status,
                                "outcome": e.outcome} for e in exps]
     summary["hypotheses"] = [_idea(db, h) for h in hyps]
-    summary["findings"] = svc.findings(summary, summary["hypotheses"])
+    summary["findings"] = svc.findings(summary, summary["hypotheses"], summary["experiments"])
     return summary
 
 

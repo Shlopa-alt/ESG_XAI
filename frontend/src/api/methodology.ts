@@ -158,12 +158,13 @@ export type Finding =
   | { kind: "few"; documents: number }
   | { kind: "consensus" | "disputed"; leader: Direction; agreement: number }
   | { kind: "idea_against"; code: string; claims: Direction }
-  | { kind: "check_agrees" | "check_against"; code: string; idea: string; outcome: "confirmed" | "rejected" }
+  | { kind: "check_agrees" | "check_against" | "check_other"; code: string; idea: string; outcome: "confirmed" | "rejected"; claims: Direction }
+  | { kind: "checks_unlinked"; codes: string[] }
   | { kind: "unchecked" };
-/** Основание предложения из банка статей: факт с цитатой или статья с DOI (правила 2 и 5). */
+/** Основание предложения из банка статей: статья с DOI (правила 2 и 5), с цитатой из неё. */
 export const addCrKbBasis = (
   code: string,
-  basis: { basis_type: "kb_fact" | "kb_article"; kbrag_id: string; kb_path: string; title: string; doi: string; quote: string },
+  basis: { basis_type: "kb_article"; kbrag_id: string; kb_path: string; title: string; doi: string; quote: string },
 ) => call<ChangeRequest>(`/change-requests/${code}/bases`, { method: "POST", body: JSON.stringify(basis) });
 const node = (n: string) => `/methodology/sections/${encodeURIComponent(n)}`;
 export const articlesSummary = (n: string, factor: string, outcome: string) =>

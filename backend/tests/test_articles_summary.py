@@ -7,6 +7,7 @@ import json
 import pytest
 from sqlalchemy.orm import Session
 
+from app.api import articles as articles_api
 from app.api import kb as kb_api
 from app.models import Experiment, Hypothesis, MethodologySection
 from app.services import articles_summary as svc
@@ -69,6 +70,11 @@ def node(db_session: Session) -> MethodologySection:
     return n
 
 
+@pytest.fixture(autouse=True)
+def fresh_cache() -> None:
+    articles_api.DATASET_CACHE.clear()
+
+
 def _kbrag(monkeypatch: pytest.MonkeyPatch, answers: dict[str, tuple[int, object]]) -> list[str]:
     seen: list[str] = []
 
@@ -97,10 +103,47 @@ def test_articles_endpoint_adds_our_results(make_client, node, monkeypatch) -> N
 
 
 def test_articles_unknown_concept_is_404(make_client, node, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    _kbrag(monkeypatch, {"%5B%D1%84": (400, {"error": "[...]"}), "%5B%D1%80": (200, OUTCOME)})
+    unknown = {"error": articles_api.UNKNOWN}
+    _kbrag(monkeypatch, {"%5B%D1%84": (400, unknown), "%5B%D1%80": (200, OUTCOME)})
     r = make_client("r", "reader").get(f"/api/methodology/sections/{node.number}/articles",
                                        params={"factor": "[фактор]", "outcome": "[результат]"})
     assert r.status_code == 404 and "в статьях банка нет" in r.json()["detail"]
+
+
+@pytest.mark.parametrize("answer", [(400, {"error": "[другая ошибка]"}), (500, {"error": "[...]"}),
+                                    (200, ["[не словарь]"])])
+def test_articles_other_kbrag_errors_are_502(  # type: ignore[no-untyped-def]
+    make_client, node, monkeypatch, answer,
+) -> None:
+    _kbrag(monkeypatch, {"%5B%D1%84": answer, "%5B%D1%80": (200, OUTCOME)})
+    r = make_client("r", "reader").get(f"/api/methodology/sections/{node.number}/articles",
+                                       params={"factor": "[фактор]", "outcome": "[результат]"})
+    assert r.status_code == 502
+
+
+def test_articles_kbrag_down_hides_address(  # type: ignore[no-untyped-def]
+    make_client, node, monkeypatch,
+) -> None:
+    def down(url: str, token: str, timeout_s: float) -> tuple[int, bytes, str]:
+        raise OSError("[внутренний адрес KBRAG]")
+
+    monkeypatch.setattr(kb_api, "fetch", down)
+    r = make_client("r", "reader").get(f"/api/methodology/sections/{node.number}/articles",
+                                       params={"factor": "[фактор]", "outcome": "[результат]"})
+    assert r.status_code == 502 and "внутренний адрес" not in r.json()["detail"]
+
+
+def test_articles_params_are_escaped_and_cached(  # type: ignore[no-untyped-def]
+    make_client, node, monkeypatch,
+) -> None:
+    seen = _kbrag(monkeypatch, {"x%26kb": (200, FACTOR), "%5B%D1%80": (200, OUTCOME)})
+    c = make_client("r", "reader")
+    params = {"factor": "x&kb=esg.nda", "outcome": "[результат]"}
+    url = f"/api/methodology/sections/{node.number}/articles"
+    assert c.get(url, params=params).status_code == 200
+    assert all(u.count("kb=") == 1 and u.endswith("&kb=esg") for u in seen)
+    c.get(url, params=params)
+    assert len(seen) == 2  # второй раз — из памяти, KBRAG не спрашивается
 
 
 def test_articles_needs_login_and_node(client, make_client) -> None:  # type: ignore[no-untyped-def]
@@ -119,34 +162,50 @@ def _summary(up: int, down: int, none: int) -> dict[str, object]:
 
 
 def test_findings_silent_and_few() -> None:
-    assert svc.findings(_summary(0, 0, 0), []) == [{"kind": "silent"}]
-    assert svc.findings(_summary(1, 1, 0), []) == [{"kind": "few", "documents": 2}]
+    assert svc.findings(_summary(0, 0, 0), [], []) == [{"kind": "silent"}]
+    assert svc.findings(_summary(1, 1, 0), [], []) == [{"kind": "few", "documents": 2}]
+
+
+def _idea(effect: str, exp: str = "", outcome: str | None = None) -> dict[str, object]:
+    return {"code": "H-001", "effect": effect, "experiment": exp, "outcome": outcome}
 
 
 def test_findings_consensus_unchecked_and_idea_against() -> None:
-    ideas = [{"code": "H-001", "effect": "decreases", "experiment": "", "outcome": None},
-             {"code": "H-002", "effect": "", "experiment": "", "outcome": None}]
-    got = svc.findings(_summary(8, 1, 1), ideas)
+    ideas = [_idea("decreases"), {**_idea(""), "code": "H-002"}]
+    got = svc.findings(_summary(8, 1, 1), ideas, [])
     assert got == [{"kind": "consensus", "leader": "up", "agreement": 0.8},
                    {"kind": "idea_against", "code": "H-001", "claims": "down"},
                    {"kind": "unchecked"}]
 
 
-def test_findings_disputed_and_our_check_against_articles() -> None:
+def test_findings_our_check_against_articles() -> None:
     # идея говорит то же, что большинство статей, а проверка её не подтвердила — расхождение
-    ideas = [{"code": "H-001", "effect": "increases", "experiment": "EXP-001",
-              "outcome": "rejected"}]
-    got = svc.findings(_summary(5, 4, 1), ideas)
+    got = svc.findings(_summary(5, 4, 1), [_idea("increases", "EXP-001", "rejected")],
+                       [{"code": "EXP-001", "outcome": "rejected"}])
     assert got == [{"kind": "disputed", "leader": "up", "agreement": 0.5},
                    {"kind": "check_against", "code": "EXP-001", "idea": "H-001",
-                    "outcome": "rejected"}]
+                    "outcome": "rejected", "claims": "up"}]
 
 
-def test_findings_check_agrees_with_consensus() -> None:
-    ideas = [{"code": "H-001", "effect": "decreases", "experiment": "EXP-002",
-              "outcome": "rejected"}]
-    got = svc.findings(_summary(9, 0, 1), ideas)
-    # идея «снижает» не подтвердилась, статьи говорят «повышает» — итог согласен со статьями
-    agrees = {"kind": "check_agrees", "code": "EXP-002", "idea": "H-001", "outcome": "rejected"}
-    assert agrees in got
-    assert {"kind": "unchecked"} not in got
+def test_findings_confirmed_idea_against_articles_is_not_sent_back_to_recheck() -> None:
+    # проверка подтвердила «снижает», статьи согласны на «повышает»: это расхождение, а не
+    # повод «проверить идею ещё раз»
+    got = svc.findings(_summary(9, 0, 1), [_idea("decreases", "EXP-002", "confirmed")],
+                       [{"code": "EXP-002", "outcome": "confirmed"}])
+    kinds = [f["kind"] for f in got]
+    assert kinds == ["consensus", "check_against"]
+
+
+def test_findings_rejected_other_answer_is_neither_for_nor_against() -> None:
+    # не подтвердилось «снижает» — это не значит «повышает»
+    got = svc.findings(_summary(9, 0, 1), [_idea("decreases", "EXP-002", "rejected")],
+                       [{"code": "EXP-002", "outcome": "rejected"}])
+    assert [f["kind"] for f in got] == ["consensus", "check_other"]
+
+
+def test_findings_check_without_typed_idea_is_not_hidden() -> None:
+    # отрицательная проверка пункта без идеи с типом связи: не «ещё не проверено»
+    got = svc.findings(_summary(9, 0, 1), [], [{"code": "EXP-001", "outcome": "rejected"},
+                                                {"code": "EXP-003", "outcome": None}])
+    assert got == [{"kind": "consensus", "leader": "up", "agreement": 0.9},
+                   {"kind": "checks_unlinked", "codes": ["EXP-001"]}]

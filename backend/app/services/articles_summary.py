@@ -78,8 +78,14 @@ CONSENSUS = 0.75  # доля самого частого ответа — «ст
 EFFECT_DIRECTION = {"increases": "up", "decreases": "down", "no_effect": "none"}
 
 
-def findings(summary: dict[str, Any], hypotheses: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Что сводка значит для пункта. hypotheses — идеи пункта: effect, experiment, outcome."""
+def findings(summary: dict[str, Any], hypotheses: list[dict[str, Any]],
+             experiments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Что сводка значит для пункта.
+
+    hypotheses — идеи пункта: effect, experiment, outcome; experiments — проверки пункта: outcome.
+    Итог проверки сравнивается со статьями, только если идея проверки говорит, как фактор влияет:
+    «подтвердилась» — за то, что говорит идея; «не подтвердилась» — против именно этого ответа, а не
+    за какой-то другой (отказ от «снижает» не значит «повышает»)."""
     total, leader, agreement = summary["total"], summary["leader"], summary["agreement"]
     if total == 0:
         return [{"kind": "silent"}]
@@ -89,20 +95,29 @@ def findings(summary: dict[str, Any], hypotheses: list[dict[str, Any]]) -> list[
     consensus = agreement is not None and agreement >= CONSENSUS
     out.append({"kind": "consensus" if consensus else "disputed", "leader": leader,
                 "agreement": agreement})
-    checked = False
+    compared: set[str] = set()
     for h in hypotheses:
         claims = EFFECT_DIRECTION.get(h.get("effect") or "")
         if claims is None:
             continue
-        if consensus and claims != leader:
-            out.append({"kind": "idea_against", "code": h["code"], "claims": claims})
         outcome = h.get("outcome")
-        if h.get("experiment") and outcome in ("confirmed", "rejected"):
-            checked = True
-            # итог проверки идеи, которая говорит то же, что статьи (или обратное)
-            agrees = (outcome == "confirmed") == (claims == leader)
-            out.append({"kind": "check_agrees" if agrees else "check_against",
-                        "code": h["experiment"], "idea": h["code"], "outcome": outcome})
-    if consensus and not checked:
+        if not h.get("experiment") or outcome not in ("confirmed", "rejected"):
+            if consensus and claims != leader:  # непроверенная идея против согласных статей
+                out.append({"kind": "idea_against", "code": h["code"], "claims": claims})
+            continue
+        compared.add(h["experiment"])
+        base = {"code": h["experiment"], "idea": h["code"], "outcome": outcome, "claims": claims}
+        if outcome == "confirmed":
+            out.append({**base, "kind": "check_agrees" if claims == leader else "check_against"})
+        elif claims == leader:  # не подтвердилось ровно то, что говорят статьи
+            out.append({**base, "kind": "check_against"})
+        else:  # не подтвердилось другое — со статьями ни за, ни против
+            out.append({**base, "kind": "check_other"})
+    with_outcome = [e for e in experiments if e.get("outcome")]
+    unlinked = [e["code"] for e in with_outcome if e["code"] not in compared]
+    if unlinked:
+        # итог есть, но идея проверки не говорит, как фактор влияет: сравнить со статьями нельзя
+        out.append({"kind": "checks_unlinked", "codes": unlinked})
+    if consensus and not with_outcome:
         out.append({"kind": "unchecked"})
     return out

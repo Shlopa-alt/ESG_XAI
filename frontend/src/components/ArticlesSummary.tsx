@@ -103,7 +103,7 @@ function FindingText({ f, s }: { f: Finding; s: ArticlesSummary }) {
     case "disputed":
       return (
         <>
-          Статьи спорят: чаще всего говорят «{LABEL[f.leader]}», но только {pct(f.agreement)}. Здесь особенно нужна своя
+          Статьи расходятся: чаще всего говорят «{LABEL[f.leader]}», но только {pct(f.agreement)}. Здесь особенно нужна своя
           проверка на наших данных.
         </>
       );
@@ -117,14 +117,34 @@ function FindingText({ f, s }: { f: Finding; s: ArticlesSummary }) {
     case "check_agrees":
       return (
         <>
-          Наша проверка {exp(f.code)} (идея {idea(f.idea)}: {OUTCOME_LABEL[f.outcome]}) согласуется с тем, что говорят статьи.
+          Наша проверка {exp(f.code)} (идея {idea(f.idea)} «{LABEL[f.claims]}»: {OUTCOME_LABEL[f.outcome]}) согласуется с{" "}
+          {majority(s)}.
         </>
       );
     case "check_against":
       return (
         <>
-          Наша проверка {exp(f.code)} (идея {idea(f.idea)}: {OUTCOME_LABEL[f.outcome]}) расходится с тем, что говорят статьи. Это
-          важный результат — его стоит отразить в методике, а не повторять проверку до другого итога.
+          Наша проверка {exp(f.code)} (идея {idea(f.idea)} «{LABEL[f.claims]}»: {OUTCOME_LABEL[f.outcome]}) расходится с{" "}
+          {majority(s)}. Это важный результат — его стоит отразить в методике, а не повторять проверку до другого итога.
+        </>
+      );
+    case "check_other":
+      return (
+        <>
+          Наша проверка {exp(f.code)}: идея {idea(f.idea)} «{LABEL[f.claims]}» не подтвердилась. Статьи говорят «
+          {LABEL[s.leader as Direction]}» — этот итог их прямо не подтверждает и не опровергает.
+        </>
+      );
+    case "checks_unlinked":
+      return (
+        <>
+          По пункту есть проверки с итогом ({f.codes.map((c, i) => (
+            <span key={c}>
+              {i > 0 && ", "}
+              {exp(c)}
+            </span>
+          ))}
+          ), но их идея не говорит, как фактор влияет, — сравнить итог со статьями нельзя. Посмотрите их отчёты.
         </>
       );
     case "unchecked":
@@ -134,19 +154,26 @@ function FindingText({ f, s }: { f: Finding; s: ArticlesSummary }) {
 
 const DOI = /10\.\d{4,9}\/\S+/;
 
-type Pickable = { id: string; label: string; basis: Parameters<typeof addCrKbBasis>[1] };
+/** «с большинством статей», когда статьи расходятся; иначе — «с тем, что говорят статьи». */
+const majority = (s: ArticlesSummary) =>
+  s.agreement !== null && s.agreement >= 0.75 ? "тем, что говорят статьи" : "большинством статей";
 
-/** Цитаты сводки как основания предложения: факт с цитатой; DOI статьи — если он есть в ссылке. */
+type Pickable = { id: string; group: Direction; label: string; basis: Parameters<typeof addCrKbBasis>[1] };
+
+/** Статьи сводки как основания предложения: статья с DOI и цитата из неё (правило 5). Без DOI статья
+ * «требует источника» и основанием быть не может — её показываем, но отметить нельзя. */
 function pickables(s: ArticlesSummary): Pickable[] {
-  const out: Pickable[] = [];
+  const out = new Map<string, Pickable>();
   for (const g of s.groups) {
     for (const l of g.links) {
       for (const q of l.quotes) {
-        out.push({
-          id: `${g.key}|${l.from}|${l.relation}|${l.to}|${q.doc_id}`,
-          label: `«${ruName(l.from)}» — ${l.relation} — «${ruName(l.to)}»: ${q.title || q.doc_id}`,
+        if (out.has(q.doc_id)) continue;
+        out.set(q.doc_id, {
+          id: q.doc_id,
+          group: g.key,
+          label: `${q.title || q.doc_id}: «${ruName(l.from)}» — ${l.relation} — «${ruName(l.to)}»`,
           basis: {
-            basis_type: "kb_fact",
+            basis_type: "kb_article",
             kbrag_id: q.doc_id,
             kb_path: "esg",
             title: q.title,
@@ -157,7 +184,7 @@ function pickables(s: ArticlesSummary): Pickable[] {
       }
     }
   }
-  return out;
+  return [...out.values()];
 }
 
 function draftWhy(s: ArticlesSummary): string {
@@ -186,24 +213,27 @@ const toggled = (set: Set<string>, id: string) => {
 function ProposeFromArticles({ s, section, onDone }: { s: ArticlesSummary; section: Section; onDone: (code: string) => void }) {
   const qc = useQueryClient();
   const options = pickables(s);
-  const leaderIds = options.filter((o) => o.id.startsWith(`${s.leader}|`)).slice(0, 3).map((o) => o.id);
+  const leaderIds = options.filter((o) => o.group === s.leader && o.basis.doi).slice(0, 3).map((o) => o.id);
   const [title, setTitle] = useState(`${section.number}: что статьи говорят о связи «${ruName(s.factor)}» → «${ruName(s.outcome)}»`);
   const [why, setWhy] = useState(() => draftWhy(s));
   const [text, setText] = useState(section.content);
   const [picked, setPicked] = useState<Set<string>>(() => new Set(leaderIds));
   const doneExps = s.experiments.filter((e) => e.status === "done");
   const [exps, setExps] = useState<Set<string>>(() => new Set(doneExps.map((e) => e.code)));
-  // предложение создано, а основание не добавилось — повтор добавляет основания, а не второе предложение
+  // предложение создано, а основание не добавилось — повтор добавляет недостающие основания, а не второе предложение
   const [created, setCreated] = useState("");
+  const [added] = useState<Set<string>>(() => new Set());
   const m = useMutation({
     mutationFn: async () => {
       const code = created || (await createCr({ section: section.number, title, description: why, proposed_content: text })).code;
       setCreated(code);
       const failed: string[] = [];
-      for (const o of options.filter((x) => picked.has(x.id))) {
-        await addCrKbBasis(code, o.basis).catch(() => failed.push(o.label));
+      for (const o of options.filter((x) => picked.has(x.id) && !added.has(x.id))) {
+        await addCrKbBasis(code, o.basis).then(() => added.add(o.id), () => failed.push(o.label));
       }
-      for (const e of exps) await addCrBasis(code, e).catch(() => failed.push(e));
+      for (const e of [...exps].filter((x) => !added.has(`exp:${x}`))) {
+        await addCrBasis(code, e).then(() => added.add(`exp:${e}`), () => failed.push(e));
+      }
       if (failed.length) throw new Error(`${code} создано, но не добавились основания: ${failed.join("; ")}. Добавьте их в предложении.`);
       return code;
     },
@@ -239,13 +269,20 @@ function ProposeFromArticles({ s, section, onDone }: { s: ArticlesSummary; secti
       {unchanged && <p className="muted field-hint">Текст пункта пока не изменён — впишите, что в нём должно поменяться.</p>}
       <fieldset className="field">
         <legend>
-          Основания — цитаты из статей и проверки (отмечено {picked.size + exps.size})
+          Основания — статьи с DOI и проверки (отмечено {picked.size + exps.size})
         </legend>
         <ul className="list basis-pick">
           {options.map((o) => (
             <li key={o.id}>
               <label>
-                <input type="checkbox" checked={picked.has(o.id)} onChange={() => setPicked(toggled(picked, o.id))} /> {o.label}
+                <input
+                  type="checkbox"
+                  checked={picked.has(o.id)}
+                  disabled={!o.basis.doi}
+                  onChange={() => setPicked(toggled(picked, o.id))}
+                />{" "}
+                {o.label}
+                {!o.basis.doi && <span className="badge st-planned">требует источника — без DOI основанием быть не может</span>}
               </label>
             </li>
           ))}
@@ -336,13 +373,6 @@ function Summary({
               </li>
             ))}
           </ul>
-          {s.leader && s.agreement !== null && (
-            <p>
-              {s.agreement >= 0.75
-                ? `Статьи в основном согласны: ${Math.round(s.agreement * 100)} % говорят «${LABEL[s.leader]}».`
-                : `Статьи расходятся: чаще всего говорят «${LABEL[s.leader]}» — ${Math.round(s.agreement * 100)} %. Здесь особенно нужна своя проверка.`}
-            </p>
-          )}
           <p className="muted field-hint">
             Считаются статьи за каждой формулировкой: если одна статья пишет о связи по-разному, она войдёт в обе группы.
           </p>
