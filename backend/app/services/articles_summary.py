@@ -5,6 +5,11 @@
 насколько они согласны, с цитатами. Платформа ничего не копирует и не хранит: факты берутся из
 KBRAG по запросу (/api/dataset — все факты о понятии с цитатами, правило 8). Здесь только счёт.
 
+Этап 2 — что это значит для пункта (findings): статьи единодушны, а у нас это не проверено;
+статьи спорят; идея по пункту говорит обратное статьям; наша проверка разошлась со статьями.
+Методика записана текстом, поэтому «что утверждает пункт» берётся из идей пункта с типом связи
+и их проверок — без разбора текста. Решает человек: здесь только подсказка.
+
 Какие понятия сопоставлять, выбирает человек; подсказку по тексту пункта даёт страница
 (frontend/src/components/ArticlesSummary.tsx) — по карте связей и русским названиям понятий.
 """
@@ -66,3 +71,38 @@ def summarize(factor: dict[str, Any], outcome: dict[str, Any]) -> dict[str, Any]
         # согласие — доля самого частого ответа среди «повышает / снижает / не влияет»
         "leader": leader, "agreement": round(said[leader] / total, 2) if total else None,
     }
+
+
+MIN_ARTICLES = 3  # меньше статей — ни согласия, ни спора не видно
+CONSENSUS = 0.75  # доля самого частого ответа — «статьи в основном согласны»
+EFFECT_DIRECTION = {"increases": "up", "decreases": "down", "no_effect": "none"}
+
+
+def findings(summary: dict[str, Any], hypotheses: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Что сводка значит для пункта. hypotheses — идеи пункта: effect, experiment, outcome."""
+    total, leader, agreement = summary["total"], summary["leader"], summary["agreement"]
+    if total == 0:
+        return [{"kind": "silent"}]
+    if total < MIN_ARTICLES:
+        return [{"kind": "few", "documents": total}]
+    out: list[dict[str, Any]] = []
+    consensus = agreement is not None and agreement >= CONSENSUS
+    out.append({"kind": "consensus" if consensus else "disputed", "leader": leader,
+                "agreement": agreement})
+    checked = False
+    for h in hypotheses:
+        claims = EFFECT_DIRECTION.get(h.get("effect") or "")
+        if claims is None:
+            continue
+        if consensus and claims != leader:
+            out.append({"kind": "idea_against", "code": h["code"], "claims": claims})
+        outcome = h.get("outcome")
+        if h.get("experiment") and outcome in ("confirmed", "rejected"):
+            checked = True
+            # итог проверки идеи, которая говорит то же, что статьи (или обратное)
+            agrees = (outcome == "confirmed") == (claims == leader)
+            out.append({"kind": "check_agrees" if agrees else "check_against",
+                        "code": h["experiment"], "idea": h["code"], "outcome": outcome})
+    if consensus and not checked:
+        out.append({"kind": "unchecked"})
+    return out

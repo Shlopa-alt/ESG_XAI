@@ -108,3 +108,45 @@ def test_articles_needs_login_and_node(client, make_client) -> None:  # type: ig
     assert client.get("/api/methodology/sections/Н9/articles", params=params).status_code == 401
     r = make_client("r", "reader").get("/api/methodology/sections/Н9/articles", params=params)
     assert r.status_code == 404
+
+
+def _summary(up: int, down: int, none: int) -> dict[str, object]:
+    total = up + down + none
+    said = {"up": up, "down": down, "none": none}
+    leader = max(said, key=lambda k: said[k]) if total else ""
+    return {"total": total, "leader": leader,
+            "agreement": round(said[leader] / total, 2) if total else None}
+
+
+def test_findings_silent_and_few() -> None:
+    assert svc.findings(_summary(0, 0, 0), []) == [{"kind": "silent"}]
+    assert svc.findings(_summary(1, 1, 0), []) == [{"kind": "few", "documents": 2}]
+
+
+def test_findings_consensus_unchecked_and_idea_against() -> None:
+    ideas = [{"code": "H-001", "effect": "decreases", "experiment": "", "outcome": None},
+             {"code": "H-002", "effect": "", "experiment": "", "outcome": None}]
+    got = svc.findings(_summary(8, 1, 1), ideas)
+    assert got == [{"kind": "consensus", "leader": "up", "agreement": 0.8},
+                   {"kind": "idea_against", "code": "H-001", "claims": "down"},
+                   {"kind": "unchecked"}]
+
+
+def test_findings_disputed_and_our_check_against_articles() -> None:
+    # идея говорит то же, что большинство статей, а проверка её не подтвердила — расхождение
+    ideas = [{"code": "H-001", "effect": "increases", "experiment": "EXP-001",
+              "outcome": "rejected"}]
+    got = svc.findings(_summary(5, 4, 1), ideas)
+    assert got == [{"kind": "disputed", "leader": "up", "agreement": 0.5},
+                   {"kind": "check_against", "code": "EXP-001", "idea": "H-001",
+                    "outcome": "rejected"}]
+
+
+def test_findings_check_agrees_with_consensus() -> None:
+    ideas = [{"code": "H-001", "effect": "decreases", "experiment": "EXP-002",
+              "outcome": "rejected"}]
+    got = svc.findings(_summary(9, 0, 1), ideas)
+    # идея «снижает» не подтвердилась, статьи говорят «повышает» — итог согласен со статьями
+    agrees = {"kind": "check_agrees", "code": "EXP-002", "idea": "H-001", "outcome": "rejected"}
+    assert agrees in got
+    assert {"kind": "unchecked"} not in got

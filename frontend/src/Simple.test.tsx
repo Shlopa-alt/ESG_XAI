@@ -190,6 +190,16 @@ describe("Методика", () => {
     expect(details).toHaveAttribute("open");
   });
 
+  it("у пункта — переход «Что говорят статьи» сразу на этот пункт", async () => {
+    stub("reader", routes);
+    renderAt("/methodology");
+    await userEvent.click(await screen.findByText("[направление]"));
+    await userEvent.click(screen.getAllByRole("button", { name: "Что говорят статьи" })[0] as HTMLElement);
+    expect(screen.getByRole("tab", { name: "Что говорят статьи" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Пункт методики")).toHaveValue("Н1");
+    expect(window.location.hash).toBe("#articles-%D0%9D1");
+  });
+
   it("читателю не предлагают править", async () => {
     stub("reader", routes);
     renderAt("/methodology");
@@ -226,6 +236,10 @@ describe("Методика", () => {
       ],
       experiments: [{ code: "EXP-001", title: "[проверка]", status: "done", outcome: "rejected" }],
       hypotheses: [],
+      findings: [
+        { kind: "disputed", leader: "up", agreement: 0.6 },
+        { kind: "check_against", code: "EXP-001", idea: "H-001", outcome: "rejected" },
+      ],
     };
     const urls: string[] = [];
     vi.stubGlobal(
@@ -259,8 +273,60 @@ describe("Методика", () => {
     expect(await screen.findByText(/Статьи расходятся: чаще всего говорят «повышает» — 60 %/)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "повышает: 6 статей, снижает: 2 статьи, не влияет: 2 статьи" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "[статья]" })[0]).toHaveAttribute("href", "/knowledge/article/d1");
-    expect(screen.getByText(/идея не подтвердилась/)).toBeInTheDocument();
+    expect(screen.getByText(/Статьи спорят: чаще всего говорят «повышает», но только 60 %/)).toBeInTheDocument();
+    expect(screen.getByText(/расходится с тем, что говорят статьи/)).toBeInTheDocument();
+    // читателю предлагать изменение нельзя
+    expect(screen.queryByRole("button", { name: "Предложить изменение пункта по статьям" })).not.toBeInTheDocument();
     expect(urls.some((u) => u.includes("/methodology/sections/%D0%9D1.%D0%921.%D0%971/articles?factor="))).toBe(true);
+  });
+
+  it("исследователь предлагает изменение пункта по статьям — с цитатами-основаниями", async () => {
+    const q = [{ quote: "[цитата]", doc_id: "d1", title: "[статья]", year: 2024, url: "https://doi.org/10.0000/[doi]" }];
+    const summary = {
+      factor: "[фактор]", outcome: "[результат]", total: 4, leader: "up", agreement: 1,
+      groups: [
+        { key: "up", documents: 4, links: [{ from: "[фактор]", relation: "повышает", to: "[результат]", hedged: false, documents: 4, quotes: q }] },
+        { key: "down", documents: 0, links: [] },
+        { key: "none", documents: 0, links: [] },
+        { key: "other", documents: 0, links: [] },
+      ],
+      experiments: [], hypotheses: [], findings: [{ kind: "consensus", leader: "up", agreement: 1 }, { kind: "unchecked" }],
+    };
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          posts.push({ url, body: JSON.parse(String(init.body)) as Record<string, unknown> });
+          return Promise.resolve(json({ ...CR, code: "CR-02" }, url.endsWith("/change-requests") ? 201 : 200));
+        }
+        if (url.includes("/auth/me")) return Promise.resolve(json(user("researcher")));
+        if (url.includes("/kb/network")) return Promise.resolve(json({ nodes: [], edges: [] }));
+        if (url.includes("/articles?")) return Promise.resolve(json(summary));
+        if (url.includes("/methodology") && !url.includes("versions") && !url.includes("change")) return Promise.resolve(json(TREE));
+        return Promise.resolve(json([]));
+      }),
+    );
+    window.location.hash = "#articles-Н1.В1.З1";
+    renderAt("/methodology");
+    await userEvent.type(await screen.findByLabelText("Фактор — что влияет"), "[[фактор]");
+    await userEvent.type(screen.getByLabelText("Результат — на что влияет"), "[[результат]");
+    await userEvent.click(screen.getByRole("button", { name: "Показать, что говорят статьи" }));
+    expect(await screen.findByText(/У нас это ещё не проверено/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Предложить изменение пункта по статьям" }));
+    const send = screen.getByRole("button", { name: "Отправить предложение" });
+    expect(send).toBeDisabled(); // текст пункта ещё не изменён
+    expect(screen.getByRole("checkbox", { name: /«\[фактор\]» — повышает — «\[результат\]»: \[статья\]/ })).toBeChecked();
+    await userEvent.type(screen.getByLabelText("Новый текст пункта"), " [[уточнение по статьям]");
+    await userEvent.click(send);
+    expect(await screen.findByText(/Предложение/)).toBeInTheDocument();
+    expect(posts.map((p) => p.url)).toEqual(["/api/change-requests", "/api/change-requests/CR-02/bases"]);
+    expect(posts[0]?.body).toMatchObject({ section: "Н1.В1.З1", proposed_content: "[текст пункта] [уточнение по статьям]" });
+    expect(posts[1]?.body).toEqual({
+      basis_type: "kb_fact", kbrag_id: "d1", kb_path: "esg", title: "[статья]", doi: "10.0000/[doi]",
+      quote: "«[фактор]» — повышает — «[результат]»: «[цитата]»",
+    });
+    expect(screen.getByRole("button", { name: "Открыть CR-02" })).toBeInTheDocument();
   });
 
   it("ссылка на предложение из отчёта сразу открывает его вкладку", async () => {

@@ -71,7 +71,13 @@ def articles(
                       .order_by(Hypothesis.code))
     summary["experiments"] = [{"code": e.code, "title": e.title, "status": e.status,
                                "outcome": e.outcome} for e in exps]
-    summary["hypotheses"] = [{"code": h.code, "title": h.title, "status": h.status,
-                              "effect": h.effect, "target_kind": h.target_kind,
-                              "weight": h.weight} for h in hyps]
+    summary["hypotheses"] = [_idea(db, h) for h in hyps]
+    summary["findings"] = svc.findings(summary, summary["hypotheses"])
     return summary
+
+
+def _idea(db: Session, h: Hypothesis) -> dict[str, Any]:
+    exp = db.get(Experiment, h.experiment_id) if h.experiment_id else None
+    return {"code": h.code, "title": h.title, "status": h.status, "effect": h.effect,
+            "target_kind": h.target_kind, "weight": h.weight,
+            "experiment": exp.code if exp else "", "outcome": exp.outcome if exp else None}

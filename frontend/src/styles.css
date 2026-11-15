@@ -992,3 +992,8 @@ details[open] > .node-head .node-preview { display: none; }
 .dir-other { background: #2a78d6; }
 .articles-summary .quotes { margin: 4px 0 8px; font-size: 14px; }
 .articles-summary .quotes q { color: var(--text-muted); }
+.findings { padding: 12px 14px; border-radius: 10px; background: var(--surface-soft); border: 1px solid var(--border); }
+.findings .h3 { margin: 0 0 6px; }
+.findings .list { margin: 0; }
+.basis-pick { max-height: 320px; overflow-y: auto; }
+.basis-pick label { display: block; }
