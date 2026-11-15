@@ -217,7 +217,10 @@ def recommend(
             "title": "Прогноз числового показателя",
             "text": f"Предсказать «{target}» по остальным показателям: постановка лаборатории R = f(X, Z).",
         }
-        base = {"target": target, "features": features, "sheet": t.sheet}
+        # панель (компания × год): проверка — на компаниях, которых не было в обучении; компания — не Z
+        group = panel_group(t)
+        cats = [c for c in cats if c != group]
+        base = {"target": target, "features": features, "group": group, "sheet": t.sheet}
         small = rows is not None and rows < SMALL
         ok, why_not = _rows_note(rows, MIN_ROWS["lab-mlp"])
         mlp_why = [
@@ -232,6 +235,11 @@ def recommend(
             "Протокол CR-01 встроен: 30 разбиений, плацебо, сравнение с линейной моделью — "
             "видно, нужна ли нейросеть вообще.",
         ]
+        if group:
+            mlp_why.append(
+                f"Строки повторяются по годам — проверка на «{group}», которых не было в обучении: "
+                "иначе модель узнаёт объект по его прошлым годам, и R² завышен."
+            )
         if lag:
             mlp_why.append(
                 f"«{lag}» похож на прошлый период показателя — добавлен прогноз «как в прошлом году»."

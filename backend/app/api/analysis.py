@@ -31,6 +31,7 @@ from app.models import (
     HypothesisRef,
     KbRef,
     MethodologySection,
+    Run,
     User,
 )
 from app.services import analysis, kb_text, net_catalog, resources
@@ -81,6 +82,21 @@ class LaunchIn(BaseModel):
 class LaunchOut(BaseModel):
     experiment: str
     run_id: int
+
+
+class LinkCheckIn(BaseModel):
+    """Связь из поиска связей — проверить набором сетей: предсказать target по остальным столбцам."""
+
+    scan_run: int  # расчёт «Поиск связей», где связь подтвердилась
+    a: str = Field(min_length=1, max_length=512)
+    b: str = Field(min_length=1, max_length=512)
+    target: str = Field(min_length=1, max_length=512)  # a или b — что предсказываем
+    node: str = ""
+
+
+class LinkCheckOut(BaseModel):
+    experiment: str
+    run_ids: list[int]
 
 
 def _node(db: Session, number: str) -> MethodologySection | None:
@@ -321,3 +337,200 @@ def _checked_choice(c: Choice, template: str, params: dict[str, Any]) -> dict[st
     elif not c.net:
         out["net"] = actual
     return out
+
+
+# --- «Нейросети»: найденная связь → набор сетей → сравнение ---------------------------------------
+# набор сетей проверки связи — карточки рекомендации прогноза (app/services/analysis.py: recommend)
+NET_SET = ("lab-mlp:mlp", "lab-mlp:transformer", "predictive-check")
+# «держится»: R² на отложенных данных выше перемешанной цели и заметно выше прогноза средним
+HOLDS_MIN_R2 = 0.05
+
+
+def _visible(ds: Dataset, user: User) -> None:
+    """Столбцы набора под NDA — только допущенным, как у снимка таблицы (app/api/runs.py)."""
+    if ds.access_level == "nda" and user.role != "owner":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Файлы датасета под NDA — только для допущенных")
+
+
+def _scan(db: Session, run_id: int) -> Run:
+    run = db.get(Run, run_id)
+    if run is None or run.template != "correlation-scan":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет расчёта «Поиск связей» № {run_id}")
+    if run.status != "done":
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Поиск связей № {run_id} ещё не закончен")
+    return run
+
+
+def _scan_links(run: Run) -> list[dict[str, Any]]:
+    links = (run.summary or {}).get("links")
+    return [x for x in links if isinstance(x, dict)] if isinstance(links, list) else []
+
+
+def _link_check(exp: Experiment) -> dict[str, Any] | None:
+    lc = (exp.config or {}).get("link_check")
+    return lc if isinstance(lc, dict) else None
+
+
+@router.post("/link-check", response_model=LinkCheckOut, status_code=status.HTTP_201_CREATED)
+def link_check(
+    body: LinkCheckIn,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    user: Annotated[User, Researcher],
+) -> LinkCheckOut:
+    """Одна проверка EXP-NNN и по расчёту на каждую сеть набора — одним действием: не встал
+    хоть один расчёт — нет ни проверки, ни расчётов. Связь должна быть подтверждена поиском."""
+    scan = _scan(db, body.scan_run)
+    pair = {body.a, body.b}
+    if not any({x.get("a"), x.get("b")} == pair for x in _scan_links(scan)):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Эта связь не подтвердилась в поиске — проверять сетями нечего")
+    if body.target not in pair:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Предсказываем один из двух показателей связи")
+    other = body.b if body.target == body.a else body.a
+    if scan.dataset_snapshot_id is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "У поиска связей нет версии данных")
+    snap, ds = _snapshot(db, scan.dataset_snapshot_id)
+    for old in db.scalars(select(Experiment).where(Experiment.dataset_snapshot_id == snap.id)):
+        lc = _link_check(old)
+        same = (lc is not None and lc.get("scan_run") == scan.id and {lc.get("a"), lc.get("b")} == pair
+                and lc.get("target") == body.target)
+        if same:
+            raise HTTPException(status.HTTP_409_CONFLICT, f"Эту связь уже проверяют сетями: {old.code}")
+    params = (scan.config or {}).get("params")
+    sheet = str(params.get("sheet") or "") if isinstance(params, dict) else ""
+    table = snapshot_table(db, settings, snap, user, sheet)  # NDA — только с допуском
+    node = _node(db, body.node)
+    try:
+        out = analysis.recommend(table, resources.rows_of(settings, snap, table.sheet), body.target, node)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    recs = [r for r in out["recommendations"] if r["key"] in NET_SET and r["runnable"]]
+    if not recs:
+        why = "; ".join(w for r in out["recommendations"] for w in r["warnings"])
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"Ни одну сеть набора не запустить: {why or 'мало данных'}")
+    nets = ", ".join(r["title"] for r in recs)
+    holds = f"{HOLDS_MIN_R2:.2f}".replace(".", ",")
+    try:
+        exp = Experiment(
+            code=next_code(db, Experiment.code, "EXP", 3),
+            title=f"Связь «{body.a}» — «{body.b}»: проверка сетями · {ds.code}"[:512],
+            hypothesis=(f"Предсказывают ли остальные показатели «{body.target}» на данных, которых не было "
+                        "в обучении, лучше перемешанной цели — у каждой сети набора? Связь "
+                        f"«{other}» — «{body.target}» подтвердилась поиском связей (расчёт № {scan.id}); "
+                        "здесь — держится ли она у разных моделей."),
+            author_id=user.id,
+            method=f"Набор сетей: {nets}"[:512],
+            data_summary=f"{ds.code} · версия {snap.version}"[:512],
+            methodology_node_id=node.id if node else None,
+            setup=[
+                f"Связь найдена и подтверждена на отложенной части: расчёт «Поиск связей» № {scan.id}.",
+                f"Каждая сеть предсказывает «{body.target}» по остальным показателям по протоколу CR-01: "
+                "разбиения, плацебо на перемешанной цели, сравнение с линейной моделью.",
+                f"Связь держится у сети, если R² на отложенных данных выше перемешанной цели и выше {holds}.",
+            ],
+            results=[],
+            limitations=["Связь — не причина: предсказуемость не говорит, что из чего следует."],
+            reproducibility=[],
+            status="running",
+            dataset_snapshot_id=snap.id,
+        )
+        db.add(exp)
+        db.flush()
+        runs, choices = [], []
+        for r in recs:
+            run = start_run(db, settings, user, r["template"], snap.id, r["params"], exp.code)
+            runs.append(run)
+            choice = Choice(key=r["key"], title=r["title"], why=r["why"][:20], primary=r["primary"],
+                            net=r["net"], task="predict")
+            choices.append({"template": r["template"], "snapshot_id": snap.id, "node": body.node,
+                            "hypothesis": "", **_checked_choice(choice, r["template"], r["params"]),
+                            "run_id": run.id})
+        exp.config = {
+            "link_check": {"scan_run": scan.id, "a": body.a, "b": body.b, "target": body.target},
+            "analysis": choices[0],
+            "analysis_runs": choices,
+        }
+    except HTTPException:
+        db.rollback()  # набор без одной из сетей — не тот набор: ни проверки, ни расчётов
+        raise
+    db.commit()
+    return LinkCheckOut(experiment=exp.code, run_ids=[r.id for r in runs])
+
+
+def _num(v: object) -> float | None:
+    return float(v) if isinstance(v, int | float) and not isinstance(v, bool) else None
+
+
+def _net_results(run: Run) -> list[dict[str, Any]]:
+    """Итог расчёта по сетям: R² на отложенных данных и на перемешанной цели (плацебо)."""
+    s = run.summary or {}
+    params = (run.config or {}).get("params")
+    rows: list[tuple[str, float | None, float | None]]
+    if run.template == "lab-mlp":
+        arch = str(params.get("architecture") or "mlp") if isinstance(params, dict) else "mlp"
+        rows = [(arch, _num(s.get("mlp_r2_mean")), _num(s.get("placebo_r2_max")))]
+    elif run.template == "predictive-check":
+        r2 = s.get("r2_mean")
+        pl = s.get("placebo_max")
+        r2d = r2 if isinstance(r2, dict) else {}
+        pld = pl if isinstance(pl, dict) else {}
+        rows = [("gbm", _num(r2d.get("LightGBM")), _num(pld.get("LightGBM"))),
+                ("linear", _num(r2d.get("Линейная (Ridge)")), _num(pld.get("Линейная (Ridge)")))]
+    else:
+        return []
+    out = []
+    for net, r2v, plv in rows:
+        holds = None
+        if run.status == "done" and r2v is not None:
+            holds = r2v > HOLDS_MIN_R2 and (plv is None or r2v > plv)
+        title = net_catalog.NETS[net].title if net in net_catalog.NETS else net
+        out.append({"run_id": run.id, "status": run.status, "net": net, "title": title, "r2": r2v,
+                    "placebo": plv, "holds": holds})
+    return out
+
+
+@router.get("/links")
+def links(
+    snapshot_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(current_user)],
+) -> dict[str, Any]:
+    """Последний поиск связей по версии данных и проверки его связей сетями — вкладка «Нейросети»."""
+    snap, ds = _snapshot(db, snapshot_id)
+    _visible(ds, user)
+    scan = db.scalar(select(Run).where(Run.template == "correlation-scan", Run.dataset_snapshot_id == snap.id)
+                     .order_by(Run.id.desc()).limit(1))
+    checks = []
+    if scan is not None:
+        exps = db.scalars(select(Experiment).where(Experiment.dataset_snapshot_id == snap.id)
+                          .order_by(Experiment.id))
+        for exp in exps:
+            lc = _link_check(exp)
+            if lc is None or lc.get("scan_run") != scan.id:
+                continue
+            nets = [n for r in db.scalars(select(Run).where(Run.experiment_id == exp.id).order_by(Run.id))
+                    for n in _net_results(r)]
+            finished = [n for n in nets if n["holds"] is not None]
+            checks.append({"experiment": exp.code, "a": lc.get("a"), "b": lc.get("b"),
+                           "target": lc.get("target"), "nets": nets,
+                           "held": sum(1 for n in finished if n["holds"]), "finished": len(finished),
+                           "total": len(nets)})
+    s = scan.summary if scan is not None and isinstance(scan.summary, dict) else {}
+    params = (scan.config or {}).get("params") if scan is not None else None
+    scan_out = None
+    if scan is not None:
+        scan_out = {
+            "run_id": scan.id, "status": scan.status, "message": scan.message,
+            "group": params.get("group", "") if isinstance(params, dict) else "",
+            **{k: s.get(k) for k in ("unit", "rows_find", "rows_confirm", "pairs", "found", "confirmed",
+                                     "panel_hint", "not_confirmed_total", "links_total")},
+            "links": _scan_links(scan),
+        }
+    return {
+        "snapshot": {"id": snap.id, "dataset": ds.code, "title": ds.title, "version": snap.version},
+        "scan": scan_out,
+        "checks": checks,
+    }

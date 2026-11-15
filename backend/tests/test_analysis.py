@@ -262,3 +262,90 @@ def test_panel_scan_groups_by_entity() -> None:
     flat = Table(columns=["[компания]", "[x1]", "[x2]"], numeric={"[x1]", "[x2]"},
                  sample=[[f"[c{i}]", i, i % 7] for i in range(60)])
     assert panel_group(flat) == ""
+
+
+def _scan_run(db: Session, sid: int, links: list[tuple[str, str]], status: str = "done") -> int:
+    """Готовый расчёт «Поиск связей» с подтверждёнными связями (заглушки столбцов)."""
+    exp = Experiment(code="EXP-090", title="[поиск связей]", dataset_snapshot_id=sid)
+    db.add(exp)
+    db.flush()
+    run = Run(experiment_id=exp.id, status=status, template="correlation-scan", dataset_snapshot_id=sid,
+              config={"params": {"sheet": "", "group": ""}},
+              summary={"links": [{"a": a, "b": b, "kind": "монотонная", "rho": 0.6} for a, b in links],
+                       "unit": "row", "confirmed": len(links), "pairs": 6})
+    db.add(run)
+    db.commit()
+    return run.id
+
+
+def test_link_check_runs_net_set_in_one_check(  # type: ignore[no-untyped-def]
+    make_client, db_session: Session, tmp_path: Path, queue: list,
+) -> None:
+    """«Нейросети»: связь из поиска → одна проверка и расчёт на каждую сеть набора; сводка по сетям."""
+    sid = _snapshot(db_session, tmp_path)
+    scan = _scan_run(db_session, sid, [("[x1]", "[ROA_2022]")])
+    body = {"scan_run": scan, "a": "[x1]", "b": "[ROA_2022]", "target": "[ROA_2022]"}
+    assert make_client("rd", "reader").post("/api/analysis/link-check", json=body).status_code == 403
+    c = make_client("own", "owner")
+    r = c.post("/api/analysis/link-check", json=body)
+    assert r.status_code == 201, r.text
+    exp = db_session.scalar(select(Experiment).where(Experiment.code == r.json()["experiment"]))
+    assert exp is not None and exp.config["link_check"] == {
+        "scan_run": scan, "a": "[x1]", "b": "[ROA_2022]", "target": "[ROA_2022]"}
+    runs = [db_session.get(Run, i) for i in r.json()["run_ids"]]
+    assert [(x.template, x.config["params"].get("architecture")) for x in runs if x] == [
+        ("lab-mlp", "mlp"), ("lab-mlp", "transformer"), ("predictive-check", None)]
+    assert len(queue) == 3 and all(q["job"]["experiment"] == exp.code for q in queue)
+    assert "[x1]" in exp.hypothesis and "не причина" in exp.limitations[0]
+    # та же связь ещё раз — не вторая проверка; связи, не подтверждённой поиском, проверять нечего
+    assert c.post("/api/analysis/link-check", json=body).status_code == 409
+    other = {**body, "a": "[x2]"}
+    assert c.post("/api/analysis/link-check", json=other).status_code == 422
+    assert c.post("/api/analysis/link-check", json={**body, "target": "[x2]"}).status_code == 422
+
+    out = make_client("rd", "reader").get(f"/api/analysis/links?snapshot_id={sid}").json()
+    assert out["scan"]["run_id"] == scan and out["scan"]["links"][0]["a"] == "[x1]"
+    check = out["checks"][0]
+    assert check["experiment"] == exp.code and [n["net"] for n in check["nets"]] == [
+        "mlp", "transformer", "gbm", "linear"]
+    assert check["finished"] == 0 and all(n["holds"] is None for n in check["nets"])  # ещё в очереди
+
+    # итоги: держится, если R² выше перемешанной цели и выше 0,05
+    mlp, tr, pc = runs
+    assert mlp and tr and pc
+    mlp.status, mlp.summary = "done", {"mlp_r2_mean": 0.4, "placebo_r2_max": 0.1}
+    tr.status, tr.summary = "done", {"mlp_r2_mean": 0.02, "placebo_r2_max": 0.01}
+    pc.status, pc.summary = "done", {"r2_mean": {"LightGBM": 0.3, "Линейная (Ridge)": 0.3},
+                                     "placebo_max": {"LightGBM": 0.35, "Линейная (Ridge)": 0.05}}
+    db_session.commit()
+    check = make_client("rd", "reader").get(f"/api/analysis/links?snapshot_id={sid}").json()["checks"][0]
+    assert [n["holds"] for n in check["nets"]] == [True, False, False, True]
+    assert (check["held"], check["finished"], check["total"]) == (2, 4, 4)
+
+
+def test_link_check_needs_finished_scan_and_nda_access(  # type: ignore[no-untyped-def]
+    make_client, db_session: Session, tmp_path: Path, queue: list,
+) -> None:
+    sid = _snapshot(db_session, tmp_path)
+    scan = _scan_run(db_session, sid, [("[x1]", "[x2]")], status="running")
+    body = {"scan_run": scan, "a": "[x1]", "b": "[x2]", "target": "[x2]"}
+    assert make_client("own", "owner").post("/api/analysis/link-check", json=body).status_code == 409
+    assert db_session.scalars(select(Run).where(Run.template != "correlation-scan")).all() == []
+    nda = _snapshot(db_session, tmp_path, code="DS-08", access="nda")
+    assert make_client("rd", "reader").get(f"/api/analysis/links?snapshot_id={nda}").status_code == 403
+    assert make_client("own", "owner").get(f"/api/analysis/links?snapshot_id={nda}").json()["scan"] is None
+
+
+def test_prediction_on_panel_splits_by_entity() -> None:
+    """Прогноз на панели: группа — страна, и она не попадает в параметры Z."""
+    from app.services.analysis import recommend
+    from app.services.data_files import Table
+
+    cols = ["[страна]", "[год]", "[x1]", "[x2]"]
+    sample = [[f"[страна {i // 5}]", 2000 + i % 5, i, i % 7] for i in range(60)]
+    t = Table(columns=cols, numeric={"[год]", "[x1]", "[x2]"}, sample=sample)
+    recs = recommend(t, 600, "[x2]", None)["recommendations"]
+    for r in recs:
+        assert r["params"]["group"] == "[страна]", r["key"]
+        assert "[страна]" not in r["params"].get("context", [])
+    assert any("которых не было в обучении" in w for w in recs[0]["why"])

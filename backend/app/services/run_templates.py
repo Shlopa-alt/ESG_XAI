@@ -107,6 +107,9 @@ TEMPLATES: dict[str, Template] = {
             params=(SHEET,
                     Param("target", "Целевой показатель", "", kind="column"),
                     Param("features", "Признаки", [], kind="columns", hint="ESG-признаки и контрольные"),
+                    Param("group", "Столбец-группа (панель)", "", kind="column", required=False,
+                          numeric=False,
+                          hint="у панели компания × год — компания: проверка на компаниях вне обучения"),
                     SEED,
                     Param("splits", "Случайных разбиений", 30, 5, 200)),
         ),
@@ -128,6 +131,9 @@ TEMPLATES: dict[str, Template] = {
                           numeric=False, required=False, hint="текстовые — по категориям"),
                     Param("lag", "R прошлого периода", "", kind="column", required=False,
                           hint="для прогноза «как в прошлом году»"),
+                    Param("group", "Столбец-группа (панель)", "", kind="column", required=False,
+                          numeric=False,
+                          hint="у панели компания × год — компания: проверка на компаниях вне обучения"),
                     ARCHITECTURE,
                     SEED,
                     Param("splits", "Случайных разбиений", 30, 5, 200),
@@ -224,6 +230,11 @@ def check_params(t: Template, given: dict[str, Any], columns: list[str] | None =
     if t.key == "correlation-scan" and out["group"] and out["group"] in out["columns"]:
         raise ParamError("По столбцу-группе усредняются строки, в связях он не ищется — "
                          "уберите его из столбцов")
+    if t.key in ("predictive-check", "lab-mlp") and out["group"]:
+        used = [out["target"], *out["features"], *out.get("context", []), out.get("lag", "")]
+        if out["group"] in used:
+            raise ParamError("Столбец-группа делит строки на обучение и проверку — "
+                             "он не может быть целью, входом или параметром Z")
     if t.key == "correlation-scan" and len(out["columns"]) > 40:
         raise ParamError("Не больше 40 столбцов: иначе пар больше 780 "
                          "и поправка съедает все находки")
