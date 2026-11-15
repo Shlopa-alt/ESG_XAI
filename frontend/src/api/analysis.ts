@@ -86,3 +86,54 @@ export const launchAnalysis = (b: {
   expected: string; // по идее — что подтвердит или опровергнет её
   choice: Choice;
 }) => call<{ experiment: string; run_id: number }>("/analysis/launch", { method: "POST", body: JSON.stringify(b) });
+
+// «Нейросети»: найденная связь → набор сетей → сравнение (backend/app/api/analysis.py: links, link_check)
+export interface NetResult {
+  run_id: number | null; // null — сеть не запускалась (не уложилась в лимит метода)
+  status: string; // queued | running | done | failed | stopped | skipped
+  net: string; // mlp | transformer | gbm | linear
+  title: string;
+  r2: number | null; // R² на данных, которых не было в обучении
+  placebo: number | null; // R² на перемешанной цели (связи нет по построению)
+  holds: boolean | null; // null — расчёт ещё не закончен или сеть не запускалась
+  reason?: string; // почему не запускалась
+}
+
+export interface LinkCheck {
+  experiment: string;
+  a: string;
+  b: string;
+  target: string;
+  nets: NetResult[];
+  held: number;
+  finished: number;
+  total: number;
+}
+
+export interface ScanOut {
+  run_id: number;
+  status: string;
+  message: string;
+  group: string;
+  unit: "group" | "row" | null;
+  rows_find: number | null;
+  rows_confirm: number | null;
+  pairs: number | null;
+  found: number | null;
+  confirmed: number | null;
+  panel_hint: string | null;
+  not_confirmed_total: number | null;
+  links_total: number | null;
+  links: Array<{ a: string; b: string; kind: string; rho: number; xi: number; rho_confirm: number | null; xi_confirm: number | null; n: number }>;
+}
+
+export interface LinksOut {
+  snapshot: { id: number; dataset: string; title: string; version: string };
+  scan: ScanOut | null;
+  checks: LinkCheck[];
+}
+
+export const getLinks = (snapshotId: number) => call<LinksOut>(`/analysis/links?snapshot_id=${snapshotId}`);
+
+export const checkLink = (b: { scan_run: number; a: string; b: string; target: string; node: string }) =>
+  call<{ experiment: string; run_ids: number[] }>("/analysis/link-check", { method: "POST", body: JSON.stringify(b) });

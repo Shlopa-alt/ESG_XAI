@@ -60,3 +60,15 @@ export function ChecksTabs() {
     />
   );
 }
+
+export function NetsTabs() {
+  return (
+    <SectionTabs
+      label="Разделы вкладки «Нейросети»"
+      items={[
+        { to: "/nets", label: "Связи и сети", end: true },
+        { to: "/analysis", label: "Один показатель" },
+      ]}
+    />
+  );
+}

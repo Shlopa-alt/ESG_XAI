@@ -8,6 +8,7 @@ import { useMe } from "../auth/useAuth";
 import { NodeSelect } from "../components/NodeSelect";
 import { defaults, ParamsEditor, type ParamValue } from "../components/ParamsEditor";
 import { RunCost } from "../components/RunCost";
+import { NetsTabs } from "../components/SectionTabs";
 import { canRun, NextStep } from "../components/Ux";
 import { listTemplates, type RunTemplate } from "./RunPage";
 
@@ -111,7 +112,7 @@ function RecoCard({
 }
 
 /** Классификация «тип задачи → сети»: что платформа рекомендует и что умеет считать. */
-function CatalogTable() {
+export function CatalogTable() {
   const c = useQuery({ queryKey: ["analysis-catalog"], queryFn: getCatalog, staleTime: Infinity });
   if (!Array.isArray(c.data?.tasks) || !Array.isArray(c.data?.nets)) return null;
   const nets = new Map(c.data.nets.map((n) => [n.key, n]));
@@ -219,13 +220,14 @@ export function Analysis() {
   return (
     <>
       <section className="page-head">
-        <span className="eyebrow">АНАЛИЗ ДАННЫХ</span>
-        <h1 className="page-title">Анализ данных</h1>
+        <span className="eyebrow">НЕЙРОСЕТИ</span>
+        <h1 className="page-title">Один показатель</h1>
         <p className="lead">
-          Выберите, что изучаете, и набор данных — платформа подберёт метод или нейросеть, объяснит выбор и запустит
-          расчёт. Расчёт попадёт в «Проверки» со всем, что нужно, чтобы его повторить.
+          Выберите набор данных и показатель — платформа подберёт сеть или метод, объяснит выбор и запустит расчёт.
+          Расчёт попадёт в «Проверки» со всем, что нужно, чтобы его повторить.
         </p>
       </section>
+      <NetsTabs />
 
       {hypothesis && (
         <section className="card" aria-label="Идея для проверки">

@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import KFold, train_test_split
 
 HERE = Path(__file__).resolve().parent
 LOCK = HERE.parent / "hsu2025" / "requirements.lock"  # то же окружение, что у всех расчётов runner
@@ -170,3 +171,38 @@ def results_dir(root: Path) -> Path:
     out = root / datetime.now().strftime("%Y%m%d-%H%M%S")
     out.mkdir(parents=True)
     return out
+
+
+MIN_GROUPS = 10  # групп панели — меньше: в отложенной части 1–2 компании, R² ни о чём не говорит
+
+
+def holdout(n: int, groups: np.ndarray | None, seed: int, test: float = 0.2) -> tuple[np.ndarray, np.ndarray]:
+    """Обучающая и отложенная части (индексы строк). С groups (панель компания × год) делится по
+    группам: компания целиком в одной части. Иначе годы одной компании были бы и в обучении, и в
+    проверке, и R² на отложенной части завышен: модель узнаёт компанию, а не связь."""
+    idx = np.arange(n)
+    if groups is None:  # то же деление, что было до групп: прежние расчёты повторяются с тем же seed
+        tr, te = train_test_split(idx, test_size=test, random_state=seed)
+        return tr, te
+    names = np.random.default_rng(seed).permutation(np.unique(groups))
+    n_te = max(1, round(len(names) * test))
+    in_te = np.isin(groups, names[:n_te])
+    return idx[~in_te], idx[in_te]
+
+
+def folds(n: int, groups: np.ndarray | None, k: int, seed: int) -> list[tuple[np.ndarray, np.ndarray]]:
+    """k частей перекрёстной проверки внутри обучающей части; с groups — группа целиком в одной."""
+    idx = np.arange(n)
+    if groups is None:  # как прежде: KFold с перемешиванием
+        return list(KFold(k, shuffle=True, random_state=seed).split(idx))
+    names = np.array_split(np.random.default_rng(seed).permutation(np.unique(groups)), k)
+    return [(idx[~np.isin(groups, g)], idx[np.isin(groups, g)]) for g in names if len(g)]
+
+
+def group_values(df: pd.DataFrame, group: str) -> pd.Series | None:
+    """Столбец-группа панели как строки; пусто — группы нет. Неизвестный столбец — отказ."""
+    if not group:
+        return None
+    if group not in df.columns:
+        raise SystemExit(f"В срезе нет столбца-группы «{group}»")
+    return df[group].astype("string")
