@@ -22,6 +22,7 @@ import {
   STABILITY_LABEL,
 } from "../api/methodology";
 import { useMe } from "../auth/useAuth";
+import { ArticlesSummaryTab } from "../components/ArticlesSummary";
 import { plural } from "../components/Ux";
 
 const VERDICTS = { approve: "одобрено", changes: "нужны правки", reject: "отклонено" } as const;
@@ -460,13 +461,20 @@ function Node({ node, ctx }: { node: Section; ctx: TreeCtx }) {
   );
 }
 
-type MethodTab = "method" | "changes" | "history";
+type MethodTab = "method" | "articles" | "changes" | "history";
+
+// /methodology#articles-Н1.В1.З1 — сразу «Что говорят статьи» по этому пункту
+const ARTICLES_HASH = "#articles-";
+const hashNode = () =>
+  window.location.hash.startsWith(ARTICLES_HASH) ? decodeURIComponent(window.location.hash.slice(ARTICLES_HASH.length)) : "";
 
 export function Methodology() {
   const me = useMe();
   const [draft, setDraft] = useState<Draft | null>(null);
   // ссылка вида /methodology#cr-CR-02 (из отчёта) сразу открывает предложения
-  const [tab, setTab] = useState<MethodTab>(window.location.hash.startsWith("#cr-") ? "changes" : "method");
+  const [tab, setTab] = useState<MethodTab>(
+    window.location.hash.startsWith("#cr-") ? "changes" : hashNode() ? "articles" : "method",
+  );
   const m = useQuery({ queryKey: ["methodology"], queryFn: getMethodology });
   const crs = useQuery({ queryKey: ["crs"], queryFn: listCrs });
   const versions = useQuery({ queryKey: ["versions"], queryFn: listVersions });
@@ -505,6 +513,7 @@ export function Methodology() {
   const directions = nodes.filter((n) => !n.parent && n.kind !== "section");
   const tabs: Array<{ key: MethodTab; label: string }> = [
     { key: "method", label: "Как мы исследуем" },
+    { key: "articles", label: "Что говорят статьи" },
     { key: "changes", label: `Предложения изменений${openCount ? ` · ${openCount}` : ""}` },
     { key: "history", label: "История версий" },
   ];
@@ -568,6 +577,7 @@ export function Methodology() {
           </p>
         </div>
       )}
+      {tab === "articles" && <ArticlesSummaryTab initialNode={hashNode()} />}
       {tab === "changes" && (
         <section className="cr-board" role="tabpanel">
           {crs.isPending && <p className="muted">Загрузка…</p>}

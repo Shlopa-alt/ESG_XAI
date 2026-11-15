@@ -213,6 +213,56 @@ describe("Методика", () => {
     expect(screen.getByText("[что меняется]")).toBeInTheDocument();
   });
 
+  it("«Что говорят статьи»: понятия пункта, сводка с цитатами и наши итоги", async () => {
+    const q = [{ quote: "[цитата]", doc_id: "d1", title: "[статья]", year: 2024, url: "" }];
+    const link = (relation: string, documents: number) => ({ from: "[фактор]", relation, to: "[результат]", hedged: false, documents, quotes: q });
+    const summary = {
+      factor: "[фактор]", outcome: "[результат]", total: 10, leader: "up", agreement: 0.6,
+      groups: [
+        { key: "up", documents: 6, links: [link("повышает", 6)] },
+        { key: "down", documents: 2, links: [link("снижает", 2)] },
+        { key: "none", documents: 2, links: [link("не влияет", 2)] },
+        { key: "other", documents: 0, links: [] },
+      ],
+      experiments: [{ code: "EXP-001", title: "[проверка]", status: "done", outcome: "rejected" }],
+      hypotheses: [],
+    };
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        urls.push(url);
+        if (url.includes("/auth/me")) return Promise.resolve(json(user("reader")));
+        if (url.includes("/kb/network")) {
+          // «[задание]» — слово из названия пункта: подсказывается; «[другое]» — нет; статья — не понятие
+          const nodes = [
+            { id: "e1", kind: "сущность", name: "[задание]", documents: 12, spellings: [] },
+            { id: "e2", kind: "сущность", name: "[другое]", documents: 99, spellings: [] },
+            { id: "a1", kind: "статья", name: "[задание]" },
+          ];
+          return Promise.resolve(json({ nodes, edges: [] }));
+        }
+        if (url.includes("/articles?")) return Promise.resolve(json(summary));
+        if (url.includes("/methodology") && !url.includes("versions") && !url.includes("change")) return Promise.resolve(json(TREE));
+        return Promise.resolve(json([]));
+      }),
+    );
+    window.location.hash = "#articles-Н1.В1.З1";
+    renderAt("/methodology");
+    expect(await screen.findByRole("tab", { name: "Что говорят статьи" })).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(await screen.findByRole("button", { name: "[задание] · 12 статей" }));
+    expect(screen.queryByRole("button", { name: /\[другое\]/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Фактор — что влияет")).toHaveValue("[задание]");
+    await userEvent.type(screen.getByLabelText("Результат — на что влияет"), "[[результат]");
+    expect(screen.getByLabelText("Результат — на что влияет")).toHaveValue("[результат]");
+    await userEvent.click(screen.getByRole("button", { name: "Показать, что говорят статьи" }));
+    expect(await screen.findByText(/Статьи расходятся: чаще всего говорят «повышает» — 60 %/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "повышает: 6 статей, снижает: 2 статьи, не влияет: 2 статьи" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "[статья]" })[0]).toHaveAttribute("href", "/knowledge/article/d1");
+    expect(screen.getByText(/идея не подтвердилась/)).toBeInTheDocument();
+    expect(urls.some((u) => u.includes("/methodology/sections/%D0%9D1.%D0%921.%D0%971/articles?factor="))).toBe(true);
+  });
+
   it("ссылка на предложение из отчёта сразу открывает его вкладку", async () => {
     window.location.hash = "#cr-CR-01";
     stub("reader", routes);
