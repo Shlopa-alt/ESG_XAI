@@ -16,7 +16,11 @@ const METHOD = {
   article_title: "[название статьи]", doi: "10.0000/[x]", evidence: "[цитата авторов о модели]", author: "",
   decided_by: "", decision_note: "", created_at: "2026-11-15T00:00:00Z", script: "",
 };
-const LIB = { builtin: [{ key: "lab-mlp", title: "[метод лаборатории]", description: "[описание]" }], methods: [METHOD], pending: [] };
+const LIB = {
+  builtin: [{ key: "lab-mlp", title: "[метод лаборатории]", description: "[описание]" }],
+  methods: [METHOD, { ...METHOD, code: "M-00", title: "[неудачная попытка]", status: "failed" }],
+  pending: [],
+};
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 function stub(role: string, onEnable = vi.fn()) {
@@ -62,6 +66,8 @@ describe("Библиотека методов", () => {
     expect(await within(card).findByText(/\[код метода\]/)).toBeInTheDocument();
     await userEvent.click(within(card).getByRole("button", { name: "Код прочитан — включить" }));
     expect(onEnable).toHaveBeenCalled();
+    // неудачные попытки — свёрнуты отдельно, рабочие методы сверху
+    expect(screen.getByText("Не прошли проверку или отклонены · 1").closest("details")).not.toHaveAttribute("open");
     // вкладка — внутри «Нейросетей»
     const tabs = screen.getByRole("navigation", { name: "Разделы вкладки «Нейросети»" });
     expect(within(tabs).getByRole("link", { name: "Библиотека методов" })).toHaveClass("active");

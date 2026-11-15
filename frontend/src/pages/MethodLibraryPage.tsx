@@ -106,6 +106,8 @@ export function MethodLibrary() {
   const isOwner = me.data?.role === "owner";
   const q = useQuery({ queryKey: ["methods"], queryFn: getLibrary, refetchInterval: (s) => ((s.state.data?.pending.length ?? 0) > 0 ? 15_000 : false) });
   const lib = q.data;
+  const active = (lib?.methods ?? []).filter((m) => m.status === "enabled" || m.status === "ready");
+  const archived = (lib?.methods ?? []).filter((m) => m.status === "failed" || m.status === "rejected");
   return (
     <>
       <section className="page-head">
@@ -143,16 +145,27 @@ export function MethodLibrary() {
         <h2 className="section-title" id="lib-articles">
           Методы из статей
         </h2>
-        {lib && lib.methods.length === 0 && (
+        {lib && active.length === 0 && (
           <p className="muted">
             Пока нет. Откройте статью в <Link to="/knowledge">банке статей</Link> и нажмите «Сделать метод по статье».
           </p>
         )}
         <div className="cr-board">
-          {lib?.methods.map((m) => (
+          {active.map((m) => (
             <MethodCard key={m.code} m={m} isOwner={isOwner} />
           ))}
         </div>
+        {archived.length > 0 && (
+          // неудачные попытки и отклонённые — история, а не рабочие методы: свёрнуты, но видны
+          <details className="card details-card">
+            <summary>Не прошли проверку или отклонены · {archived.length}</summary>
+            <div className="cr-board">
+              {archived.map((m) => (
+                <MethodCard key={m.code} m={m} isOwner={isOwner} />
+              ))}
+            </div>
+          </details>
+        )}
       </section>
       <section className="overview-block" aria-labelledby="lib-builtin">
         <h2 className="section-title" id="lib-builtin">
