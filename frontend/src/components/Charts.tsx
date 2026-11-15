@@ -88,6 +88,29 @@ function Legend({ names }: { names: string[] }) {
   );
 }
 
+// CSV для своих инструментов эксперта: «;» и десятичная запятая, метка UTF-8 — так файл без настроек
+// открывают русский Excel и STATISTICA, а R читает read.csv2
+const csvNum = (v: number | undefined) => (typeof v === "number" && Number.isFinite(v) ? String(v).replace(".", ",") : "");
+const csvCell = (s: string) => (/[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+
+/** Данные графика отчёта — таблицей CSV (то же, что показывает кнопка «Таблица»). */
+export function chartCsv(spec: ChartSpec): string {
+  const rows: string[][] =
+    spec.kind === "bars"
+      ? [["Категория", ...spec.series.map((s) => s.name)], ...spec.categories.map((c, i) => [c, ...spec.series.map((s) => csvNum(s.values[i]))])]
+      : [["Строка", "Среднее", "Минимум", "Максимум"], ...spec.rows.map((r) => [r.name, csvNum(r.mean), csvNum(r.min), csvNum(r.max)])];
+  return "﻿" + rows.map((r) => r.map(csvCell).join(";")).join("\r\n") + "\r\n";
+}
+
+function downloadCsv(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function Frame({ spec, legend, table, children }: { spec: ChartSpec; legend?: string[]; table: React.ReactNode; children: React.ReactNode }) {
   const [asTable, setAsTable] = useState(false);
   return (
@@ -97,9 +120,19 @@ function Frame({ spec, legend, table, children }: { spec: ChartSpec; legend?: st
           <figcaption className="h2 viz-title">{spec.title}</figcaption>
           {spec.subtitle && <p className="muted viz-sub">{spec.subtitle}</p>}
         </div>
-        <button type="button" className="btn-ghost viz-toggle" aria-pressed={asTable} onClick={() => setAsTable((v) => !v)}>
-          {asTable ? "График" : "Таблица"}
-        </button>
+        <div className="viz-actions">
+          <button type="button" className="btn-ghost viz-toggle" aria-pressed={asTable} onClick={() => setAsTable((v) => !v)}>
+            {asTable ? "График" : "Таблица"}
+          </button>
+          <button
+            type="button"
+            className="btn-ghost viz-toggle"
+            onClick={() => downloadCsv(`${spec.id || "chart"}.csv`, chartCsv(spec))}
+            title="Таблица графика для Excel, STATISTICA, R"
+          >
+            Скачать CSV
+          </button>
+        </div>
       </div>
       {legend && legend.length > 1 && <Legend names={legend} />}
       {asTable ? <div className="table-wrap">{table}</div> : children}

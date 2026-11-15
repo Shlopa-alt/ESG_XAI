@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -27,6 +28,7 @@ from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import Dataset, DatasetSnapshot, Experiment, Run, User
 from app.services.codes import next_code
+from app.services.data_files import to_container
 from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -207,6 +209,25 @@ def patch_dataset(code: str, body: DatasetPatch, db: Annotated[Session, Depends(
         setattr(ds, key, value)
     db.commit()
     return _detail(db, ds, user)
+
+
+@router.get("/{code}/snapshots/{snapshot_id}/file")
+def snapshot_file(code: str, snapshot_id: int, db: Annotated[Session, Depends(get_db)],
+                  settings: Annotated[Settings, Depends(get_settings)],
+                  user: Annotated[User, Depends(current_user)]) -> FileResponse:
+    """Файл версии данных как есть (CSV или книга Excel) — для своих инструментов эксперта:
+    статистических пакетов, R, Python. Под NDA — только допущенным, как и список файлов (правило 6)."""
+    ds = _get(db, code)
+    _files_guard(ds, user)
+    snap = db.get(DatasetSnapshot, snapshot_id)
+    if snap is None or snap.dataset_id != ds.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"У {code} нет версии №{snapshot_id}")
+    path = to_container(settings, snap.storage_path) if snap.storage_path else None
+    if path is None or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл версии на сервере не найден")
+    safe = re.sub(r"[^\w.-]+", "_", snap.version, flags=re.ASCII).strip("_") or "version"
+    return FileResponse(path, filename=f"{ds.code}_{safe}{path.suffix}",
+                        headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("/{code}/files", response_model=list[FileOut])

@@ -10,6 +10,7 @@ describe("Графики отчёта с клавиатуры", () => {
     render(<BarChart spec={{ id: "b", kind: "bars", title: "[график]", unit: "", categories: ["[a]"], series: [{ name: "[серия]", values: [2] }] }} />);
     const bar = screen.getByRole("button", { name: "[a], [серия]: 2" });
     await userEvent.tab(); // сначала переключатель «таблицей»
+    await userEvent.tab(); // затем «Скачать CSV»
     await userEvent.tab();
     expect(bar).toHaveFocus();
     expect(screen.getByText("2", { selector: ".viz-tip strong" })).toBeInTheDocument();

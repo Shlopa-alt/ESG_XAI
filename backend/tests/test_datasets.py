@@ -88,3 +88,18 @@ def test_list_shows_how_many_versions(make_client, db_session: Session) -> None:
     db_session.commit()
     counts = {d["code"]: d["snapshots"] for d in c.get("/api/datasets").json()}
     assert counts["DS-77"] == 1 and counts["DS-78"] == 0
+
+
+def test_snapshot_file_downloads_for_own_tools_and_respects_nda(make_client, db_session: Session) -> None:  # type: ignore[no-untyped-def]
+    """Файл версии — как есть, для Excel, STATISTICA, R; под NDA — только допущенным (правило 6)."""
+    own, rd = make_client("own", "owner"), make_client("rd", "reader")
+    code = _new(own).json()["code"]
+    up = own.post(f"/api/datasets/{code}/snapshots", files={"file": ("t.csv", CSV, "text/csv")}, data={"version": "v1"})
+    sid = up.json()["snapshots"][0]["id"]
+    r = rd.get(f"/api/datasets/{code}/snapshots/{sid}/file")
+    assert r.status_code == 200 and r.content == CSV
+    assert f'filename="{code}_v1.csv"' in r.headers["content-disposition"]
+    assert rd.get(f"/api/datasets/{code}/snapshots/{sid + 99}/file").status_code == 404
+    own.patch(f"/api/datasets/{code}", json={"access_level": "nda"})
+    assert rd.get(f"/api/datasets/{code}/snapshots/{sid}/file").status_code == 403
+    assert own.get(f"/api/datasets/{code}/snapshots/{sid}/file").status_code == 200

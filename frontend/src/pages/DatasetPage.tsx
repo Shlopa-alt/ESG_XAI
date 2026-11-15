@@ -362,7 +362,16 @@ export function DatasetPage() {
                     </td>
                     <td className="num mono">{s.row_count?.toLocaleString("ru-RU") ?? "—"}</td>
                     <td className="num mono">{s.runs}</td>
-                    <td className="mono run-path">{ds.can_see_files ? s.storage_path || "—" : "под NDA"}</td>
+                    <td>
+                      {ds.can_see_files ? (
+                        // файл как есть — для своих инструментов: Excel, STATISTICA, R, Python
+                        <a href={`/api/datasets/${encodeURIComponent(ds.code)}/snapshots/${s.id}/file`} download title={s.storage_path}>
+                          Скачать
+                        </a>
+                      ) : (
+                        <span className="muted">под NDA</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
