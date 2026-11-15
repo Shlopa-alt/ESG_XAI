@@ -406,7 +406,8 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
         </p>
       )}
       {h.refs.length > 0 && (
-        <details open={h.status === "proposed"}>
+        // раскрыты сразу при любом статусе: источник — то, на чём держится идея; свернуть можно вручную
+        <details open>
           <summary>Источники в банке статей ({h.refs.length})</summary>
           <ul className="list muted">
             {h.refs.map((r) => (

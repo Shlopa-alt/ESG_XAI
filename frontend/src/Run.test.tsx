@@ -367,13 +367,14 @@ describe("Карточка идеи", () => {
     await waitFor(() => expect(puts).toEqual([{ url: "/api/hypotheses/H-001/weight", body: { weight: 3 } }]));
   });
 
-  it("у предложенной идеи источники раскрыты: они нужны для решения", async () => {
+  it("источники раскрыты сразу при любом статусе идеи", async () => {
     const refs = [{ kind: "article", kbrag_id: "d", title: "[статья]", doi: "", quote: "[цитата]" }];
     api({ hypotheses: [{ ...HYP, status: "proposed", refs }, { ...HYP, code: "H-002", title: "[вторая]", status: "testing", refs }] });
     renderAt("/hypotheses");
     await screen.findByText("[идея]");
-    const [first] = screen.getAllByText(/Источники в банке статей/).map((el) => el.closest("details"));
-    expect(first).toHaveAttribute("open");
+    const all = screen.getAllByText(/Источники в банке статей/).map((el) => el.closest("details"));
+    expect(all).toHaveLength(2);
+    for (const d of all) expect(d).toHaveAttribute("open");
   });
 });
 
