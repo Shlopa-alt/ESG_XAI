@@ -1141,6 +1141,62 @@ def job_table_edit(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     return {"ops": ops, "explanation": out.get("explanation", ""), "draft": did}
 
 
+def job_method(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Метод из статьи банка для библиотеки методов: Qwen пишет модель авторов, платформа проверяет
+    код, пробный запуск — без сети на синтетических данных (method_gen.py). Итог — платформе:
+    метод «готов» ждёт администратора, «не прошёл» — с журналом; запускать его до включения нельзя."""
+    import method_gen as G  # рядом с worker.py; только stdlib
+
+    doc_id = str(job["payload"].get("doc_id") or "")
+    meta: dict[str, Any] = {}
+    texts: list[str] = []
+    offset: int | None = 0
+    for _ in range(30):  # статья по страницам фрагментов
+        page = kbrag_get("article", {"doc_id": doc_id, "text": 1, "offset": offset}, ctx["kbrag_token"], timeout_s=60)
+        meta = meta or page
+        texts += [str(f.get("text") or "") for f in page.get("fragments") or []]
+        offset = page.get("next_offset")
+        if offset is None:
+            break
+    title = str(meta.get("title") or doc_id)
+    fragments = G.method_fragments("\n\n".join(texts))
+    if not fragments:
+        raise RuntimeError(f"в статье {doc_id} нет текста — метод не по чему определить")
+    base = G.prompt(title, fragments)
+    answer: dict[str, Any] = {}
+    log: list[str] = []
+    smoke: dict[str, Any] = {"ok": False, "log": "", "fit_s": 0, "fit_rows": 0}
+    ask = base
+    for attempt in range(1, 5):  # первая попытка и три на исправление по замечаниям
+        # исправление — с температурой выше: модель не повторяет тот же ответ
+        answer = ask_json(ask, 3000, G.SYSTEM, G.SCHEMA, temperature=(0.2, 0.4, 0.6, 0.7)[attempt - 1])
+        if not answer.get("found"):
+            return {"found": False, "doc_id": doc_id, "reason": str(answer.get("description") or "")[:500]}
+        code = str(answer.get("code") or "")
+        problems = (ctx["platform"].post("method-check", {"script": code})[1] or {}).get("problems") or []
+        if problems:
+            log.append(f"Попытка {attempt}: замечания проверки — " + "; ".join(problems[:8]))
+            ask = G.repair_prompt(base, code, problems)
+            continue
+        hyper = G.integer_params(answer.get("params"))  # те же, что примет платформа: дробные — в коде
+        smoke = G.smoke(code, hyper)
+        log.append(f"Попытка {attempt}: " + smoke["log"])
+        if smoke["ok"]:
+            break
+        ask = G.repair_prompt(base, code, [smoke["log"][-1500:]])
+    body = {
+        "job": job["id"], "doc_id": doc_id, "article_title": title, "doi": str(meta.get("doi") or ""),
+        "title": str(answer.get("title") or title)[:300], "description": str(answer.get("description") or ""),
+        "net": str(answer.get("net") or ""), "evidence": str(answer.get("evidence") or ""),
+        "params": answer.get("params") or [], "script": str(answer.get("code") or ""),
+        "smoke_ok": bool(smoke["ok"]), "smoke_log": "\n".join(log), "fit_s": smoke["fit_s"],
+        "fit_rows": smoke["fit_rows"],
+    }
+    out = post_retry(ctx["platform"], "method", body)[1] or {}
+    return {"found": True, "doc_id": doc_id, "code": out.get("code"), "status": out.get("status"),
+            "attempts": len(log)}
+
+
 HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]] = {
     "ping": job_ping,
     "graph": job_graph,
@@ -1151,6 +1207,7 @@ HANDLERS: dict[str, Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]] 
     "tables": job_tables,
     "table_edit": job_table_edit,
     "data_links": job_data_links,
+    "method": job_method,
 }
 
 
@@ -1174,6 +1231,11 @@ def describe(kind: str, result: dict[str, Any]) -> str:
                 "(черновики создаст платформа)")
     if kind == "data_links":
         return f"Статей {result.get('docs', 0)}: ссылок на данные авторов {result.get('sent', 0)} (черновики создаёт платформа)"
+    if kind == "method":
+        if not result.get("found"):
+            return f"В статье не нашлось метода предсказания: {result.get('reason', '')}"
+        return (f"Метод {result.get('code')}: " + ("готов — ждёт администратора" if result.get("status") == "ready"
+                else "не прошёл проверку — журнал в библиотеке методов"))
     if kind == "table_edit":
         return f"Операций {len(result.get('ops') or [])}: {result.get('explanation', '')}"
     if kind == "hypotheses":

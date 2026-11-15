@@ -116,6 +116,10 @@ def formula_minutes(t: Template, params: dict[str, Any], rows: int) -> tuple[flo
     elif t.key == "exp007-hsu":
         fits = _int(params, "trials", 100)
         sec = 45 * fits  # 100 испытаний — около 75 минут (runner/hsu2025)
+    elif t.method:  # метод из статьи: время одного обучения — по пробному запуску (протокол: данные и плацебо)
+        fits = _int(params, "splits", 30) * 2
+        per_fit = t.fit_s * max(1.0, rows * 0.8 / t.fit_rows) if t.fit_s and t.fit_rows else 2.0
+        sec = 15 + fits * per_fit
     else:  # повтор EXP-001 и прочие короткие расчёты
         fits, sec = 1, 60
     return sec / 60, fits

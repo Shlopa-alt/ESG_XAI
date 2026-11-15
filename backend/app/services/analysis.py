@@ -13,7 +13,7 @@ from typing import Any
 from app.models import MethodologySection
 from app.services.data_files import MISSING, Table
 from app.services.net_catalog import NETS, NEURAL, TASKS
-from app.services.run_templates import TEMPLATES
+from app.services.run_templates import TEMPLATES, Template
 
 # сколько строк без пропусков нужно методу (runner/methods/*.py: MIN_ROWS и проверки в main)
 MIN_ROWS = {"lab-mlp": 20, "predictive-check": 30, "rank-agreement": 5, "correlation-scan": 40}
@@ -190,9 +190,11 @@ def recommend(
     target: str,
     node: MethodologySection | None,
     authors: dict[str, Any] | None = None,
+    library: list[tuple[Template, str]] | None = None,
 ) -> dict[str, Any]:
     """Тип задачи и рекомендации по данным. target — выбранный показатель (пусто — не выбран);
-    authors — сеть из статьи-источника идеи (net_catalog.authors_net + article_title)."""
+    authors — сеть из статьи-источника идеи (net_catalog.authors_net + article_title);
+    library — включённые методы из статей банка (шаблон и сеть каталога): карточки прогноза."""
     numeric = [c for c in t.columns if c in t.numeric]
     cats = categories(t)
     recs: list[Recommendation] = []
@@ -308,6 +310,25 @@ def recommend(
                 runnable=ok2,
             )
         )
+        for lt, net in library or []:
+            recs.append(
+                Recommendation(
+                    key=lt.key,
+                    template=lt.key,
+                    title=f"Метод из статьи: {lt.title}",
+                    method_title=lt.title,
+                    params={**base, **{p.name: p.default for p in lt.params if p.name not in base}},
+                    why=[
+                        "Метод взят из статьи банка: модель написал ИИ-помощник по тексту статьи, "
+                        "администратор прочитал код и включил его.",
+                        "Протокол тот же, что у методов лаборатории: разбиения, плацебо, сравнение с линейной "
+                        "моделью" + (f", проверка на «{group}» вне обучения" if group else "") + ".",
+                    ],
+                    warnings=[why_not] if not ok else [],
+                    runnable=ok,
+                    net=net,
+                )
+            )
     else:
         # год и номер строки — не показатели: сравнивать их с рейтингами бессмысленно
         indicators = [c for c in numeric if not ID_LIKE.fullmatch(_bare(c))]
@@ -425,7 +446,7 @@ def _as_authors(
             and all(r.params.get(k) == v for k, v in net.params.items())
         ),
         None,
-    )
+    ) or next((r for r in recs if r.runnable and r.template.startswith("method:") and r.net == net.key), None)
     if same is not None:
         for r in recs:
             r.primary = False

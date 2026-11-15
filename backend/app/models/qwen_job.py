@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
 QWEN_KINDS = ("graph", "ping", "hypotheses", "experiment", "report", "cr", "tables", "table_edit",
-              "data_links")
+              "data_links", "method")
 QWEN_STATUSES = ("queued", "running", "done", "failed", "cancelled")
 
 

@@ -6,6 +6,7 @@ import { listExperiments } from "../api/experiments";
 import { scanLinks } from "../api/dataDrafts";
 import type { KbRefIn } from "../api/hypotheses";
 import { kbArticle, kbPdfUrl } from "../api/kb";
+import { methodFromArticle } from "../api/methods";
 import { listCrs } from "../api/methodology";
 import { useMe } from "../auth/useAuth";
 import { FragmentText } from "../components/FragmentText";
@@ -47,6 +48,32 @@ function FindData({ docId }: { docId: string }) {
     <>
       <button type="button" className="btn-ghost" disabled={m.isPending} onClick={() => m.mutate()}>
         Найти данные по ссылкам в статье
+      </button>
+      {m.isError && (
+        <span className="error" role="alert">
+          {m.error.message}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Метод статьи — в библиотеку методов: ИИ-помощник пишет модель авторов, платформа проверяет код,
+ * администратор включает. Человек код не пишет. */
+function MakeMethod({ docId }: { docId: string }) {
+  const m = useMutation({ mutationFn: () => methodFromArticle(docId) });
+  if (m.isSuccess) {
+    return (
+      <span className="muted">
+        ИИ-помощник пишет метод по статье (задача № {m.data.job}) — он появится в{" "}
+        <Link to="/nets/library">библиотеке методов</Link> после проверки.
+      </span>
+    );
+  }
+  return (
+    <>
+      <button type="button" className="btn-ghost" disabled={m.isPending} onClick={() => m.mutate()}>
+        Сделать метод по статье
       </button>
       {m.isError && (
         <span className="error" role="alert">
@@ -215,6 +242,7 @@ export function Article() {
             <span className="muted">PDF статьи в банке нет{doi ? " — полный текст по ссылке DOI" : ""}</span>
           )}
           {canLink && <FindData docId={a.doc_id} />}
+          {canLink && <MakeMethod docId={a.doc_id} />}
         </div>
       </section>
       {canLink && <LinkPanel refIn={refIn} />}
