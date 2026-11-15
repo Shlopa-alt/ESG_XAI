@@ -1004,3 +1004,10 @@ details[open] > .node-head .node-preview { display: none; }
 .findings .list { margin: 0; }
 .basis-pick { max-height: 320px; overflow-y: auto; }
 .basis-pick label { display: block; }
+
+/* --- «Нейросети»: связь × сеть --- */
+.nets-table td.net-holds { color: var(--ok-text); background: var(--ok-bg); font-weight: 600; }
+.nets-table td.net-fails { color: var(--text-muted); }
+.nets-table .net-sub { font-size: 12px; font-weight: 400; }
+.nets-table th[scope="row"] { color: var(--text); font-weight: 500; }
+.nets-idea { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 0; }

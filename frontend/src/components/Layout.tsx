@@ -14,14 +14,15 @@ interface NavItem {
 }
 
 // Семь пунктов: человек за один взгляд видит всё, связанное живёт вкладками внутри раздела.
-// «Анализ данных» вернули по просьбе лаборатории (docs/DATA_ANALYSIS.md)
+// «Нейросети» — найти связи в данных и проверить их набором сетей; внутри — и «Один показатель»
+// (прежний «Анализ данных», docs/DATA_ANALYSIS.md)
 const NAV: NavItem[] = [
   { to: "/", label: "Обзор", end: true },
   { to: "/methodology", label: "Методика" },
   { to: "/knowledge", label: "Банк статей" },
   { to: "/hypotheses", label: "Идеи для проверки" },
   { to: "/experiments", label: "Проверки", also: ["/run", "/runs"] },
-  { to: "/analysis", label: "Анализ данных" },
+  { to: "/nets", label: "Нейросети", also: ["/analysis"] },
   { to: "/data", label: "Данные", also: ["/datasets", "/data-drafts"] },
 ];
 const OWNER_NAV: NavItem[] = [
