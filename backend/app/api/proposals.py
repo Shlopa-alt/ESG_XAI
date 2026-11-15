@@ -25,9 +25,9 @@ from app.models import (
     QwenJob,
     User,
 )
+from app.services import method_library
 from app.services.qwen_experiments import close_open_proposals, experiment_from_hypothesis, problems
 from app.services.qwen_queue import enqueue
-from app.services.run_templates import TEMPLATES
 
 router = APIRouter(prefix="/experiment-proposals", tags=["proposals"])
 
@@ -100,7 +100,7 @@ def _out(db: Session, p: ExperimentProposal) -> ProposalOut:
     ds = db.get(Dataset, snap.dataset_id) if snap else None
     exp = db.get(Experiment, p.experiment_id) if p.experiment_id else None
     user = db.get(User, p.decided_by) if p.decided_by else None
-    t = TEMPLATES.get(p.method)
+    t = method_library.template(db, p.method)
     return ProposalOut(
         id=p.id, hypothesis=h.code if h else "", status=p.status, from_qwen=p.qwen_job_id is not None,
         title=p.title, method=p.method,
@@ -195,7 +195,7 @@ def manual(body: ManualIn, db: Annotated[Session, Depends(get_db)],
     h = _hypothesis(db, body.hypothesis)
     if h.status != "accepted":
         raise HTTPException(status.HTTP_409_CONFLICT, "Гипотеза уже проверяется или не принята")
-    t = TEMPLATES.get(body.template)
+    t = method_library.template(db, body.template)
     if t is None or t.scope != "generic":
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "Для новой проверки нужен общий метод библиотеки: повтор считается в своём эксперименте")
@@ -247,7 +247,9 @@ def approve(pid: int, body: ApproveIn, db: Annotated[Session, Depends(get_db)],
     h = db.get(Hypothesis, p.hypothesis_id)
     if h is None or h.status != "accepted":
         raise HTTPException(status.HTTP_409_CONFLICT, "Гипотеза уже проверяется или не принята")
-    t = TEMPLATES[p.method]
+    t = method_library.template(db, p.method)
+    if t is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Метода {p.method} нет в библиотеке")
     if t.scope == "replication" and not body.confirm_replication:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             f"«{t.title}» — повтор расчёта как есть: подтвердите, что он проверяет эту гипотезу")

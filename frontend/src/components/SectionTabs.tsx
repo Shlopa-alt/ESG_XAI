@@ -68,6 +68,7 @@ export function NetsTabs() {
       items={[
         { to: "/nets", label: "Связи и сети", end: true },
         { to: "/analysis", label: "Один показатель" },
+        { to: "/nets/library", label: "Библиотека методов" },
       ]}
     />
   );

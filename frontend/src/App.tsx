@@ -4,6 +4,7 @@ import { Route, Routes } from "react-router-dom";
 import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
 import { Analysis } from "./pages/AnalysisPage";
+import { MethodLibrary } from "./pages/MethodLibraryPage";
 import { Nets } from "./pages/NetsPage";
 import { Article } from "./pages/ArticlePage";
 import { DataDraftPage, DataDrafts } from "./pages/DataDraftsPage";
@@ -52,6 +53,7 @@ export function App() {
         <Route path="runs" element={<Run view="list" />} />
         <Route path="run/:id" element={<RunDetail />} />
         <Route path="nets" element={<Nets />} />
+        <Route path="nets/library" element={<MethodLibrary />} />
         <Route path="analysis" element={<Analysis />} />
         <Route path="methodology" element={<Methodology />} />
         <Route path="password" element={<ChangePassword />} />

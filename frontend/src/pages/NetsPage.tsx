@@ -87,7 +87,22 @@ function Verdict({ c }: { c: LinkCheck }) {
 }
 
 /** Строка таблицы: связь, что предсказываем, итог каждой сети; без проверки — кнопка «Проверить сетями». */
-function LinkRow({ l, check, scan, canLaunch }: { l: ScanLinkRow; check: LinkCheck | undefined; scan: ScanOut; canLaunch: boolean }) {
+type Column = { key: string; short: string };
+
+/** Столбцы сетей: встроенный набор и методы из статей, которые уже считались в проверках. */
+function columnsOf(checks: LinkCheck[]): Column[] {
+  const extra = new Map<string, string>();
+  for (const c of checks) for (const n of c.nets) if (!NETS.some((x) => x.key === n.net)) extra.set(n.net, n.title);
+  return [...NETS, ...[...extra].map(([key, title]) => ({ key, short: title.length > 18 ? `${title.slice(0, 17)}…` : title }))];
+}
+
+function LinkRow({ l, check, scan, canLaunch, columns }: {
+  l: ScanLinkRow;
+  check: LinkCheck | undefined;
+  scan: ScanOut;
+  canLaunch: boolean;
+  columns: Column[];
+}) {
   const qc = useQueryClient();
   const [target, setTarget] = useState(l.b);
   const go = useMutation({
@@ -107,7 +122,7 @@ function LinkRow({ l, check, scan, canLaunch }: { l: ScanLinkRow; check: LinkChe
         <span className="net-pair">«{l.a}»</span> <span className="net-pair">— «{l.b}»</span>
         <div className="muted net-sub">{strength}</div>
       </th>
-      {NETS.map((n) => (
+      {columns.map((n) => (
         <NetCell key={n.key} n={byNet.get(n.key)} label={n.short} />
       ))}
       <td data-label="Проверка" className="net-action">
@@ -198,6 +213,7 @@ export function Nets() {
   // проверка связи: последняя по этой паре показателей
   const checks = new Map<string, LinkCheck>();
   for (const c of d?.checks ?? []) checks.set(pairOf(c.a, c.b), c);
+  const columns = columnsOf(d?.checks ?? []);
   const finished = (d?.checks ?? []).filter((c) => c.total > 0 && c.finished === c.total);
   const step = snapshot === "" ? 0 : !scanDone ? 1 : finished.length === 0 ? 2 : 3;
   const findButton = (label: string, primary: boolean) =>
@@ -336,7 +352,7 @@ export function Nets() {
                 <thead>
                   <tr>
                     <th scope="col">Связь</th>
-                    {NETS.map((n) => (
+                    {columns.map((n) => (
                       <th key={n.key} scope="col" className="num">
                         {n.short}
                       </th>
@@ -346,7 +362,14 @@ export function Nets() {
                 </thead>
                 <tbody>
                   {scan.links.map((l) => (
-                    <LinkRow key={pairOf(l.a, l.b)} l={l} check={checks.get(pairOf(l.a, l.b))} scan={scan} canLaunch={canLaunch} />
+                    <LinkRow
+                      key={pairOf(l.a, l.b)}
+                      l={l}
+                      check={checks.get(pairOf(l.a, l.b))}
+                      scan={scan}
+                      canLaunch={canLaunch}
+                      columns={columns}
+                    />
                   ))}
                 </tbody>
               </table>

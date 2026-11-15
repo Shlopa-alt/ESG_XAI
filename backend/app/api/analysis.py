@@ -35,10 +35,11 @@ from app.models import (
     User,
 )
 from app.services import analysis, kb_text, net_catalog, resources
+from app.services import method_library as lib
 from app.services.codes import next_code
 from app.services.data_files import Table
 from app.services.qwen_experiments import close_open_proposals, experiment_from_hypothesis
-from app.services.run_templates import TEMPLATES, ParamError, check_params
+from app.services.run_templates import ParamError, check_params
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -158,9 +159,15 @@ def authors(settings: Settings, refs: list[KbRef]) -> tuple[dict[str, Any] | Non
 
 
 @router.get("/catalog", dependencies=[Depends(current_user)])
-def catalog() -> dict[str, Any]:
-    """Классификация «тип задачи → рекомендуемые сети» и что из них считается в платформе."""
-    return net_catalog.catalog()
+def catalog(db: Annotated[Session, Depends(get_db)]) -> dict[str, Any]:
+    """Классификация «тип задачи → рекомендуемые сети» и что из них считается в платформе —
+    вместе с включёнными методами из статей банка."""
+    return net_catalog.catalog({m.net: f"{lib.PREFIX}{m.code}" for m in lib.enabled(db) if m.net})
+
+
+def _library(db: Session) -> list[tuple[Any, str]]:
+    """Включённые методы из статей: шаблон расчёта и сеть каталога (lstm, cnn…)."""
+    return [(lib.template_of(m), m.net) for m in lib.enabled(db)]
 
 
 @router.post("/recommend")
@@ -174,12 +181,17 @@ def recommend(
     table = snapshot_table(db, settings, snap, user, body.sheet)  # NDA — только с допуском
     h = _hypothesis(db, body.hypothesis)
     found, note = authors(settings, _refs(db, h)) if h is not None else (None, "")
+    if found is not None and not found.get("runnable"):
+        # сети авторов нет среди встроенных, но есть метод из статьи с этой сетью — повторить можно
+        m = next((m for m in lib.enabled(db) if m.net == found.get("net")), None)
+        if m is not None:
+            found = {**found, "runnable": True, "template": f"{lib.PREFIX}{m.code}", "params": {}}
     node = _node(db, body.node)
     if node is None and h is not None and h.methodology_node_id:
         node = db.get(MethodologySection, h.methodology_node_id)
     try:
         rows = resources.rows_of(settings, snap, table.sheet)
-        out = analysis.recommend(table, rows, body.target, node, found)
+        out = analysis.recommend(table, rows, body.target, node, found, _library(db))
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     return {
@@ -208,7 +220,7 @@ def launch(
     user: Annotated[User, Researcher],
 ) -> LaunchOut:
     """Проверка EXP-NNN и расчёт — одним действием. Не встал расчёт — нет и проверки."""
-    t = TEMPLATES.get(body.template)
+    t = lib.template(db, body.template)  # метод из статьи — только включённый
     if t is None or t.scope != "generic":
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -372,7 +384,9 @@ def _fit_net(db: Session, settings: Settings, table: Table, rows: int | None,
     """Параметры сети набора, с которыми расчёт укладывается в лимит метода. Не укладывается —
     меньше испытаний подбора (протокол CR-01 не трогаем), иначе None и причина: сеть пропускается,
     остальные сети набора считаются."""
-    t = TEMPLATES[rec["template"]]
+    t = lib.template(db, rec["template"])
+    if t is None:
+        return None, "метода нет в библиотеке"
     try:
         checked = check_params(t, rec["params"], table.columns, table.numeric, table.sheets, table.sheet)
     except ParamError as exc:
@@ -425,10 +439,12 @@ def link_check(
     node = _node(db, body.node)
     rows = resources.rows_of(settings, snap, table.sheet)
     try:
-        out = analysis.recommend(table, rows, body.target, node)
+        out = analysis.recommend(table, rows, body.target, node, library=_library(db))
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
-    recs = [r for r in out["recommendations"] if r["key"] in NET_SET and r["runnable"]]
+    # набор: перцептрон, трансформер, бустинг с линейной — и включённые методы из статей
+    recs = [r for r in out["recommendations"]
+            if (r["key"] in NET_SET or r["key"].startswith(lib.PREFIX)) and r["runnable"]]
     if not recs:
         why = "; ".join(w for r in out["recommendations"] for w in r["warnings"])
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -525,6 +541,14 @@ def _net_results(run: Run) -> list[dict[str, Any]]:
     if run.template == "lab-mlp":
         arch = str(params.get("architecture") or "mlp") if isinstance(params, dict) else "mlp"
         rows = [(arch, _num(s.get("mlp_r2_mean")), _num(s.get("placebo_r2_max")))]
+    elif run.template.startswith(lib.PREFIX):  # метод из статьи: протокол пишет те же итоги
+        title = str(s.get("method") or run.template.removeprefix(lib.PREFIX))
+        r2m, plm = _num(s.get("model_r2_mean")), _num(s.get("placebo_r2_max"))
+        holds = None
+        if run.status == "done" and r2m is not None:
+            holds = r2m > HOLDS_MIN_R2 and (plm is None or r2m > plm)
+        return [{"run_id": run.id, "status": run.status, "net": run.template, "title": title, "r2": r2m,
+                 "placebo": plm, "holds": holds}]
     elif run.template == "predictive-check":
         r2 = s.get("r2_mean")
         pl = s.get("placebo_max")

@@ -36,8 +36,9 @@ const LINKS = {
   },
   checks: [
     {
-      experiment: "EXP-011", a: "[a]", b: "[b]", target: "[b]", held: 2, finished: 4, total: 4,
-      nets: [net("mlp", 0.41, true), net("transformer", 0.02, false), net("gbm", 0.03, false), net("linear", 0.38, true)],
+      experiment: "EXP-011", a: "[a]", b: "[b]", target: "[b]", held: 3, finished: 5, total: 5,
+      nets: [net("mlp", 0.41, true), net("transformer", 0.02, false), net("gbm", 0.03, false), net("linear", 0.38, true),
+        { ...net("method:M-01", 0.44, true), title: "[LSTM авторов]" }],
     },
   ],
 };
@@ -87,7 +88,10 @@ describe("Нейросети", () => {
     expect(screen.getByText(/наблюдение — «\[страна\]»/)).toBeInTheDocument();
     const table = screen.getByRole("table", { name: "Связи из поиска и их проверка сетями" });
     const checked = within(table).getByRole("rowheader", { name: /«\[a\]» — «\[b\]»/ }).closest("tr") as HTMLElement;
-    expect(within(checked).getByText("держится у 2 из 4")).toBeInTheDocument();
+    expect(within(checked).getByText("держится у 3 из 5")).toBeInTheDocument();
+    // метод из библиотеки (статья банка) — своим столбцом
+    expect(within(table).getByRole("columnheader", { name: "[LSTM авторов]" })).toBeInTheDocument();
+    expect(within(checked).getByText(/R² 0,44, на перемешанной цели 0,05 — держится/)).toBeInTheDocument();
     expect(within(checked).getByText(/R² 0,41, на перемешанной цели 0,05 — держится/)).toBeInTheDocument();
     expect(within(checked).getByText(/R² 0,02, на перемешанной цели 0,05 — не держится/)).toBeInTheDocument();
     expect(within(checked).getByRole("link", { name: "EXP-011" })).toHaveAttribute("href", "/experiments/EXP-011");
@@ -100,7 +104,7 @@ describe("Нейросети", () => {
     // шаг 4: связь, которая держится, — в идею, с итогами сетей в обосновании
     await userEvent.click(screen.getByRole("button", { name: "Предложить идеей" }));
     expect((await screen.findByLabelText("Обоснование") as HTMLTextAreaElement).value).toMatch(
-      /Проверка сетями \(EXP-011\), предсказывали «\[b\]»: держится у 2 из 4 — \[mlp\]: R² 0,41/,
+      /Проверка сетями \(EXP-011\), предсказывали «\[b\]»: держится у 3 из 5 — \[mlp\]: R² 0,41/,
     );
   });
 
@@ -115,7 +119,7 @@ describe("Нейросети", () => {
     unmount();
     stub("reader", LINKS);
     renderAt("/nets?snapshot=5");
-    expect(await screen.findByText("держится у 2 из 4")).toBeInTheDocument();
+    expect(await screen.findByText("держится у 3 из 5")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Проверить сетями" })).not.toBeInTheDocument();
     expect(screen.getByText("не проверялась")).toBeInTheDocument();
   });

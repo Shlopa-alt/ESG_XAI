@@ -27,9 +27,10 @@ from app.models import (
     MethodologySection,
     QwenJob,
 )
+from app.services import method_library
 from app.services.codes import next_code
 from app.services.data_files import Table, table_columns, to_container
-from app.services.run_templates import TEMPLATES, ParamError, check_params
+from app.services.run_templates import ParamError, check_params
 
 
 def _columns(settings: Settings, snap: DatasetSnapshot, sheet: str = "") -> Table | None:
@@ -83,7 +84,7 @@ def context(db: Session, settings: Settings, code: str) -> dict[str, Any]:
                 "dataset": t.dataset, "params": [{"name": p.name, "label": p.label, "kind": p.kind,
                                                   "default": p.default, "min": p.min, "max": p.max,
                                                   "options": [v for v, _ in p.options]}
-                                                 for p in t.params]} for t in TEMPLATES.values()]
+                                                 for p in t.params]} for t in method_library.templates(db)]
     return {
         "hypothesis": {"code": h.code, "title": h.title, "statement": h.statement, "rationale": h.rationale,
                        "suggested": h.suggested or {}, "refs": [{"title": r.title, "quote": r.quote} for r in refs]},
@@ -95,7 +96,7 @@ def context(db: Session, settings: Settings, code: str) -> dict[str, Any]:
 
 def problems(db: Session, settings: Settings, p: ExperimentProposal) -> str:
     """Что не так с предложением — пусто, если его можно одобрять как есть."""
-    t = TEMPLATES.get(p.method)
+    t = method_library.template(db, p.method)
     if t is None:
         return "Метод не из библиотеки — выберите метод" if p.method else "Подходящего метода нет — выберите метод"
     snap = db.get(DatasetSnapshot, p.snapshot_id) if p.snapshot_id else None
@@ -125,7 +126,7 @@ def create_from_result(db: Session, settings: Settings, job: QwenJob, result: di
     proposal = result.get("proposal") or {}
     snapshot_id = proposal.get("snapshot_id")
     method = str(proposal.get("method") or "")[:64]
-    template = TEMPLATES.get(method)
+    template = method_library.template(db, method)
     raw = proposal.get("params") if isinstance(proposal.get("params"), dict) else {}
     # модель иногда добавляет параметры другого метода — оставляем только параметры выбранного
     params = {k: v for k, v in raw.items() if template is not None and k in {x.name for x in template.params}}

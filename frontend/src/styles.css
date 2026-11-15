@@ -1039,3 +1039,8 @@ details[open] > .node-head .node-preview { display: none; }
 .idea-more > summary { cursor: pointer; color: var(--accent); font-size: 14px; font-weight: 500; }
 .idea-more[open] > summary { margin-bottom: 10px; }
 .idea-more > .stepper { margin: 10px 0; }
+
+/* --- библиотека методов: код и журнал проверки --- */
+.method-code, .method-log { max-height: 420px; overflow: auto; padding: 12px; border-radius: 8px; background: var(--surface-soft);
+  border: 1px solid var(--border); font-size: 12.5px; line-height: 1.5; white-space: pre; }
+.method-log { white-space: pre-wrap; }

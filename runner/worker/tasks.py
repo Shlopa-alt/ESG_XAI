@@ -6,6 +6,8 @@
 Исполнитель:
 1. сверяет sha256 файла среза с записанным в платформе — изменившиеся данные не считаются
    (правило 3);
+   метод из библиотеки (код написал Qwen по статье банка) приходит в самой задаче: исполнитель
+   сверяет его sha256 с записанным в платформе и кладёт рядом с результатами — method.py;
 2. запускает скрипт runner/<каталог>/<скрипт> <каталог датасета> <каталог результатов>
    --data <файл среза> <параметры> интерпретатором с зафиксированным окружением (requirements.lock);
 3. строки вывода и события `@event {...}` (ход, метрики) публикует в Redis: канал run:{id}
@@ -187,7 +189,9 @@ def flatten(data: Any, prefix: str = "") -> dict[str, float]:
 def run_script(argv: list[str], cwd: Path, ev: Events, tracker: Tracker, limit_s: int,
                log_file: Path) -> tuple[int, str]:
     """Скрипт до конца, остановки или лимита: (код выхода, причина остановки или "")."""
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1",
+           # общие модули библиотеки (common, protocol) видны и методу, лежащему вне runner/ (method.py)
+           "PYTHONPATH": os.pathsep.join(p for p in (str(cwd), os.environ.get("PYTHONPATH", "")) if p)}
     proc = subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="utf-8", errors="replace", bufsize=1,
                             start_new_session=True)  # своя группа процессов: остановка — всем частям
@@ -279,8 +283,19 @@ def execute(job: dict[str, Any]) -> str:
         results = Path(DATA_DIR) / job["experiment"] / f"run-{run_id:05d}"
         results.mkdir(parents=True, exist_ok=True)
         workdir = REPO / "runner" / job["workdir"]
+        script = str(job["script"])
+        if job.get("method_code") is not None:
+            # метод из библиотеки: считаем ровно тот код, что записан в платформе (sha256), и
+            # оставляем его рядом с результатами — по нему расчёт можно повторить (правило 3)
+            code = str(job["method_code"])
+            if hashlib.sha256(code.encode("utf-8")).hexdigest() != job.get("method_sha256"):
+                raise Failure("Код метода не совпал с записанным в платформе (sha256) — расчёт не начат")
+            (results / "method.py").write_text(code, encoding="utf-8")
+            script = str(results / "method.py")
+            ev.emit("log", line=f"[исполнитель] метод библиотеки {job.get('template')}: sha256 "
+                                f"{str(job['method_sha256'])[:12]}…")
         # скрипт считает именно сверенный файл среза, а не то, что лежит в каталоге датасета
-        argv = [RUN_PYTHON, "-u", "-B", job["script"], str(ds_dir), str(results), "--data", str(snap),
+        argv = [RUN_PYTHON, "-u", "-B", script, str(ds_dir), str(results), "--data", str(snap),
                 *job["args"]]
         ev.emit("log", line="$ " + " ".join(argv[3:]))
         tracker.start(job)

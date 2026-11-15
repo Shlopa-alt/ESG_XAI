@@ -27,7 +27,7 @@ from app.models import (
     QwenJob,
     Run,
 )
-from app.services.run_templates import TEMPLATES
+from app.services import method_library
 
 NUM = re.compile(r"[−-]?\d+(?:[.,]\d+)?")
 SECTION_KEYS = ("summary", "verdict", "verdict_reason", "interpretation", "meaning", "methodology",
@@ -44,7 +44,7 @@ def facts(db: Session, exp: Experiment, run: Run | None) -> dict[str, Any]:
     proposal = db.scalar(select(ExperimentProposal).where(ExperimentProposal.experiment_id == exp.id))
     snap = db.get(DatasetSnapshot, run.dataset_snapshot_id) if run and run.dataset_snapshot_id else None
     ds = db.get(Dataset, snap.dataset_id) if snap else None
-    t = TEMPLATES.get(run.template) if run else None
+    t = method_library.template(db, run.template) if run else None
     report = exp.report or {}
     from app.api.runs import _reproducible  # здесь — чтобы не было циклического импорта
 

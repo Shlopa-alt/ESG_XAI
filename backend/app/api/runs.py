@@ -16,10 +16,10 @@ from app.api.deps import current_user, require_role
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import Dataset, DatasetSnapshot, Experiment, Run, User
-from app.services import resources, run_queue
-from app.services.report import Report, merge_run_report
+from app.services import method_library, resources, run_queue
 from app.services.data_files import Table, is_table, table_columns, to_container
-from app.services.run_templates import TEMPLATES, ParamError, check_params, script_args
+from app.services.report import Report, merge_run_report
+from app.services.run_templates import ParamError, check_params, script_args
 
 router = APIRouter(tags=["runs"])
 
@@ -257,7 +257,7 @@ def list_templates(db: Annotated[Session, Depends(get_db)]) -> list[TemplateOut]
     rows = db.execute(select(DatasetSnapshot, Dataset.code).join(Dataset)
                       .order_by(Dataset.code, DatasetSnapshot.id.desc())).all()
     out = []
-    for t in TEMPLATES.values():
+    for t in method_library.templates(db):  # встроенные и включённые методы из статей
         snaps = [(s, code) for s, code in rows
                  if (code == t.dataset if t.scope == "replication"
                      else is_table(s.storage_path))]
@@ -291,7 +291,7 @@ def start_run(db: Session, settings: Settings, user: User, template: str, snapsh
     """Запуск метода библиотеки: метод, срез, эксперимент и параметры проверены — задача в очередь
     исполнителя. Общий метод — на любом срезе-таблице и в указанном эксперименте; повтор — на срезе
     своего датасета и в своём эксперименте."""
-    t = TEMPLATES.get(template)
+    t = method_library.template(db, template)  # метод из статьи — только включённый администратором
     if t is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет метода {template}")
     snap = db.get(DatasetSnapshot, snapshot_id)
@@ -337,6 +337,8 @@ def start_run(db: Session, settings: Settings, user: User, template: str, snapsh
                                 "На видеокарте уже идёт ваш запуск — дождитесь его или остановите")
     run = Run(experiment_id=exp.id, status="queued", resource=est.resource, template=t.key,
               config={"params": checked, "limit_min": t.limit_min,
+                      # метод из статьи: какой код считал (M-NN и sha256) — правило 3
+                      **({"method": {"code": t.method, "sha256": t.method_sha256}} if t.method else {}),
                       "estimate": {k: getattr(est, k) for k in ("minutes", "low", "high", "resource", "basis")}},
               seeds={}, dataset_snapshot_id=snap.id, created_by=user.id)
     db.add(run)
@@ -346,6 +348,8 @@ def start_run(db: Session, settings: Settings, user: User, template: str, snapsh
         "workdir": t.workdir, "script": t.script, "args": script_args(t, checked, exp.code, ds.code),
         "params": checked, "snapshot_path": snap.storage_path, "snapshot_sha256": snap.sha256,
         "dataset_dir_up": t.dataset_dir_up, "limit_min": t.limit_min, "template": t.key,
+        # метод из статьи: код — в самой задаче, исполнитель сверит sha256 и положит его к результатам
+        **({"method_code": t.method_code, "method_sha256": t.method_sha256} if t.method else {}),
     }
     try:
         run.task_id = run_queue.enqueue(settings.redis_url, run.id, job, est.resource)
@@ -368,7 +372,7 @@ def run_estimate(body: EstimateIn, db: Annotated[Session, Depends(get_db)],
                  user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
     """Цена расчёта до запуска: где посчитается, сколько минут, лимит метода, очередь, квота и —
     если не укладывается — как уложиться. blocked — почему сервер такой запуск не примет."""
-    t = TEMPLATES.get(body.template)
+    t = method_library.template(db, body.template)
     if t is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет метода {body.template}")
     snap = db.get(DatasetSnapshot, body.snapshot_id)

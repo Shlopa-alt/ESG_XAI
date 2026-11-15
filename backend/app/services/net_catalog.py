@@ -151,8 +151,10 @@ def runnable(key: str) -> bool:
     return bool(NETS[key].template)
 
 
-def catalog() -> dict[str, Any]:
-    """Для экрана: типы задач с сетями и что из них считается в платформе."""
+def catalog(library: dict[str, str] | None = None) -> dict[str, Any]:
+    """Для экрана: типы задач с сетями и что из них считается в платформе. library — сети, для
+    которых в библиотеке есть включённый метод из статьи (сеть → ключ метода)."""
+    library = library or {}
     return {
         "tasks": [
             {"key": t.key, "title": t.title, "example": t.example, "nets": list(t.nets)}
@@ -163,8 +165,8 @@ def catalog() -> dict[str, Any]:
                 "key": n.key,
                 "title": n.title,
                 "family": n.family,
-                "runnable": bool(n.template),
-                "template": n.template,
+                "runnable": bool(n.template) or n.key in library,
+                "template": n.template or library.get(n.key, ""),
                 "nearest": n.nearest,
             }
             for n in NETS.values()

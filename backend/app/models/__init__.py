@@ -1,7 +1,11 @@
 from app.models.data_draft import DataDraft
 from app.models.hypothesis import Hypothesis, HypothesisRef
 from app.models.kb_import import KbImport
+from app.models.method import Method
 from app.models.methodology import ChangeRequest, CrBasis, MethodologySection, MethodologyVersion
+from app.models.proposal import ExperimentProposal
+from app.models.qwen_job import QwenJob
+from app.models.report_doc import ExperimentReport
 from app.models.research import (
     Dataset,
     DatasetSnapshot,
@@ -10,9 +14,6 @@ from app.models.research import (
     KbRef,
     Review,
 )
-from app.models.proposal import ExperimentProposal
-from app.models.qwen_job import QwenJob
-from app.models.report_doc import ExperimentReport
 from app.models.run import Run
 from app.models.user import User
 
@@ -30,6 +31,7 @@ __all__ = [
     "HypothesisRef",
     "KbImport",
     "KbRef",
+    "Method",
     "MethodologySection",
     "MethodologyVersion",
     "Review",
