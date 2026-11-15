@@ -44,7 +44,9 @@ def tried(db: Session, experiment_id: int) -> Tried | None:
     exp = db.get(Experiment, experiment_id)
     if exp is None:
         return None
-    runs = list(db.scalars(select(Run).where(Run.experiment_id == exp.id).order_by(Run.id)))
+    # «пробовали» — только законченные расчёты: упавший или стоящий в очереди работой не считается
+    runs = list(db.scalars(select(Run).where(Run.experiment_id == exp.id, Run.status == "done")
+                           .order_by(Run.id)))
     used_ds: dict[int, Dataset] = {}
     for sid in [exp.dataset_snapshot_id, *(r.dataset_snapshot_id for r in runs)]:
         ds = _dataset_of(db, sid)
@@ -55,7 +57,11 @@ def tried(db: Session, experiment_id: int) -> Tried | None:
     if not methods and exp.method:  # метод записан текстом, без расчёта библиотеки
         methods = [Named("", exp.method)]
     fresh = Dataset.id.not_in(list(used_ds)) if used_ds else true()
-    others = db.scalars(select(Dataset).where(fresh).order_by(Dataset.code).limit(ALTERNATIVES_MAX))
+    # предлагаем только наборы с версией данных: на остальных расчёт не запустить
+    has_version = (select(DatasetSnapshot.id)
+                   .where(DatasetSnapshot.dataset_id == Dataset.id).exists())
+    others = db.scalars(select(Dataset).where(fresh, has_version).order_by(Dataset.code)
+                        .limit(ALTERNATIVES_MAX))
     other_methods = [Named(t.key, t.title) for t in TEMPLATES.values()
                      if t.scope == "generic" and t.key not in used_keys][:ALTERNATIVES_MAX]
     return Tried(

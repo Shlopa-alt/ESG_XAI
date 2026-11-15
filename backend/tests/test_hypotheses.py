@@ -71,14 +71,19 @@ def test_similar_tested_idea_shows_what_was_tried(  # type: ignore[no-untyped-de
     c = make_client("reader1", "reader")
     c.post("/api/hypotheses", json=H)
     used, other = Dataset(code="DS-01", title="[набор 1]"), Dataset(code="DS-02", title="[набор 2]")
-    db_session.add_all([used, other])
+    empty = Dataset(code="DS-03", title="[набор без версии данных]")
+    db_session.add_all([used, other, empty])
     db_session.flush()
     snap = DatasetSnapshot(dataset_id=used.id, version="[версия]", sha256="0" * 64)
+    other_snap = DatasetSnapshot(dataset_id=other.id, version="[версия]", sha256="1" * 64)
     exp = Experiment(code="EXP-001", title="[проверка]", status="done", outcome="rejected")
-    db_session.add_all([snap, exp])
+    db_session.add_all([snap, other_snap, exp])
     db_session.flush()
-    db_session.add(Run(experiment_id=exp.id, template="rank-agreement",
+    db_session.add(Run(experiment_id=exp.id, template="rank-agreement", status="done",
                        dataset_snapshot_id=snap.id))
+    # упавший расчёт работой не считается: его метод и данные остаются в «что ещё попробовать»
+    db_session.add(Run(experiment_id=exp.id, template="lab-mlp", status="failed",
+                       dataset_snapshot_id=other_snap.id))
     h = db_session.query(Hypothesis).filter_by(code="H-001").one()
     h.experiment_id, h.status = exp.id, "tested"
     db_session.commit()
@@ -90,7 +95,8 @@ def test_similar_tested_idea_shows_what_was_tried(  # type: ignore[no-untyped-de
     assert [m["code"] for m in t["methods"]] == ["rank-agreement"]
     # предлагает то, чего ещё не пробовали: другой набор данных и другие методы библиотеки
     assert [d["code"] for d in t["other_datasets"]] == ["DS-02"]
-    assert t["other_methods"] and "rank-agreement" not in [m["code"] for m in t["other_methods"]]
+    other_methods = [m["code"] for m in t["other_methods"]]
+    assert "rank-agreement" not in other_methods and "lab-mlp" in other_methods
     assert all(m["code"] not in ("exp001-dow30", "exp007-hsu") for m in t["other_methods"])
 
 

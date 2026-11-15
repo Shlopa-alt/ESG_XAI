@@ -401,10 +401,13 @@ describe("Форма идеи: есть ли похожее", () => {
     await ui.type(screen.getByLabelText("Коротко, о чём идея"), "[[новая идея]");
     await ui.click(screen.getByRole("button", { name: "Проверить, есть ли похожее" }));
     expect(await screen.findByRole("link", { name: "EXP-001" })).toHaveAttribute("href", "/experiments/EXP-001");
-    expect(screen.getByText(/идея не подтвердилась\. Идея не подтвердилась — это тоже результат/)).toBeInTheDocument();
-    expect(screen.getByText(/данные — DS-01 «\[набор 1\]»/)).toBeInTheDocument();
+    const note = screen.getByText(/^Проверялась в/).closest(".tried") as HTMLElement;
+    expect(note.textContent).toContain("EXP-001: идея не подтвердилась. Это тоже результат, и повторять так же незачем.");
+    expect(note.textContent).toContain("данные — DS-01 «[набор 1]»");
+    expect(note.textContent).toContain("другие данные: DS-02 «[набор 2]»");
+    expect(note.textContent).toContain("другой метод: lab-mlp «[метод 2]»");
     expect(screen.getByRole("link", { name: "DS-02" })).toHaveAttribute("href", "/datasets/DS-02");
-    expect(screen.getByText(/другой метод: lab-mlp «\[метод 2\]»/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "DS-01" })).toHaveAttribute("href", "/datasets/DS-01");
   });
 
   const hit = (doc_id: string, title: string) => ({

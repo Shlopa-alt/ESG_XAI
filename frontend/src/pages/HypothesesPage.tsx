@@ -39,23 +39,53 @@ export interface ProposeState {
 
 const ARTICLES_SHOWN = 3;
 
+// после итога («идея не подтвердилась») — без повтора итога; отрицательный итог — такой же результат
 const TRIED_LEAD: Record<Outcome, string> = {
-  confirmed: "Идея уже подтвердилась. Повторять так же незачем — проверьте её на других данных или другим методом, чтобы понять, насколько вывод общий.",
-  rejected: "Идея не подтвердилась — это тоже результат. Если думаете, что дело в данных или методе, возьмите другой вариант.",
-  inconclusive: "Результат неоднозначен — стоит перепроверить другим методом или на других данных.",
+  confirmed: "Повторять так же незачем. Чтобы понять, насколько вывод общий, проверьте его на других данных или другим методом.",
+  rejected:
+    "Это тоже результат, и повторять так же незачем. Проверка на других данных или другим методом — новая проверка: сошлитесь в ней на прежнюю, её итог остаётся в силе.",
+  inconclusive: "Стоит перепроверить другим методом или на других данных.",
 };
 
-const names = (xs: Named[]) => xs.map((x) => (x.code && x.code !== x.title ? `${x.code} «${x.title}»` : x.title)).join(", ");
+const FINISHED = new Set(["done", "failed"]);
 
-/** Похожую идею уже проверяли: итог, на чём считали и какой вариант взять другим. */
+/** Что сказать о проверке без итога: идёт, завершена без записанного итога или со сбоем. */
+function noOutcome(status: TriedCheck["status"]): string {
+  if (status === "done") return "Итог не записан — откройте проверку и посмотрите отчёт.";
+  if (status === "failed") return "Расчёт завершился сбоем, итога нет.";
+  return `Проверка ещё идёт (${STATUS_LABEL[status]}) — дождитесь итога, чтобы не повторять её.`;
+}
+
+/** «DS-01 «название»» — код ссылкой и название в кавычках; у метода без кода — только название. */
+function NamedList({ items, link }: { items: Named[]; link?: (code: string) => string }) {
+  return (
+    <>
+      {items.map((x, n) => (
+        <span key={x.code || x.title}>
+          {n > 0 && ", "}
+          {x.code && link ? (
+            <Link to={link(x.code)} className="mono">
+              {x.code}
+            </Link>
+          ) : (
+            x.code && <span className="mono">{x.code}</span>
+          )}
+          {x.code && x.code !== x.title ? ` «${x.title}»` : !x.code && x.title}
+        </span>
+      ))}
+    </>
+  );
+}
+
+const datasetLink = (code: string) => `/datasets/${code}`;
+
+/** Похожую идею уже проверяли или проверяют: итог, на чём считали и что ещё можно попробовать. */
 function TriedNote({ t }: { t: TriedCheck }) {
-  const lead = t.outcome
-    ? TRIED_LEAD[t.outcome]
-    : `Проверка ещё не закончена (${STATUS_LABEL[t.status]}). Дождитесь итога или возьмите другой вариант, чтобы не повторять её.`;
+  const lead = t.outcome ? TRIED_LEAD[t.outcome] : noOutcome(t.status);
   return (
     <div className="tried">
       <p>
-        Уже проверялась в{" "}
+        {FINISHED.has(t.status) ? "Проверялась в " : "Проверяется в "}
         <Link to={`/experiments/${t.experiment}`} className="mono">
           {t.experiment}
         </Link>
@@ -64,29 +94,35 @@ function TriedNote({ t }: { t: TriedCheck }) {
       {(t.datasets.length > 0 || t.methods.length > 0) && (
         <p className="muted">
           Пробовали:
-          {t.datasets.length > 0 && <> данные — {names(t.datasets)}</>}
+          {t.datasets.length > 0 && (
+            <>
+              {" "}
+              данные — <NamedList items={t.datasets} link={datasetLink} />
+            </>
+          )}
           {t.datasets.length > 0 && t.methods.length > 0 && ";"}
-          {t.methods.length > 0 && <> метод — {names(t.methods)}</>}.
+          {t.methods.length > 0 && (
+            <>
+              {" "}
+              метод — <NamedList items={t.methods} />
+            </>
+          )}
+          .
         </p>
       )}
       <div>
-        <strong>Другой вариант</strong>
+        <strong>Что ещё можно попробовать</strong>
         <ul className="list">
           {t.other_datasets.length > 0 && (
             <li>
-              другие данные:{" "}
-              {t.other_datasets.map((d, n) => (
-                <span key={d.code}>
-                  {n > 0 && ", "}
-                  <Link to={`/datasets/${d.code}`} className="mono">
-                    {d.code}
-                  </Link>{" "}
-                  {d.title}
-                </span>
-              ))}
+              другие данные: <NamedList items={t.other_datasets} link={datasetLink} />
             </li>
           )}
-          {t.other_methods.length > 0 && <li>другой метод: {names(t.other_methods)}</li>}
+          {t.other_methods.length > 0 && (
+            <li>
+              другой метод: <NamedList items={t.other_methods} />
+            </li>
+          )}
           <li>другой показатель, отрасль или горизонт — уточните это в утверждении</li>
         </ul>
       </div>
