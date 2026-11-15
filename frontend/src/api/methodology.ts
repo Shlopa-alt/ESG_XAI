@@ -114,3 +114,58 @@ export const addCrBasis = (code: string, experimentCode: string) =>
     method: "POST",
     body: JSON.stringify({ basis_type: "experiment", experiment_code: experimentCode }),
   });
+
+/** «Что говорят статьи» по пункту методики: сводка фактов банка статей о связи «фактор → результат». */
+export type Direction = "up" | "down" | "none" | "other";
+export interface ArticleQuote {
+  quote: string;
+  doc_id: string;
+  title: string;
+  year: number | null;
+  url: string;
+}
+export interface ArticleLink {
+  from: string;
+  relation: string;
+  to: string;
+  hedged: boolean;
+  documents: number;
+  quotes: ArticleQuote[];
+}
+export interface ArticlesSummary {
+  factor: string;
+  outcome: string;
+  groups: Array<{ key: Direction; documents: number; links: ArticleLink[] }>;
+  total: number;
+  leader: Direction | "";
+  agreement: number | null;
+  experiments: Array<{ code: string; title: string; status: string; outcome: "confirmed" | "rejected" | "inconclusive" | null }>;
+  hypotheses: Array<{
+    code: string;
+    title: string;
+    status: string;
+    effect: string;
+    target_kind: string;
+    weight: number | null;
+    experiment: string;
+    outcome: "confirmed" | "rejected" | "inconclusive" | null;
+  }>;
+  findings: Finding[];
+}
+/** Что сводка значит для пункта (этап 2): подсказка, решает человек. */
+export type Finding =
+  | { kind: "silent" }
+  | { kind: "few"; documents: number }
+  | { kind: "consensus" | "disputed"; leader: Direction; agreement: number }
+  | { kind: "idea_against"; code: string; claims: Direction }
+  | { kind: "check_agrees" | "check_against" | "check_other"; code: string; idea: string; outcome: "confirmed" | "rejected"; claims: Direction }
+  | { kind: "checks_unlinked"; codes: string[] }
+  | { kind: "unchecked" };
+/** Основание предложения из банка статей: статья с DOI (правила 2 и 5), с цитатой из неё. */
+export const addCrKbBasis = (
+  code: string,
+  basis: { basis_type: "kb_article"; kbrag_id: string; kb_path: string; title: string; doi: string; quote: string },
+) => call<ChangeRequest>(`/change-requests/${code}/bases`, { method: "POST", body: JSON.stringify(basis) });
+const node = (n: string) => `/methodology/sections/${encodeURIComponent(n)}`;
+export const articlesSummary = (n: string, factor: string, outcome: string) =>
+  call<ArticlesSummary>(`${node(n)}/articles?${new URLSearchParams({ factor, outcome }).toString()}`);
