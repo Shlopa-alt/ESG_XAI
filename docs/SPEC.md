@@ -123,6 +123,7 @@ POST            /datasets/{code}/snapshots            (загрузка срез
 
 GET/POST        /hypotheses                          (POST — любой вошедший)
 POST            /hypotheses/similar   {title, statement}  (похожие уже предложенные идеи — подсказка до отправки; любой вошедший)
+                -- у проверенной идеи tried: {experiment, status, outcome, datasets, methods, other_datasets, other_methods}
 PUT             /hypotheses/{code}/weight  {weight: 1|2|3|null}  (сила связи; reviewer, owner)
 GET             /hypotheses/{code}
 POST            /hypotheses/{code}/refs              (автор или researcher+)

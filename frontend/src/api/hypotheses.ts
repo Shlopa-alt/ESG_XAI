@@ -1,3 +1,5 @@
+import type { ExpStatus, Outcome } from "./experiments";
+
 /** Тип связи: как фактор влияет и на какие показатели (design/GLOSSARY.md). */
 export type Effect = "increases" | "decreases" | "no_effect" | "mixed";
 export type TargetKind = "financial" | "nonfinancial";
@@ -92,6 +94,21 @@ export interface SimilarIdea {
   status: HStatus;
   source: "human" | "qwen";
   share: number;
+  /** Идею уже проверяли: итог, что пробовали и чего ещё нет; null — проверки не было. */
+  tried: TriedCheck | null;
+}
+export interface Named {
+  code: string;
+  title: string;
+}
+export interface TriedCheck {
+  experiment: string;
+  status: ExpStatus;
+  outcome: Outcome | null;
+  datasets: Named[];
+  methods: Named[];
+  other_datasets: Named[];
+  other_methods: Named[];
 }
 export const similarHypotheses = (title: string, statement: string) =>
   call<SimilarIdea[]>("/hypotheses/similar", { method: "POST", body: JSON.stringify({ title, statement }) });

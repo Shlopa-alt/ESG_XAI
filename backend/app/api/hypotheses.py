@@ -13,6 +13,7 @@ from app.api.deps import current_user, require_role
 from app.api.experiments import node_id, node_number
 from app.db import get_db
 from app.models import Experiment, Hypothesis, HypothesisRef, KbRef, MethodologySection, User
+from app.services.alternatives import Tried, tried
 from app.services.codes import next_code
 from app.services.qwen_experiments import close_open_proposals, experiment_from_hypothesis
 from app.services.qwen_hypotheses import PILLARS, idea
@@ -89,6 +90,8 @@ class SimilarOut(BaseModel):
     status: str
     source: str
     share: float  # доля общих содержательных слов от меньшей из двух идей
+    # идею уже проверяли: итог, что пробовали и что ещё нет; None — проверки не было
+    tried: Tried | None = None
 
 
 SIMILAR_SHARE = 0.4  # ниже повтора у Qwen (0,5): здесь только подсказка автору, решает он сам
@@ -111,7 +114,8 @@ def similar_ideas(db: Session, title: str, statement: str) -> list[SimilarOut]:
         share = len(new & old) / min(len(new), len(old))
         if share >= SIMILAR_SHARE:
             found.append(SimilarOut(code=h.code, title=h.title, status=h.status, source=h.source,
-                                    share=round(share, 2)))
+                                    share=round(share, 2),
+                                    tried=tried(db, h.experiment_id) if h.experiment_id else None))
     found.sort(key=lambda s: (-s.share, s.code))
     return found[:SIMILAR_MAX]
 

@@ -950,6 +950,9 @@ details[open] > .node-head .node-preview { display: none; }
 .similar-result { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
 .similar-result .h3 { margin: 4px 0 0; }
 .similar-result .list { margin: 0; }
+.tried { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 4px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface-soft); border-radius: 0 8px 8px 0; }
+.tried p { margin: 0; }
+.tried .list { margin: 2px 0 0; }
 .similar-quote { margin: 4px 0; line-height: 1.5; }
 /* --- задание методики и тип связи у идеи --- */
 .idea-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 16px; margin: 0; }

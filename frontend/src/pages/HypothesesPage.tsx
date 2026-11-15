@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
+import { type Outcome, OUTCOME_LABEL, STATUS_LABEL } from "../api/experiments";
 import {
   decideHypothesis,
   type Effect,
@@ -11,6 +12,7 @@ import {
   type HStatus,
   type Hypothesis,
   type KbRefIn,
+  type Named,
   listHypotheses,
   linkType,
   proposeHypothesis,
@@ -18,6 +20,7 @@ import {
   similarHypotheses,
   TARGET_KIND_LABEL,
   type TargetKind,
+  type TriedCheck,
   type Weight,
   WEIGHT_LABEL,
   WEIGHTS,
@@ -35,6 +38,61 @@ export interface ProposeState {
 }
 
 const ARTICLES_SHOWN = 3;
+
+const TRIED_LEAD: Record<Outcome, string> = {
+  confirmed: "Идея уже подтвердилась. Повторять так же незачем — проверьте её на других данных или другим методом, чтобы понять, насколько вывод общий.",
+  rejected: "Идея не подтвердилась — это тоже результат. Если думаете, что дело в данных или методе, возьмите другой вариант.",
+  inconclusive: "Результат неоднозначен — стоит перепроверить другим методом или на других данных.",
+};
+
+const names = (xs: Named[]) => xs.map((x) => (x.code && x.code !== x.title ? `${x.code} «${x.title}»` : x.title)).join(", ");
+
+/** Похожую идею уже проверяли: итог, на чём считали и какой вариант взять другим. */
+function TriedNote({ t }: { t: TriedCheck }) {
+  const lead = t.outcome
+    ? TRIED_LEAD[t.outcome]
+    : `Проверка ещё не закончена (${STATUS_LABEL[t.status]}). Дождитесь итога или возьмите другой вариант, чтобы не повторять её.`;
+  return (
+    <div className="tried">
+      <p>
+        Уже проверялась в{" "}
+        <Link to={`/experiments/${t.experiment}`} className="mono">
+          {t.experiment}
+        </Link>
+        {t.outcome && <>: {OUTCOME_LABEL[t.outcome]}</>}. {lead}
+      </p>
+      {(t.datasets.length > 0 || t.methods.length > 0) && (
+        <p className="muted">
+          Пробовали:
+          {t.datasets.length > 0 && <> данные — {names(t.datasets)}</>}
+          {t.datasets.length > 0 && t.methods.length > 0 && ";"}
+          {t.methods.length > 0 && <> метод — {names(t.methods)}</>}.
+        </p>
+      )}
+      <div>
+        <strong>Другой вариант</strong>
+        <ul className="list">
+          {t.other_datasets.length > 0 && (
+            <li>
+              другие данные:{" "}
+              {t.other_datasets.map((d, n) => (
+                <span key={d.code}>
+                  {n > 0 && ", "}
+                  <Link to={`/datasets/${d.code}`} className="mono">
+                    {d.code}
+                  </Link>{" "}
+                  {d.title}
+                </span>
+              ))}
+            </li>
+          )}
+          {t.other_methods.length > 0 && <li>другой метод: {names(t.other_methods)}</li>}
+          <li>другой показатель, отрасль или горизонт — уточните это в утверждении</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
 
 /** Есть ли похожее: уже предложенные идеи и статьи банка о том же. Ничего не отправляет. */
 function SimilarCheck({ title, statement, refs, onAddRef }: {
@@ -82,6 +140,7 @@ function SimilarCheck({ title, statement, refs, onAddRef }: {
                   </a>{" "}
                   {i.title} <span className={`badge ${H_BADGE[i.status]}`}>{H_STATUS_LABEL[i.status]}</span>
                   {i.source === "qwen" && <span className="muted"> · предложил ИИ-помощник</span>}
+                  {i.tried && <TriedNote t={i.tried} />}
                 </li>
               ))}
             </ul>
