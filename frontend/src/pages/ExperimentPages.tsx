@@ -19,6 +19,7 @@ import { experimentRuns, RunsTable } from "./RunPage";
 import { Chart } from "../components/Charts";
 import { ReportPanel } from "../components/ReportPanel";
 import { ChecksTabs } from "../components/SectionTabs";
+import { CycleNext } from "../components/CycleNext";
 import { experimentNext, NextStep } from "../components/Ux";
 import { ExperimentEditor, toReport } from "./ExperimentEditor";
 
@@ -418,7 +419,11 @@ export function Experiment() {
           </button>
         )}
       </div>
-      {!runs.isPending && <NextStep>{experimentNext(e.status, runs.data ?? [])}</NextStep>}
+      {!runs.isPending && (
+        <NextStep>
+          <CycleNext experiment={e.code} fallback={experimentNext(e.status, runs.data ?? [])} />
+        </NextStep>
+      )}
       {editing && <ExperimentEditor e={e} onClose={() => setEditing(false)} />}
       {report.kpis.length > 0 ? (
         <div className="kpis">

@@ -29,6 +29,7 @@ import { kbSearch } from "../api/kb";
 import { useMe } from "../auth/useAuth";
 import { NodeSelect } from "../components/NodeSelect";
 import { ProposalPanel } from "../components/ProposalPanel";
+import { CycleNext } from "../components/CycleNext";
 import { canReview, canRun, HypothesisPath, hypothesisNext, NextStep } from "../components/Ux";
 import { refFromHit } from "./KbLive";
 
@@ -467,7 +468,11 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
           ) : undefined
         }
       >
-        {hypothesisNext(h.status, role, h.code, h.experiment)}
+        {h.status === "tested" ? (
+          <CycleNext experiment={h.experiment} fallback={hypothesisNext(h.status, role, h.code, h.experiment)} />
+        ) : (
+          hypothesisNext(h.status, role, h.code, h.experiment)
+        )}
       </NextStep>
       {h.refs.length > 0 && (
         // раскрыты сразу при любом статусе: источник — то, на чём держится идея; свернуть можно вручную
