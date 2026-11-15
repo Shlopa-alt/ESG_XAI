@@ -285,13 +285,13 @@ def test_link_check_runs_net_set_in_one_check(  # type: ignore[no-untyped-def]
     sid = _snapshot(db_session, tmp_path)
     scan = _scan_run(db_session, sid, [("[x1]", "[ROA_2022]")])
     body = {"scan_run": scan, "a": "[x1]", "b": "[ROA_2022]", "target": "[ROA_2022]"}
-    assert make_client("rd", "reader").post("/api/analysis/link-check", json=body).status_code == 403
-    c = make_client("own", "owner")
+    rd, c = make_client("rd", "reader"), make_client("own", "owner")
+    assert rd.post("/api/analysis/link-check", json=body).status_code == 403
     r = c.post("/api/analysis/link-check", json=body)
     assert r.status_code == 201, r.text
     exp = db_session.scalar(select(Experiment).where(Experiment.code == r.json()["experiment"]))
     assert exp is not None and exp.config["link_check"] == {
-        "scan_run": scan, "a": "[x1]", "b": "[ROA_2022]", "target": "[ROA_2022]"}
+        "scan_run": scan, "a": "[x1]", "b": "[ROA_2022]", "target": "[ROA_2022]", "skipped": []}
     runs = [db_session.get(Run, i) for i in r.json()["run_ids"]]
     assert [(x.template, x.config["params"].get("architecture")) for x in runs if x] == [
         ("lab-mlp", "mlp"), ("lab-mlp", "transformer"), ("predictive-check", None)]
@@ -303,7 +303,7 @@ def test_link_check_runs_net_set_in_one_check(  # type: ignore[no-untyped-def]
     assert c.post("/api/analysis/link-check", json=other).status_code == 422
     assert c.post("/api/analysis/link-check", json={**body, "target": "[x2]"}).status_code == 422
 
-    out = make_client("rd", "reader").get(f"/api/analysis/links?snapshot_id={sid}").json()
+    out = rd.get(f"/api/analysis/links?snapshot_id={sid}").json()
     assert out["scan"]["run_id"] == scan and out["scan"]["links"][0]["a"] == "[x1]"
     check = out["checks"][0]
     assert check["experiment"] == exp.code and [n["net"] for n in check["nets"]] == [
@@ -318,7 +318,7 @@ def test_link_check_runs_net_set_in_one_check(  # type: ignore[no-untyped-def]
     pc.status, pc.summary = "done", {"r2_mean": {"LightGBM": 0.3, "Линейная (Ridge)": 0.3},
                                      "placebo_max": {"LightGBM": 0.35, "Линейная (Ridge)": 0.05}}
     db_session.commit()
-    check = make_client("rd", "reader").get(f"/api/analysis/links?snapshot_id={sid}").json()["checks"][0]
+    check = rd.get(f"/api/analysis/links?snapshot_id={sid}").json()["checks"][0]
     assert [n["holds"] for n in check["nets"]] == [True, False, False, True]
     assert (check["held"], check["finished"], check["total"]) == (2, 4, 4)
 
@@ -329,11 +329,12 @@ def test_link_check_needs_finished_scan_and_nda_access(  # type: ignore[no-untyp
     sid = _snapshot(db_session, tmp_path)
     scan = _scan_run(db_session, sid, [("[x1]", "[x2]")], status="running")
     body = {"scan_run": scan, "a": "[x1]", "b": "[x2]", "target": "[x2]"}
-    assert make_client("own", "owner").post("/api/analysis/link-check", json=body).status_code == 409
+    own, rd = make_client("own", "owner"), make_client("rd", "reader")
+    assert own.post("/api/analysis/link-check", json=body).status_code == 409
     assert db_session.scalars(select(Run).where(Run.template != "correlation-scan")).all() == []
     nda = _snapshot(db_session, tmp_path, code="DS-08", access="nda")
-    assert make_client("rd", "reader").get(f"/api/analysis/links?snapshot_id={nda}").status_code == 403
-    assert make_client("own", "owner").get(f"/api/analysis/links?snapshot_id={nda}").json()["scan"] is None
+    assert rd.get(f"/api/analysis/links?snapshot_id={nda}").status_code == 403
+    assert own.get(f"/api/analysis/links?snapshot_id={nda}").json()["scan"] is None
 
 
 def test_prediction_on_panel_splits_by_entity() -> None:
