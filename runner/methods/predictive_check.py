@@ -1,6 +1,8 @@
 """Метод «Предсказательная проверка» (протокол CR-01): предсказывают ли признаки цель лучше среднего.
 
-Параметры (--params): target — целевой показатель, features — признаки, seed, splits.
+Параметры (--params): target — целевой показатель, features — признаки, seed, splits, group —
+столбец-группа панели (компания × год): тогда отложенная часть — компании целиком, которых не было
+в обучении (common.holdout), иначе R² завышен — модель узнаёт компанию, а не связь.
 Модели без подбора гиперпараметров по тесту: линейная (Ridge на стандартизированных признаках) и
 градиентный бустинг (LightGBM с умеренными фиксированными настройками). Каждая — на `splits`
 случайных разбиениях 80/20; метрика — R² на отложенной части (0 — уровень прогноза средним).
@@ -18,11 +20,21 @@ import pandas as pd
 from lightgbm import LGBMRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
-from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from common import event, fmt, load_table, numeric, parse_args, results_dir, write_run
+from common import (
+    MIN_GROUPS,
+    event,
+    fmt,
+    group_values,
+    holdout,
+    load_table,
+    numeric,
+    parse_args,
+    results_dir,
+    write_run,
+)
 
 warnings.filterwarnings("ignore")
 
@@ -36,10 +48,12 @@ def models(seed: int) -> dict:
     }
 
 
-def scores(x: np.ndarray, y: np.ndarray, seed: int, splits: int, label: str) -> dict[str, list[float]]:
+def scores(x: np.ndarray, y: np.ndarray, groups: np.ndarray | None, seed: int, splits: int,
+           label: str) -> dict[str, list[float]]:
     out: dict[str, list[float]] = {name: [] for name in models(seed)}
     for i in range(splits):
-        xtr, xte, ytr, yte = train_test_split(x, y, test_size=0.2, random_state=seed + i)
+        tr, te = holdout(len(y), groups, seed + i)
+        xtr, xte, ytr, yte = x[tr], x[te], y[tr], y[te]
         for name, make in models(seed + i).items():
             out[name].append(float(r2_score(yte, make().fit(xtr, ytr).predict(xte))))
         if (i + 1) % 5 == 0 or i + 1 == splits:
@@ -58,15 +72,28 @@ def main() -> int:
     p = args.params
     target, features = str(p["target"]), list(p["features"])
     seed, splits = int(p.get("seed", 42)), int(p.get("splits", 30))
+    group = str(p.get("group") or "")
+    if group and group in (target, *features):
+        raise SystemExit("Столбец-группа делит строки на части — он не может быть целью или признаком")
     t0, started = time.time(), datetime.now(UTC).isoformat()
     out = results_dir(args.results_root)
     df = load_table(args.data, p.get("sheet", ""))
-    data = pd.DataFrame({c: numeric(df, c) for c in [target, *features]}).dropna()
+    gcol = group_values(df, group)
+    data = pd.DataFrame({c: numeric(df, c) for c in [target, *features]}
+                        | ({"__group": gcol} if gcol is not None else {})).dropna()
     if len(data) < 30:
         raise SystemExit(f"Строк без пропусков — {len(data)}, для 30 разбиений нужно хотя бы 30")
+    groups = data["__group"].to_numpy(str) if gcol is not None else None
+    n_groups = len(np.unique(groups)) if groups is not None else 0
+    if groups is not None and n_groups < MIN_GROUPS:
+        raise SystemExit(f"Групп «{group}» — {n_groups}, нужно хотя бы {MIN_GROUPS}: иначе в отложенной части "
+                         "одна-две, и R² ни о чём не говорит")
+    data = data.drop(columns=["__group"], errors="ignore")
     x, y = data[features].to_numpy(float), data[target].to_numpy(float)
-    real = scores(x, y, seed, splits, "реальная цель")
-    placebo = scores(x, np.random.default_rng(seed).permutation(y), seed, splits, "плацебо")
+    real = scores(x, y, groups, seed, splits, "реальная цель")
+    placebo = scores(x, np.random.default_rng(seed).permutation(y), groups, seed, splits, "плацебо")
+    part = (f"отложенная часть — {group} целиком ({n_groups} групп)" if groups is not None
+            else "случайных разбиений 80/20")
     res = {"rows": len(data), "target": target, "features": features,
            "real": {k: summary(v) for k, v in real.items()}, "placebo": {k: summary(v) for k, v in placebo.items()}}
     for name, s in res["real"].items():
@@ -88,7 +115,7 @@ def main() -> int:
         "charts": [{
             "id": "r2_splits", "kind": "ranges", "unit": "R²",
             "title": f"Качество прогноза «{target}», R² на отложенной выборке",
-            "subtitle": f"{splits} случайных разбиений 80/20, {len(data)} строк, признаков {len(features)}; "
+            "subtitle": f"{splits} разбиений, {part}; {len(data)} строк, признаков {len(features)}; "
                         "точка — среднее, отрезок — от минимума до максимума",
             "reference": {"value": 0, "label": "прогноз средним"},
             "rows": [{"name": k, **{m: v[m] for m in ("mean", "min", "max")}} for k, v in res["real"].items()]
@@ -99,8 +126,12 @@ def main() -> int:
                               "всё, что не выше этого, может быть случайностью.",
         }],
     }
-    write_run(args, out, "predictive_check", started, t0, data, {"split": seed, "splits": splits},
-              {"best_model": best, "best_r2_mean": b["mean"], "placebo_r2_max": pl["max"], "rows": len(data)}, report)
+    write_run(args, out, "predictive_check", started, t0, data, {"split": seed, "splits": splits, "group": group},
+              {"best_model": best, "best_r2_mean": b["mean"], "placebo_r2_max": pl["max"], "rows": len(data),
+               # R² каждой модели и плацебо — для сравнения сетей на вкладке «Нейросети»
+               "r2_mean": {k: v["mean"] for k, v in res["real"].items()},
+               "placebo_max": {k: v["max"] for k, v in res["placebo"].items()},
+               "group": group, "groups": n_groups}, report)
     return 0
 
 

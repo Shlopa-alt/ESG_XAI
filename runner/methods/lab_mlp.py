@@ -9,7 +9,10 @@
   architecture — сеть: mlp (по умолчанию — модель лаборатории, п. 3.1) или transformer (трансформер
              для таблиц: каждый вход — свой токен, самовнимание, FT-Transformer). Замена сети при том же
              протоколе — чтобы сравнить «как у авторов» статьи с альтернативой;
-  seed, splits (разбиений 80/20, по CR-01 — не меньше 30), trials (испытаний Optuna на разбиение).
+  seed, splits (разбиений 80/20, по CR-01 — не меньше 30), trials (испытаний Optuna на разбиение);
+  group    — столбец-группа панели (компания × год, необязательно): отложенная часть и части подбора
+             гиперпараметров — компании целиком (common.holdout, common.folds). Иначе годы одной
+             компании попадают и в обучение, и в проверку, и R² завышен.
 
 Модель — п. 3.1 методики: h = σ(W1·[X, Z] + b1), R = W2·h + b2, σ ∈ {ReLU, tanh}; обучение — MSE,
 Adam или RMSProp (п. 4). Та же сеть, что в EXP-007 (runner/hsu2025/models.py: LabMLP), — здесь копия,
@@ -38,10 +41,21 @@ import numpy as np
 import optuna
 import pandas as pd
 import torch
-from common import event, fmt, load_table, numeric, parse_args, results_dir, write_run
+from common import (
+    MIN_GROUPS,
+    event,
+    fmt,
+    folds,
+    group_values,
+    holdout,
+    load_table,
+    numeric,
+    parse_args,
+    results_dir,
+    write_run,
+)
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
-from sklearn.model_selection import KFold, train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from torch import nn
@@ -150,14 +164,18 @@ def space(trial: optuna.Trial) -> dict:
             "weight_decay": trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)}
 
 
-def tune(x: np.ndarray, y: np.ndarray, trials: int, seed: int) -> dict:
-    """Подбор только на (x, y) — обучающей части: среднее MSE перекрёстной проверки."""
-    folds = KFold(3 if len(x) < 60 else 5, shuffle=True, random_state=seed)
+def tune(x: np.ndarray, y: np.ndarray, trials: int, seed: int, groups: np.ndarray | None = None) -> dict:
+    """Подбор только на (x, y) — обучающей части: среднее MSE перекрёстной проверки (с groups —
+    по группам: компания целиком в одной части)."""
+    k = 3 if len(x) < 60 else 5
+    if groups is not None:
+        k = max(2, min(k, len(np.unique(groups))))
+    parts = folds(len(x), groups, k, seed)
 
     def objective(trial: optuna.Trial) -> float:
         hp = space(trial)
         errs = []
-        for a, b in folds.split(x):
+        for a, b in parts:
             p = Fitted(x[a], y[a], hp, seed).predict(x[b])
             errs.append(float(np.mean((p - y[b]) ** 2)) if np.isfinite(p).all() else 1e18)
         return float(np.mean(errs))
@@ -171,10 +189,10 @@ def r2(y: np.ndarray, p: np.ndarray) -> float:
     return float(r2_score(y, p)) if np.isfinite(p).all() else float("nan")
 
 
-def one_split(x: np.ndarray, y: np.ndarray, lag: np.ndarray | None, seed: int, trials: int) -> dict[str, float]:
-    idx = np.arange(len(y))
-    tr, te = train_test_split(idx, test_size=0.2, random_state=seed)
-    hp = tune(x[tr], y[tr], trials, seed)
+def one_split(x: np.ndarray, y: np.ndarray, lag: np.ndarray | None, seed: int, trials: int,
+              groups: np.ndarray | None = None) -> dict[str, float]:
+    tr, te = holdout(len(y), groups, seed)
+    hp = tune(x[tr], y[tr], trials, seed, groups[tr] if groups is not None else None)
     out = {model_name(): r2(y[te], Fitted(x[tr], y[tr], hp, seed).predict(x[te])),
            "Линейная (Ridge)": r2(y[te], make_pipeline(StandardScaler(), Ridge(alpha=1.0)).fit(x[tr], y[tr])
                                   .predict(x[te]))}
@@ -244,16 +262,26 @@ def main() -> int:
     target, features = str(p["target"]), list(p["features"])
     context, lag_col = list(p.get("context") or []), str(p.get("lag") or "")
     seed, splits, trials = int(p.get("seed", 42)), int(p.get("splits", 30)), int(p.get("trials", 10))
+    group = str(p.get("group") or "")
     if target in features or target in context or (lag_col and lag_col in features):
         raise SystemExit("Целевой показатель (и его прошлый год) не может быть признаком")
+    if group and group in (target, lag_col, *features, *context):
+        raise SystemExit("Столбец-группа делит строки на части — он не может быть целью, входом или Z")
     t0, started = time.time(), datetime.now(UTC).isoformat()
     out = results_dir(args.results_root)
     df = load_table(args.data, p.get("sheet", ""))
     xdf, owner = design(df, features, context)
+    gcol = group_values(df, group)
     frame = pd.concat([xdf, numeric(df, target).rename("__y")]
-                      + ([numeric(df, lag_col).rename("__lag")] if lag_col else []), axis=1).dropna()
+                      + ([numeric(df, lag_col).rename("__lag")] if lag_col else [])
+                      + ([gcol.rename("__group")] if gcol is not None else []), axis=1).dropna()
     if len(frame) < MIN_ROWS:
         raise SystemExit(f"Строк без пропусков — {len(frame)}, нужно хотя бы {MIN_ROWS}")
+    groups = frame["__group"].to_numpy(str) if gcol is not None else None
+    n_groups = len(np.unique(groups)) if groups is not None else 0
+    if groups is not None and n_groups < MIN_GROUPS:
+        raise SystemExit(f"Групп «{group}» — {n_groups}, нужно хотя бы {MIN_GROUPS}: иначе в отложенной части "
+                         "одна-две, и R² ни о чём не говорит")
     names = list(xdf.columns)
     x, y = frame[names].to_numpy(float), frame["__y"].to_numpy(float)
     lag = frame["__lag"].to_numpy(float) if lag_col else None
@@ -261,16 +289,16 @@ def main() -> int:
     real: dict[str, list[float]] = {}
     placebo: list[float] = []
     for i in range(splits):
-        for k, v in one_split(x, y, lag, seed + i, trials).items():
+        for k, v in one_split(x, y, lag, seed + i, trials, groups).items():
             real.setdefault(k, []).append(v)
-        placebo.append(one_split(x, y_placebo, None, seed + i, trials)[model_name()])
+        placebo.append(one_split(x, y_placebo, None, seed + i, trials, groups)[model_name()])
         event("progress", done=i + 1, total=splits, label="разбиения 80/20 и плацебо")
     res: dict[str, Any] = {"rows": len(frame), "target": target, "features": features, "context": context, "lag": lag_col,
            "real": {k: stats(v) for k, v in real.items()}, "placebo": stats(placebo),
            "r2_by_split": {k: [round(v, 4) for v in vs] for k, vs in real.items()}}
     for k, s in res["real"].items():
         event("metric", name=f"R² {k}", value=s["mean"])
-    hp_all = tune(x, y, trials, seed)
+    hp_all = tune(x, y, trials, seed, groups)
     contrib = shap_contrib(Fitted(x, y, hp_all, seed), x, names, owner, seed)
     res["shap"] = [{"factor": f, "mean_abs": round(m, 6), "sign": round(s, 3)} for f, m, s in contrib]
     res["hyperparameters_all_rows"] = hp_all
@@ -281,6 +309,8 @@ def main() -> int:
     works = m["mean"] > 0.05 and m["share_above_zero"] >= 0.8 and m["mean"] > pl["max"]
     verdict = ("предсказывает лучше среднего и плацебо" if works else
                "не лучше среднего" if m["mean"] <= 0.02 else "даёт слабый и неустойчивый сигнал")
+    part = (f"отложенная часть — {group} целиком ({n_groups} групп)" if groups is not None
+            else "случайных разбиений 80/20")
     small = f" Строк всего {len(frame)} — на отложенную часть приходится {round(len(frame) * 0.2)}, " \
             "оценка R² шумная." if len(frame) < 100 else ""
     # главный вопрос к методике: нужна ли нейросеть — сравнение с линейной моделью по тем же разбиениям
@@ -312,7 +342,7 @@ def main() -> int:
         "charts": [
             {"id": "r2_splits", "kind": "ranges", "unit": "R²",
              "title": f"Качество прогноза «{target}», R² на отложенной выборке",
-             "subtitle": f"{splits} случайных разбиений 80/20, {len(frame)} строк; гиперпараметры MLP — только по "
+             "subtitle": f"{splits} разбиений, {part}; {len(frame)} строк; гиперпараметры MLP — только по "
                          "обучающей части; точка — среднее, отрезок — от минимума до максимума",
              "reference": {"value": 0, "label": "прогноз средним"},
              "rows": [{"name": k, **{q: v[q] for q in ("mean", "min", "max")}} for k, v in res["real"].items()]
@@ -332,10 +362,11 @@ def main() -> int:
                  "ключевыми факторами их не считать.")},
         ],
     }
-    write_run(args, out, "lab_mlp", started, t0, frame, {"split": seed, "splits": splits, "optuna": seed},
+    write_run(args, out, "lab_mlp", started, t0, frame, {"split": seed, "splits": splits, "optuna": seed,
+                                                         "group": group},
               {"verdict": verdict, "architecture": ARCH, "mlp_r2_mean": m["mean"], "ridge_r2_mean": lin["mean"],
                "placebo_r2_max": pl["max"], "mlp_beats_linear_share": round(beats, 3), "rows": len(frame),
-               "top_factors": [f for f, _, _ in contrib[:5]]},
+               "top_factors": [f for f, _, _ in contrib[:5]], "group": group, "groups": n_groups},
               report)
     return 0
 
