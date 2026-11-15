@@ -128,8 +128,11 @@ def hyper_params(spec: Any) -> list[dict[str, Any]]:
         name = str(p.get("name") or "").strip()
         if not name.isidentifier() or name in BASE_NAMES or name in {q["name"] for q in out}:
             continue
+        raw = p.get("default", 1)
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            continue  # дробный (скорость обучения) — в коде метода: округление до целого сломало бы его
         try:
-            lo, hi, default = int(p.get("min", 1)), int(p.get("max", 1000)), int(p.get("default", 1))
+            lo, hi, default = int(p.get("min", 1)), int(p.get("max", 1000)), int(raw)
         except (TypeError, ValueError):
             continue
         lo, hi = max(0, min(lo, hi)), min(100_000, max(lo, hi))

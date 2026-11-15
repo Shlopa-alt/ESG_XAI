@@ -1167,8 +1167,9 @@ def job_method(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     log: list[str] = []
     smoke: dict[str, Any] = {"ok": False, "log": "", "fit_s": 0, "fit_rows": 0}
     ask = base
-    for attempt in range(1, 4):  # первая попытка и две на исправление по замечаниям
-        answer = ask_json(ask, 3000, G.SYSTEM, G.SCHEMA, temperature=0.2)
+    for attempt in range(1, 5):  # первая попытка и три на исправление по замечаниям
+        # исправление — с температурой выше: модель не повторяет тот же ответ
+        answer = ask_json(ask, 3000, G.SYSTEM, G.SCHEMA, temperature=(0.2, 0.4, 0.6, 0.7)[attempt - 1])
         if not answer.get("found"):
             return {"found": False, "doc_id": doc_id, "reason": str(answer.get("description") or "")[:500]}
         code = str(answer.get("code") or "")
@@ -1177,7 +1178,7 @@ def job_method(job: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
             log.append(f"Попытка {attempt}: замечания проверки — " + "; ".join(problems[:8]))
             ask = G.repair_prompt(base, code, problems)
             continue
-        hyper = {p["name"]: p["default"] for p in answer.get("params") or [] if isinstance(p, dict) and "name" in p}
+        hyper = G.integer_params(answer.get("params"))  # те же, что примет платформа: дробные — в коде
         smoke = G.smoke(code, hyper)
         log.append(f"Попытка {attempt}: " + smoke["log"])
         if smoke["ok"]:
