@@ -39,11 +39,12 @@ def queue(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     return sent
 
 
-def _snapshot(db: Session, tmp_path: Path, code: str = "DS-09", access: str = "public") -> int:
+def _snapshot(db: Session, tmp_path: Path, code: str = "DS-09", access: str = "public",
+              rows: int = ROWS) -> int:
     path = tmp_path / code / "v1" / "t.csv"
     path.parent.mkdir(parents=True)
     lines = [",".join(HEADER)] + [
-        f"[c{i}],[отрасль {i % 3}],{i},{i + 1},{i * 2},{i % 7}" for i in range(ROWS)
+        f"[c{i}],[отрасль {i % 3}],{i},{i + 1},{i * 2},{i % 7}" for i in range(rows)
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
     ds = Dataset(code=code, title="[набор]", access_level=access)
@@ -54,7 +55,7 @@ def _snapshot(db: Session, tmp_path: Path, code: str = "DS-09", access: str = "p
         version="v1",
         sha256="a" * 64,
         storage_path=f"C:/data/{code}/v1/t.csv",
-        row_count=ROWS,
+        row_count=rows,
     )
     db.add(snap)
     db.commit()
@@ -105,8 +106,17 @@ def test_without_target_compares_columns(make_client, db_session: Session, tmp_p
     scan = out["recommendations"][1]
     assert (scan["template"], scan["primary"]) == ("correlation-scan", False)
     assert scan["params"]["columns"] == ["[ROA_2021]", "[ROA_2022]", "[x1]", "[x2]"]
-    if out["rows"] is not None and out["rows"] < 40:
-        assert not scan["runnable"] and scan["warnings"]
+    assert scan["runnable"]  # 40 строк — ровно минимум
+
+
+def test_scan_not_runnable_on_small_data(  # type: ignore[no-untyped-def]
+    make_client, db_session: Session, tmp_path: Path,
+) -> None:
+    sid = _snapshot(db_session, tmp_path, rows=30)
+    c = make_client("rd", "reader")
+    out = c.post("/api/analysis/recommend", json={"snapshot_id": sid}).json()
+    scan = next(r for r in out["recommendations"] if r["template"] == "correlation-scan")
+    assert not scan["runnable"] and scan["warnings"]
 
 
 def test_methodology_item_ranks_target_candidates(

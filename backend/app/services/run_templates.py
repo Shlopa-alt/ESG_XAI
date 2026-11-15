@@ -83,15 +83,18 @@ TEMPLATES: dict[str, Template] = {
             description="Ищет связи между всеми парами столбцов: монотонные (ρ Спирмена) и "
                         "немонотонные (ξ Чаттерджи). Строки делятся на поиск и подтверждение; "
                         "поправка на множественное сравнение (Бенджамини — Хохберг), каждая "
-                        "находка перепроверяется на отложенной части, плацебо на перемешанных "
-                        "данных. Итог — кандидаты в идеи, не выводы.",
+                        "находка перепроверяется на отложенной части, поиск повторяется на "
+                        "перемешанных данных. Итог — кандидаты в идеи, не выводы.",
             workdir="methods", script="correlation_scan.py", resource="cpu", limit_min=60,
             params=(SHEET,
                     Param("columns", "Столбцы", [], kind="columns", required=False,
                           hint="пусто — все числовые, не больше 40"),
-                    Param("holdout", "Доля строк на подтверждение, %", 50, 20, 70),
+                    Param("group", "Столбец-группа", "", kind="column", required=False,
+                          numeric=False,
+                          hint="у панели компания × год — компания: она целиком в одной части"),
+                    Param("holdout", "Отложенная часть (на подтверждение), %", 50, 20, 70),
                     Param("fdr", "Допустимая доля ложных находок, %", 10, 1, 25),
-                    Param("placebo", "Повторов плацебо", 5, 0, 20),
+                    Param("placebo", "Повторов на перемешанных данных", 5, 0, 20),
                     SEED),
         ),
         Template(
@@ -218,6 +221,9 @@ def check_params(t: Template, given: dict[str, Any], columns: list[str] | None =
     if t.key == "correlation-scan" and len(out["columns"]) == 1:
         raise ParamError("Для поиска связей нужны хотя бы два столбца "
                          "(или пусто — все числовые)")
+    if t.key == "correlation-scan" and out["group"] and out["group"] in out["columns"]:
+        raise ParamError("Столбец-группа делит строки и не ищется в связях — "
+                         "уберите его из столбцов")
     if t.key == "correlation-scan" and len(out["columns"]) > 40:
         raise ParamError("Не больше 40 столбцов: иначе пар больше 780 "
                          "и поправка съедает все находки")

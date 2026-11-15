@@ -59,6 +59,9 @@ def test_correlation_scan_params() -> None:
     ok = check_params(t, {}, cols, num)  # пусто — все числовые
     assert (ok["columns"], ok["holdout"], ok["fdr"], ok["placebo"]) == ([], 50, 10, 5)
     assert check_params(t, {"columns": ["x1", "x2"]}, cols, num)["columns"] == ["x1", "x2"]
+    assert check_params(t, {"group": "name"}, cols, num)["group"] == "name"  # текстовая — можно
+    with pytest.raises(ParamError):
+        check_params(t, {"columns": ["x1", "x2"], "group": "x1"}, cols, num)
     many = [f"c{i}" for i in range(41)]
     for bad in ({"columns": ["x1"]}, {"columns": ["name", "x1"]}, {"holdout": 90}, {"fdr": 0},
                 {"columns": many}):

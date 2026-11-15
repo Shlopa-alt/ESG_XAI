@@ -61,8 +61,10 @@ def test_scan_end_to_end(synthetic: Path, tmp_path: Path) -> None:
     assert done.returncode == 0, done.stderr
     run = json.loads(next(res.glob("*/run.json")).read_text(encoding="utf-8"))
     s = run["summary"]
-    assert s["placebo_found"] == [0, 0, 0, 0, 0]
-    assert s["same"] == 1  # «[копия x]» — то же, что «[x]», и в находки не берётся
+    # перемешанные данные: ложных находок поиска — единицы при допуске 10 %, не десятки
+    assert len(s["placebo_found"]) == 5 and max(s["placebo_found"]) <= 1
+    assert s["same"] == 1  # «[копия x]» почти совпадает с «[x]»: его связи не ищутся — и это видно
+    assert s["excluded_columns"] == ["[копия x]"] and s["same_pairs"][0]["a"] == "[x]"
     confirmed = run["report"]["charts"][0]["categories"]
     assert "[x] — [y]" in confirmed and "[x] — [u]" in confirmed
     assert not any("копия" in c for c in confirmed)
@@ -72,6 +74,44 @@ def test_scan_end_to_end(synthetic: Path, tmp_path: Path) -> None:
     assert all((x["a"], x["b"]) not in {(y["a"], y["b"]) for y in s["links"]} for x in s["not_confirmed"])
     # всё для повтора расчёта (правило 3)
     assert run["dataset"]["sha256"] and run["seeds"]["split"] == 3 and run["env_lock_sha256"]
+    assert s["params"] == {"columns": [], "group": "", "holdout": 50, "fdr": 10, "placebo": 5, "seed": 3,
+                           "sheet": ""}
+    assert s["columns_used"][:2] == ["[x]", "[y]"] and s["columns_skipped"] == []
+
+
+def test_ties_are_checked_by_rho_only() -> None:
+    # повторы значений (рейтинг из 5 ступеней): асимптотика ξ завысила бы значимость
+    rng = np.random.default_rng(2)
+    t = pair_test(rng.integers(0, 5, 300).astype(float), rng.normal(size=300))
+    assert t is not None and not t["xi_used"] and t["p_xi"] == 1.0 and t["p"] == t["p_rho"]
+
+
+def test_split_by_group_keeps_each_group_in_one_part() -> None:
+    from correlation_scan import split
+
+    data = pd.DataFrame({"[v]": range(60)})
+    groups = pd.Series([f"[компания {i // 3}]" for i in range(60)])
+    find, conf = split(data, groups, 0.5, np.random.default_rng(0))
+    assert len(find) + len(conf) == 60
+    assert not set(groups[find.index]) & set(groups[conf.index])
+
+
+def test_noise_only_gives_no_links_and_says_so(tmp_path: Path) -> None:
+    # только шум: подтверждённых связей нет — и это записано как результат, а не пустота
+    rng = np.random.default_rng(5)
+    path = tmp_path / "shum.csv"
+    pd.DataFrame({f"[шум {i}]": rng.normal(size=200) for i in range(6)}).to_csv(path, index=False)
+    res = tmp_path / "res"
+    done = subprocess.run(
+        [sys.executable, "correlation_scan.py", str(tmp_path), str(res), "--data", str(path),
+         "--params", "{}", "--experiment", "EXP-000", "--dataset", "DS-00"],
+        cwd=HERE, env=UTF8, capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    run = json.loads(next(res.glob("*/run.json")).read_text(encoding="utf-8"))
+    assert run["summary"]["links"] == [] and run["summary"]["links_total"] == 0
+    assert not any(c["id"] == "confirmed" for c in run["report"]["charts"])
+    assert {k["label"] for k in run["report"]["kpis"]} >= {"Подтверждено на отложенной части"}
 
 
 def test_scan_refuses_too_few_rows(tmp_path: Path) -> None:

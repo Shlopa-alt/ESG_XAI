@@ -173,12 +173,12 @@ export function Analysis() {
   const [snapshot, setSnapshot] = useState<number | "">(fromSnapshot);
   const [sheet, setSheet] = useState("");
   const [target, setTarget] = useState(search.get("target") ?? "");
-  const firstSnapshot = useRef(true);
+  // лист и показатель сбрасываются, только когда версия данных сменилась (не при первом показе
+  // и не при повторном вызове эффекта в StrictMode) — показатель из адреса сохраняется
+  const shownSnapshot = useRef(snapshot);
   useEffect(() => {
-    if (firstSnapshot.current) {
-      firstSnapshot.current = false; // показатель из адреса не сбрасываем при первом выборе данных
-      return;
-    }
+    if (shownSnapshot.current === snapshot) return;
+    shownSnapshot.current = snapshot;
     setSheet("");
     setTarget("");
   }, [snapshot]);
