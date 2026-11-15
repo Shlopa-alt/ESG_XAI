@@ -16,7 +16,7 @@ from app.services.net_catalog import NETS, NEURAL, TASKS
 from app.services.run_templates import TEMPLATES
 
 # сколько строк без пропусков нужно методу (runner/methods/*.py: MIN_ROWS и проверки в main)
-MIN_ROWS = {"lab-mlp": 20, "predictive-check": 30, "rank-agreement": 5}
+MIN_ROWS = {"lab-mlp": 20, "predictive-check": 30, "rank-agreement": 5, "correlation-scan": 40}
 MAX_COMPARE = 8  # столбцов в согласованности по умолчанию: пар — до 28
 MAX_LEVELS = 30  # текстовый столбец с большим числом значений — не категория (имя компании)
 SMALL = 100  # строк меньше — оценки качества шумные

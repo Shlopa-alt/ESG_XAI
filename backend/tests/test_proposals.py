@@ -53,6 +53,20 @@ def test_generic_params_checked_against_columns() -> None:
         check_params(TEMPLATES["rank-agreement"], {"columns": ["x1"]}, cols, num)
 
 
+def test_correlation_scan_params() -> None:
+    t = TEMPLATES["correlation-scan"]
+    cols, num = ["roa", "x1", "x2", "name"], {"roa", "x1", "x2"}
+    ok = check_params(t, {}, cols, num)  # пусто — все числовые
+    assert (ok["columns"], ok["holdout"], ok["fdr"], ok["placebo"]) == ([], 50, 10, 5)
+    assert check_params(t, {"columns": ["x1", "x2"]}, cols, num)["columns"] == ["x1", "x2"]
+    many = [f"c{i}" for i in range(41)]
+    for bad in ({"columns": ["x1"]}, {"columns": ["name", "x1"]}, {"holdout": 90}, {"fdr": 0},
+                {"columns": many}):
+        with pytest.raises(ParamError):
+            check_params(t, bad, cols + many, num | set(many))
+    assert t.scope == "generic" and t.script == "correlation_scan.py"
+
+
 def test_accept_queues_qwen_proposal(make_client, snapshot: int, db_session: Session) -> None:  # type: ignore[no-untyped-def]
     rev = make_client("rev", "reviewer")
     assert rev.patch("/api/hypotheses/H-001", json={"status": "accepted"}).status_code == 200
