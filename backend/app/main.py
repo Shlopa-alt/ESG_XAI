@@ -5,6 +5,7 @@ from fastapi import APIRouter, FastAPI
 
 from app.api import (
     analysis,
+    articles,
     audit,
     auth,
     data_drafts,
@@ -62,4 +63,5 @@ api.include_router(proposals.router)
 api.include_router(reports.router)
 api.include_router(data_drafts.router)
 api.include_router(analysis.router)
+api.include_router(articles.router)
 app.include_router(api)

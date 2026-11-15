@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
+import { type Outcome, OUTCOME_LABEL, STATUS_LABEL } from "../api/experiments";
 import {
   decideHypothesis,
   type Effect,
@@ -11,6 +12,7 @@ import {
   type HStatus,
   type Hypothesis,
   type KbRefIn,
+  type Named,
   listHypotheses,
   linkType,
   proposeHypothesis,
@@ -18,6 +20,7 @@ import {
   similarHypotheses,
   TARGET_KIND_LABEL,
   type TargetKind,
+  type TriedCheck,
   type Weight,
   WEIGHT_LABEL,
   WEIGHTS,
@@ -37,6 +40,97 @@ export interface ProposeState {
 }
 
 const ARTICLES_SHOWN = 3;
+
+// после итога («идея не подтвердилась») — без повтора итога; отрицательный итог — такой же результат
+const TRIED_LEAD: Record<Outcome, string> = {
+  confirmed: "Повторять так же незачем. Чтобы понять, насколько вывод общий, проверьте его на других данных или другим методом.",
+  rejected:
+    "Это тоже результат, и повторять так же незачем. Проверка на других данных или другим методом — новая проверка: сошлитесь в ней на прежнюю, её итог остаётся в силе.",
+  inconclusive: "Стоит перепроверить другим методом или на других данных.",
+};
+
+const FINISHED = new Set(["done", "failed"]);
+
+/** Что сказать о проверке без итога: идёт, завершена без записанного итога или со сбоем. */
+function noOutcome(status: TriedCheck["status"]): string {
+  if (status === "done") return "Итог не записан — откройте проверку и посмотрите отчёт.";
+  if (status === "failed") return "Расчёт завершился сбоем, итога нет.";
+  return `Проверка ещё идёт (${STATUS_LABEL[status]}) — дождитесь итога, чтобы не повторять её.`;
+}
+
+/** «DS-01 «название»» — код ссылкой и название в кавычках; у метода без кода — только название. */
+function NamedList({ items, link }: { items: Named[]; link?: (code: string) => string }) {
+  return (
+    <>
+      {items.map((x, n) => (
+        <span key={x.code || x.title}>
+          {n > 0 && ", "}
+          {x.code && link ? (
+            <Link to={link(x.code)} className="mono">
+              {x.code}
+            </Link>
+          ) : (
+            x.code && <span className="mono">{x.code}</span>
+          )}
+          {x.code && x.code !== x.title ? ` «${x.title}»` : !x.code && x.title}
+        </span>
+      ))}
+    </>
+  );
+}
+
+const datasetLink = (code: string) => `/datasets/${code}`;
+
+/** Похожую идею уже проверяли или проверяют: итог, на чём считали и что ещё можно попробовать. */
+function TriedNote({ t }: { t: TriedCheck }) {
+  const lead = t.outcome ? TRIED_LEAD[t.outcome] : noOutcome(t.status);
+  return (
+    <div className="tried">
+      <p>
+        {FINISHED.has(t.status) ? "Проверялась в " : "Проверяется в "}
+        <Link to={`/experiments/${t.experiment}`} className="mono">
+          {t.experiment}
+        </Link>
+        {t.outcome && <>: {OUTCOME_LABEL[t.outcome]}</>}. {lead}
+      </p>
+      {(t.datasets.length > 0 || t.methods.length > 0) && (
+        <p className="muted">
+          Пробовали:
+          {t.datasets.length > 0 && (
+            <>
+              {" "}
+              данные — <NamedList items={t.datasets} link={datasetLink} />
+            </>
+          )}
+          {t.datasets.length > 0 && t.methods.length > 0 && ";"}
+          {t.methods.length > 0 && (
+            <>
+              {" "}
+              метод — <NamedList items={t.methods} />
+            </>
+          )}
+          .
+        </p>
+      )}
+      <div>
+        <strong>Что ещё можно попробовать</strong>
+        <ul className="list">
+          {t.other_datasets.length > 0 && (
+            <li>
+              другие данные: <NamedList items={t.other_datasets} link={datasetLink} />
+            </li>
+          )}
+          {t.other_methods.length > 0 && (
+            <li>
+              другой метод: <NamedList items={t.other_methods} />
+            </li>
+          )}
+          <li>другой показатель, отрасль или горизонт — уточните это в утверждении</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
 
 /** Есть ли похожее: уже предложенные идеи и статьи банка о том же. Ничего не отправляет. */
 function SimilarCheck({ title, statement, refs, onAddRef }: {
@@ -84,6 +178,7 @@ function SimilarCheck({ title, statement, refs, onAddRef }: {
                   </a>{" "}
                   {i.title} <span className={`badge ${H_BADGE[i.status]}`}>{H_STATUS_LABEL[i.status]}</span>
                   {i.source === "qwen" && <span className="muted"> · предложил ИИ-помощник</span>}
+                  {i.tried && <TriedNote t={i.tried} />}
                 </li>
               ))}
             </ul>
@@ -416,7 +511,8 @@ function HypothesisCard({ h, role }: { h: Hypothesis; role: string | undefined }
         </p>
       )}
       {h.refs.length > 0 && (
-        <details open={h.status === "proposed"}>
+        // раскрыты сразу при любом статусе: источник — то, на чём держится идея; свернуть можно вручную
+        <details open>
           <summary>Источники в банке статей ({h.refs.length})</summary>
           <ul className="list muted">
             {h.refs.map((r) => (

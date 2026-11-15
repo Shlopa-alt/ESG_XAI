@@ -367,17 +367,50 @@ describe("Карточка идеи", () => {
     await waitFor(() => expect(puts).toEqual([{ url: "/api/hypotheses/H-001/weight", body: { weight: 3 } }]));
   });
 
-  it("у предложенной идеи источники раскрыты: они нужны для решения", async () => {
+  it("источники раскрыты сразу при любом статусе идеи", async () => {
     const refs = [{ kind: "article", kbrag_id: "d", title: "[статья]", doi: "", quote: "[цитата]" }];
     api({ hypotheses: [{ ...HYP, status: "proposed", refs }, { ...HYP, code: "H-002", title: "[вторая]", status: "testing", refs }] });
     renderAt("/hypotheses");
     await screen.findByText("[идея]");
-    const [first] = screen.getAllByText(/Источники в банке статей/).map((el) => el.closest("details"));
-    expect(first).toHaveAttribute("open");
+    const all = screen.getAllByText(/Источники в банке статей/).map((el) => el.closest("details"));
+    expect(all).toHaveLength(2);
+    for (const d of all) expect(d).toHaveAttribute("open");
   });
 });
 
 describe("Форма идеи: есть ли похожее", () => {
+  it("похожую идею уже проверяли — виден итог, что пробовали и другой вариант", async () => {
+    const tried = {
+      experiment: "EXP-001", status: "done", outcome: "rejected",
+      datasets: [{ code: "DS-01", title: "[набор 1]" }], methods: [{ code: "rank-agreement", title: "[метод 1]" }],
+      other_datasets: [{ code: "DS-02", title: "[набор 2]" }], other_methods: [{ code: "lab-mlp", title: "[метод 2]" }],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === "POST" && url.includes("/hypotheses/similar")) {
+          return Promise.resolve(json([{ code: "H-001", title: "[проверенная идея]", status: "tested", source: "human", share: 0.6, tried }]));
+        }
+        if (url.includes("/auth/me")) return Promise.resolve(json({ ...USER, role: "reader" }));
+        if (url.includes("/kb/search")) return Promise.resolve(json({ hits: [] }));
+        return Promise.resolve(json([]));
+      }),
+    );
+    const ui = userEvent.setup();
+    renderAt("/hypotheses");
+    await ui.click(await screen.findByRole("button", { name: "Предложить идею" }));
+    await ui.type(screen.getByLabelText("Коротко, о чём идея"), "[[новая идея]");
+    await ui.click(screen.getByRole("button", { name: "Проверить, есть ли похожее" }));
+    expect(await screen.findByRole("link", { name: "EXP-001" })).toHaveAttribute("href", "/experiments/EXP-001");
+    const note = screen.getByText(/^Проверялась в/).closest(".tried") as HTMLElement;
+    expect(note.textContent).toContain("EXP-001: идея не подтвердилась. Это тоже результат, и повторять так же незачем.");
+    expect(note.textContent).toContain("данные — DS-01 «[набор 1]»");
+    expect(note.textContent).toContain("другие данные: DS-02 «[набор 2]»");
+    expect(note.textContent).toContain("другой метод: lab-mlp «[метод 2]»");
+    expect(screen.getByRole("link", { name: "DS-02" })).toHaveAttribute("href", "/datasets/DS-02");
+    expect(screen.getByRole("link", { name: "DS-01" })).toHaveAttribute("href", "/datasets/DS-01");
+  });
+
   const hit = (doc_id: string, title: string) => ({
     chunk_id: 1, doc_id, ord: 0, title, year: null, journal: null, url: "https://doi.org/10.0000/[doi]", authors: [], headings: [], pages: [3], text: "[фрагмент]", score: 1,
   });

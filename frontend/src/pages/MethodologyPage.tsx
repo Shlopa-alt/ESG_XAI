@@ -22,6 +22,7 @@ import {
   STABILITY_LABEL,
 } from "../api/methodology";
 import { useMe } from "../auth/useAuth";
+import { ArticlesSummaryTab } from "../components/ArticlesSummary";
 import { plural } from "../components/Ux";
 
 const VERDICTS = { approve: "одобрено", changes: "нужны правки", reject: "отклонено" } as const;
@@ -354,6 +355,7 @@ interface TreeCtx {
   work: Map<string, { exps: string[]; hyps: string[] }>;
   openCrs: Map<string, string[]>;
   openCr: (code: string) => void;
+  openArticles: (number: string) => void;
 }
 
 function NodeActions({ node, ctx }: { node: Section | null; ctx: TreeCtx }) {
@@ -426,7 +428,10 @@ function Node({ node, ctx }: { node: Section; ctx: TreeCtx }) {
       <div className="node-body">
         <p className="pre-line node-text">{node.content || <span className="muted">Текста пока нет.</span>}</p>
         <p className="muted node-info">
-          {KIND_LABEL[node.kind]} <span className="mono">{node.number}</span> · {STABILITY_LABEL[node.stability]}
+          {KIND_LABEL[node.kind]} <span className="mono">{node.number}</span> · {STABILITY_LABEL[node.stability]} ·{" "}
+          <button type="button" className="link-btn" onClick={() => ctx.openArticles(node.number)}>
+            Что говорят статьи
+          </button>
         </p>
         {(work?.hyps.length || work?.exps.length || crs.length) ? (
           <div className="node-links">
@@ -460,13 +465,20 @@ function Node({ node, ctx }: { node: Section; ctx: TreeCtx }) {
   );
 }
 
-type MethodTab = "method" | "changes" | "history";
+type MethodTab = "method" | "articles" | "changes" | "history";
+
+// /methodology#articles-Н1.В1.З1 — сразу «Что говорят статьи» по этому пункту
+const ARTICLES_HASH = "#articles-";
+const hashNode = () =>
+  window.location.hash.startsWith(ARTICLES_HASH) ? decodeURIComponent(window.location.hash.slice(ARTICLES_HASH.length)) : "";
 
 export function Methodology() {
   const me = useMe();
   const [draft, setDraft] = useState<Draft | null>(null);
   // ссылка вида /methodology#cr-CR-02 (из отчёта) сразу открывает предложения
-  const [tab, setTab] = useState<MethodTab>(window.location.hash.startsWith("#cr-") ? "changes" : "method");
+  const [tab, setTab] = useState<MethodTab>(
+    window.location.hash.startsWith("#cr-") ? "changes" : hashNode() ? "articles" : "method",
+  );
   const m = useQuery({ queryKey: ["methodology"], queryFn: getMethodology });
   const crs = useQuery({ queryKey: ["crs"], queryFn: listCrs });
   const versions = useQuery({ queryKey: ["versions"], queryFn: listVersions });
@@ -485,6 +497,12 @@ export function Methodology() {
     window.location.hash = `cr-${code}`;
     setTab("changes");
   };
+  const [articlesNode, setArticlesNode] = useState(hashNode);
+  const openArticles = (number: string) => {
+    window.location.hash = `articles-${number}`;
+    setArticlesNode(number);
+    setTab("articles");
+  };
   const canPropose = me.data?.role === "researcher" || me.data?.role === "owner";
   // что относится к пункту: идеи, проверки, открытые предложения
   const work = new Map<string, { exps: string[]; hyps: string[] }>();
@@ -500,11 +518,12 @@ export function Methodology() {
     if (c.status === "proposed" || c.status === "review") openCrs.set(c.section, [...(openCrs.get(c.section) ?? []), c.code]);
   }
   const openCount = crList.filter((c) => c.status === "proposed" || c.status === "review").length;
-  const ctx: TreeCtx = { nodes, canPropose, draft, setDraft, work, openCrs, openCr };
+  const ctx: TreeCtx = { nodes, canPropose, draft, setDraft, work, openCrs, openCr, openArticles };
   const common = nodes.filter((n) => !n.parent && n.kind === "section");
   const directions = nodes.filter((n) => !n.parent && n.kind !== "section");
   const tabs: Array<{ key: MethodTab; label: string }> = [
     { key: "method", label: "Как мы исследуем" },
+    { key: "articles", label: "Что говорят статьи" },
     { key: "changes", label: `Предложения изменений${openCount ? ` · ${openCount}` : ""}` },
     { key: "history", label: "История версий" },
   ];
@@ -568,6 +587,7 @@ export function Methodology() {
           </p>
         </div>
       )}
+      {tab === "articles" && <ArticlesSummaryTab key={articlesNode} initialNode={articlesNode} canPropose={canPropose} openCr={openCr} />}
       {tab === "changes" && (
         <section className="cr-board" role="tabpanel">
           {crs.isPending && <p className="muted">Загрузка…</p>}

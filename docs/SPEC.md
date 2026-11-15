@@ -123,6 +123,7 @@ POST            /datasets/{code}/snapshots            (загрузка срез
 
 GET/POST        /hypotheses                          (POST — любой вошедший)
 POST            /hypotheses/similar   {title, statement}  (похожие уже предложенные идеи — подсказка до отправки; любой вошедший)
+                -- у проверенной идеи tried: {experiment, status, outcome, datasets, methods, other_datasets, other_methods}
 PUT             /hypotheses/{code}/weight  {weight: 1|2|3|null}  (сила связи; reviewer, owner)
 GET             /hypotheses/{code}
 POST            /hypotheses/{code}/refs              (автор или researcher+)
@@ -140,6 +141,11 @@ GET             /runs/{id}/stream     (SSE: события progress, metric, log
 POST            /runs/{id}/stop
 
 GET             /methodology          (текущая версия + разделы)
+GET             /methodology/sections/{number}/articles  ?factor=&outcome=  (что говорят статьи: факты KBRAG /api/dataset
+                -- о связи «фактор → результат» по группам up/down/none/other с цитатами, total, leader, agreement;
+                -- и наши проверки и идеи по пункту; findings — что это значит: silent | few | consensus |
+                -- disputed | idea_against | check_agrees | check_against | check_other | checks_unlinked | unchecked;
+                -- ответ KBRAG по понятию держится в памяти 5 минут (ошибки — нет); любой вошедший, ничего не хранит)
 GET             /methodology/versions, /methodology/versions/{v}, /methodology/diff?from=&to=
                 -- versions: [{version, notes, created_at, points, rules}] — points: пунктов в версии, rules: из них разделов-правил
 GET/POST        /change-requests

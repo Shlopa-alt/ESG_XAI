@@ -950,6 +950,9 @@ details[open] > .node-head .node-preview { display: none; }
 .similar-result { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); }
 .similar-result .h3 { margin: 4px 0 0; }
 .similar-result .list { margin: 0; }
+.tried { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 4px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface-soft); border-radius: 0 8px 8px 0; }
+.tried p { margin: 0; }
+.tried .list { margin: 2px 0 0; }
 .similar-quote { margin: 4px 0; line-height: 1.5; }
 /* --- задание методики и тип связи у идеи --- */
 .idea-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 16px; margin: 0; }
@@ -981,3 +984,23 @@ details[open] > .node-head .node-preview { display: none; }
 .scan-links { display: flex; flex-direction: column; gap: 10px; }
 .scan-list > li { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .scan-list > li:last-child { border-bottom: 0; }
+/* --- «Что говорят статьи» в методике: цвета — как у стрелок карты связей, подпись рядом всегда --- */
+.articles-form { display: flex; flex-direction: column; gap: 12px; }
+.articles-summary { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.articles-summary .h3 { margin: 4px 0 0; }
+.dir-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--border); }
+.dir-bar span { display: block; min-width: 4px; }
+.dir-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none; }
+.dir-legend li { display: flex; align-items: center; gap: 6px; }
+.dir-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.dir-up { background: #1baf7a; }
+.dir-down { background: #eb6834; }
+.dir-none { background: #8a948e; }
+.dir-other { background: #2a78d6; }
+.articles-summary .quotes { margin: 4px 0 8px; font-size: 14px; }
+.articles-summary .quotes q { color: var(--text-muted); }
+.findings { padding: 12px 14px; border-radius: 10px; background: var(--surface-soft); border: 1px solid var(--border); }
+.findings .h3 { margin: 0 0 6px; }
+.findings .list { margin: 0; }
+.basis-pick { max-height: 320px; overflow-y: auto; }
+.basis-pick label { display: block; }

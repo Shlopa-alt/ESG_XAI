@@ -63,6 +63,49 @@ def test_similar_finds_paraphrase_and_changes_nothing(make_client) -> None:  # t
     assert len(c.get("/api/hypotheses").json()) == 1  # проверка ничего не создаёт
 
 
+def test_similar_tested_idea_shows_what_was_tried(  # type: ignore[no-untyped-def]
+    make_client, db_session,
+) -> None:
+    from app.models import Dataset, DatasetSnapshot, Experiment, Hypothesis, Run
+
+    c = make_client("reader1", "reader")
+    c.post("/api/hypotheses", json=H)
+    used, other = Dataset(code="DS-01", title="[набор 1]"), Dataset(code="DS-02", title="[набор 2]")
+    empty = Dataset(code="DS-03", title="[набор без версии данных]")
+    db_session.add_all([used, other, empty])
+    db_session.flush()
+    snap = DatasetSnapshot(dataset_id=used.id, version="[версия]", sha256="0" * 64)
+    other_snap = DatasetSnapshot(dataset_id=other.id, version="[версия]", sha256="1" * 64)
+    exp = Experiment(code="EXP-001", title="[проверка]", status="done", outcome="rejected")
+    db_session.add_all([snap, other_snap, exp])
+    db_session.flush()
+    db_session.add(Run(experiment_id=exp.id, template="rank-agreement", status="done",
+                       dataset_snapshot_id=snap.id))
+    # упавший расчёт работой не считается: его метод и данные остаются в «что ещё попробовать»
+    db_session.add(Run(experiment_id=exp.id, template="lab-mlp", status="failed",
+                       dataset_snapshot_id=other_snap.id))
+    h = db_session.query(Hypothesis).filter_by(code="H-001").one()
+    h.experiment_id, h.status = exp.id, "tested"
+    db_session.commit()
+
+    [hit] = c.post("/api/hypotheses/similar", json=SAME).json()
+    t = hit["tried"]
+    assert (t["experiment"], t["status"], t["outcome"]) == ("EXP-001", "done", "rejected")
+    assert [d["code"] for d in t["datasets"]] == ["DS-01"]
+    assert [m["code"] for m in t["methods"]] == ["rank-agreement"]
+    # предлагает то, чего ещё не пробовали: другой набор данных и другие методы библиотеки
+    assert [d["code"] for d in t["other_datasets"]] == ["DS-02"]
+    other_methods = [m["code"] for m in t["other_methods"]]
+    assert "rank-agreement" not in other_methods and "lab-mlp" in other_methods
+    assert all(m["code"] not in ("exp001-dow30", "exp007-hsu") for m in t["other_methods"])
+
+
+def test_similar_untested_idea_has_no_tried(make_client) -> None:  # type: ignore[no-untyped-def]
+    c = make_client("reader1", "reader")
+    c.post("/api/hypotheses", json=H)
+    assert c.post("/api/hypotheses/similar", json=SAME).json()[0]["tried"] is None
+
+
 def test_similar_needs_login(client) -> None:  # type: ignore[no-untyped-def]
     assert client.post("/api/hypotheses/similar", json=SAME).status_code == 401
 
