@@ -1011,3 +1011,19 @@ details[open] > .node-head .node-preview { display: none; }
 .nets-table .net-sub { font-size: 12px; font-weight: 400; }
 .nets-table th[scope="row"] { color: var(--text); font-weight: 500; }
 .nets-idea { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 0; }
+.nets-table .net-pair { display: block; }
+.nets-table th[scope="row"] { overflow-wrap: anywhere; }
+.nets-table .net-action { min-width: 12rem; }
+.nets-table .net-action select { display: block; width: 100%; max-width: 16rem; margin: 2px 0 6px; }
+.nets-table .net-action .btn-ghost { white-space: nowrap; }
+/* узкий экран: связь — карточка, у каждой сети подпись; пустые ячейки не показываем */
+@media (max-width: 760px) {
+  .table-wrap .nets-table { min-width: 0; }
+  .nets-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .nets-table, .nets-table tbody, .nets-table tr, .nets-table th, .nets-table td { display: block; }
+  .nets-table tr { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .nets-table th[scope="row"], .nets-table td { border: 0; padding: 3px 0; text-align: left; min-width: 0; }
+  .nets-table td[data-label]::before { content: attr(data-label) ": "; color: var(--text-muted); font-weight: 400; }
+  .nets-table td.net-empty { display: none; }
+  .nets-table td.net-holds { background: none; }
+}

@@ -36,8 +36,9 @@ from app.models import (
 )
 from app.services import analysis, kb_text, net_catalog, resources
 from app.services.codes import next_code
+from app.services.data_files import Table
 from app.services.qwen_experiments import close_open_proposals, experiment_from_hypothesis
-from app.services.run_templates import TEMPLATES
+from app.services.run_templates import TEMPLATES, ParamError, check_params
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -366,6 +367,26 @@ def _scan_links(run: Run) -> list[dict[str, Any]]:
     return [x for x in links if isinstance(x, dict)] if isinstance(links, list) else []
 
 
+def _fit_net(db: Session, settings: Settings, table: Table, rows: int | None,
+             rec: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    """Параметры сети набора, с которыми расчёт укладывается в лимит метода. Не укладывается —
+    меньше испытаний подбора (протокол CR-01 не трогаем), иначе None и причина: сеть пропускается,
+    остальные сети набора считаются."""
+    t = TEMPLATES[rec["template"]]
+    try:
+        checked = check_params(t, rec["params"], table.columns, table.numeric, table.sheets, table.sheet)
+    except ParamError as exc:
+        return None, str(exc)
+    est = resources.estimate(db, settings, t, checked, rows)
+    if est.within_limit:
+        return rec["params"], ""
+    fit = (est.suggestion or {}).get("params")
+    if isinstance(fit, dict):
+        return fit, (f"{rec['title']}: испытаний подбора — {fit.get('trials')} вместо {checked.get('trials')}, "
+                     f"иначе по оценке больше лимита метода {est.limit_min} мин.")
+    return None, f"по оценке около {est.minutes:g} мин — больше лимита метода {est.limit_min} мин"
+
+
 def _link_check(exp: Experiment) -> dict[str, Any] | None:
     lc = (exp.config or {}).get("link_check")
     return lc if isinstance(lc, dict) else None
@@ -402,8 +423,9 @@ def link_check(
     sheet = str(params.get("sheet") or "") if isinstance(params, dict) else ""
     table = snapshot_table(db, settings, snap, user, sheet)  # NDA — только с допуском
     node = _node(db, body.node)
+    rows = resources.rows_of(settings, snap, table.sheet)
     try:
-        out = analysis.recommend(table, resources.rows_of(settings, snap, table.sheet), body.target, node)
+        out = analysis.recommend(table, rows, body.target, node)
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     recs = [r for r in out["recommendations"] if r["key"] in NET_SET and r["runnable"]]
@@ -411,7 +433,18 @@ def link_check(
         why = "; ".join(w for r in out["recommendations"] for w in r["warnings"])
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             f"Ни одну сеть набора не запустить: {why or 'мало данных'}")
-    nets = ", ".join(r["title"] for r in recs)
+    planned, skipped = [], []
+    for r in recs:
+        params_fit, note = _fit_net(db, settings, table, rows, r)
+        if params_fit is None:
+            skipped.append({"net": r["net"], "title": r["title"], "reason": note})
+        else:
+            planned.append((r, params_fit, note))
+    if not planned:
+        why = "; ".join(f"{x['title']} — {x['reason']}" for x in skipped)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"Ни одна сеть набора не укладывается в лимит: {why}")
+    nets = ", ".join(r["title"] for r, _, _ in planned)
     holds = f"{HOLDS_MIN_R2:.2f}".replace(".", ",")
     try:
         exp = Experiment(
@@ -430,9 +463,11 @@ def link_check(
                 f"Каждая сеть предсказывает «{body.target}» по остальным показателям по протоколу CR-01: "
                 "разбиения, плацебо на перемешанной цели, сравнение с линейной моделью.",
                 f"Связь держится у сети, если R² на отложенных данных выше перемешанной цели и выше {holds}.",
+                *[note for _, _, note in planned if note],
             ],
             results=[],
-            limitations=["Связь — не причина: предсказуемость не говорит, что из чего следует."],
+            limitations=["Связь — не причина: предсказуемость не говорит, что из чего следует.",
+                         *[f"{x['title']} не запускалась: {x['reason']}." for x in skipped]],
             reproducibility=[],
             status="running",
             dataset_snapshot_id=snap.id,
@@ -440,16 +475,17 @@ def link_check(
         db.add(exp)
         db.flush()
         runs, choices = [], []
-        for r in recs:
-            run = start_run(db, settings, user, r["template"], snap.id, r["params"], exp.code)
+        for r, params_fit, _ in planned:
+            run = start_run(db, settings, user, r["template"], snap.id, params_fit, exp.code)
             runs.append(run)
             choice = Choice(key=r["key"], title=r["title"], why=r["why"][:20], primary=r["primary"],
                             net=r["net"], task="predict")
             choices.append({"template": r["template"], "snapshot_id": snap.id, "node": body.node,
-                            "hypothesis": "", **_checked_choice(choice, r["template"], r["params"]),
+                            "hypothesis": "", **_checked_choice(choice, r["template"], params_fit),
                             "run_id": run.id})
         exp.config = {
-            "link_check": {"scan_run": scan.id, "a": body.a, "b": body.b, "target": body.target},
+            "link_check": {"scan_run": scan.id, "a": body.a, "b": body.b, "target": body.target,
+                           "skipped": skipped},
             "analysis": choices[0],
             "analysis_runs": choices,
         }
@@ -458,6 +494,23 @@ def link_check(
         raise
     db.commit()
     return LinkCheckOut(experiment=exp.code, run_ids=[r.id for r in runs])
+
+
+NET_ORDER = ("mlp", "transformer", "gbm", "linear")
+
+
+def _skipped(lc: dict[str, Any]) -> list[dict[str, Any]]:
+    """Сети набора, которые не запускались (не уложились в лимит), — с причиной; быстрая проверка —
+    это и бустинг, и линейная."""
+    out = []
+    for x in lc.get("skipped") or []:
+        if not isinstance(x, dict):
+            continue
+        for net in (("gbm", "linear") if x.get("net") == "gbm" else (str(x.get("net") or ""),)):
+            title = net_catalog.NETS[net].title if net in net_catalog.NETS else net
+            out.append({"run_id": None, "status": "skipped", "net": net, "title": title, "r2": None,
+                        "placebo": None, "holds": None, "reason": str(x.get("reason") or "")})
+    return out
 
 
 def _num(v: object) -> float | None:
@@ -513,11 +566,13 @@ def links(
                 continue
             nets = [n for r in db.scalars(select(Run).where(Run.experiment_id == exp.id).order_by(Run.id))
                     for n in _net_results(r)]
+            nets += _skipped(lc)
+            nets.sort(key=lambda n: NET_ORDER.index(n["net"]) if n["net"] in NET_ORDER else 99)
             finished = [n for n in nets if n["holds"] is not None]
             checks.append({"experiment": exp.code, "a": lc.get("a"), "b": lc.get("b"),
                            "target": lc.get("target"), "nets": nets,
                            "held": sum(1 for n in finished if n["holds"]), "finished": len(finished),
-                           "total": len(nets)})
+                           "total": sum(1 for n in nets if n["status"] != "skipped")})
     s = scan.summary if scan is not None and isinstance(scan.summary, dict) else {}
     params = (scan.config or {}).get("params") if scan is not None else None
     scan_out = None

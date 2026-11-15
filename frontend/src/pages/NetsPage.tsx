@@ -20,7 +20,13 @@ const NETS = [
   { key: "linear", short: "Линейная" },
 ];
 const ACTIVE = new Set(["queued", "running"]);
-const STATUS: Record<string, string> = { queued: "в очереди", running: "считается", failed: "сбой", stopped: "остановлен" };
+const STATUS: Record<string, string> = {
+  queued: "в очереди",
+  running: "считается",
+  failed: "сбой",
+  stopped: "остановлен",
+  skipped: "не запускалась",
+};
 const r2 = (v: number | null) => (v === null ? "—" : v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const pairOf = (a: string, b: string) => [a, b].sort().join("\u0000");
 type ScanLinkRow = ScanOut["links"][number];
@@ -31,12 +37,26 @@ function busy(d: LinksOut | undefined): boolean {
 }
 
 /** Ячейка «сеть × связь»: R² на данных, которых не было в обучении, и держится ли связь. */
-function NetCell({ n }: { n: NetResult | undefined }) {
-  if (!n) return <td className="num muted">—</td>;
-  if (n.holds === null) return <td className="num muted">{STATUS[n.status] ?? n.status}</td>;
+function NetCell({ n, label }: { n: NetResult | undefined; label: string }) {
+  // на узком экране строка — карточка: подпись ячейки берётся из data-label, пустые ячейки скрыты
+  if (!n) {
+    return (
+      <td className="num muted net-empty" data-label={label}>
+        —
+      </td>
+    );
+  }
+  if (n.holds === null) {
+    return (
+      <td className="num muted" data-label={label} title={n.reason || undefined}>
+        {STATUS[n.status] ?? n.status}
+        {n.reason && <span className="sr-only">: {n.reason}</span>}
+      </td>
+    );
+  }
   const text = `R² ${r2(n.r2)}, на перемешанной цели ${r2(n.placebo)} — ${n.holds ? "держится" : "не держится"}`;
   return (
-    <td className={n.holds ? "num net-holds" : "num net-fails"} title={text}>
+    <td className={n.holds ? "num net-holds" : "num net-fails"} data-label={label} title={text}>
       <span aria-hidden="true">
         {r2(n.r2)} {n.holds ? "✓" : "✗"}
       </span>
@@ -84,33 +104,27 @@ function LinkRow({ l, check, scan, canLaunch }: { l: ScanLinkRow; check: LinkChe
   return (
     <tr>
       <th scope="row">
-        «{l.a}» — «{l.b}»<div className="muted net-sub">{strength}</div>
+        <span className="net-pair">«{l.a}»</span> <span className="net-pair">— «{l.b}»</span>
+        <div className="muted net-sub">{strength}</div>
       </th>
-      <td>
+      {NETS.map((n) => (
+        <NetCell key={n.key} n={byNet.get(n.key)} label={n.short} />
+      ))}
+      <td data-label="Проверка" className="net-action">
         {check ? (
-          `«${check.target}»`
+          <>
+            <div className="muted net-sub">предсказывали «{check.target}»</div>
+            <Verdict c={check} />
+          </>
         ) : canLaunch ? (
           <>
-            <label className="sr-only" htmlFor={selectId}>
-              Что предсказываем в связи «{l.a}» — «{l.b}»
+            <label className="net-sub muted" htmlFor={selectId}>
+              Что предсказываем<span className="sr-only"> в связи «{l.a}» — «{l.b}»</span>
             </label>
             <select id={selectId} value={target} onChange={(e) => setTarget(e.target.value)}>
               <option value={l.b}>{l.b}</option>
               <option value={l.a}>{l.a}</option>
             </select>
-          </>
-        ) : (
-          "—"
-        )}
-      </td>
-      {NETS.map((n) => (
-        <NetCell key={n.key} n={byNet.get(n.key)} />
-      ))}
-      <td>
-        {check ? (
-          <Verdict c={check} />
-        ) : canLaunch ? (
-          <>
             <button type="button" className="btn-ghost" disabled={go.isPending} onClick={() => go.mutate()}>
               {go.isPending ? "Ставлю расчёты…" : "Проверить сетями"}
             </button>
@@ -322,13 +336,12 @@ export function Nets() {
                 <thead>
                   <tr>
                     <th scope="col">Связь</th>
-                    <th scope="col">Предсказываем</th>
                     {NETS.map((n) => (
                       <th key={n.key} scope="col" className="num">
                         {n.short}
                       </th>
                     ))}
-                    <th scope="col">Итог</th>
+                    <th scope="col">Проверка</th>
                   </tr>
                 </thead>
                 <tbody>

@@ -309,7 +309,9 @@ def recommend(
             )
         )
     else:
-        compare = numeric[:MAX_COMPARE]
+        # год и номер строки — не показатели: сравнивать их с рейтингами бессмысленно
+        indicators = [c for c in numeric if not ID_LIKE.fullmatch(_bare(c))]
+        compare = indicators[:MAX_COMPARE]
         if len(compare) < 2:
             raise ValueError(
                 "В данных меньше двух числовых столбцов — сравнивать нечего; выберите показатель"
@@ -333,7 +335,7 @@ def recommend(
                     f"Сравниваются {_columns(len(compare))}"
                     + (
                         f" (первые {MAX_COMPARE} — остальные можно добавить)"
-                        if len(numeric) > MAX_COMPARE
+                        if len(indicators) > MAX_COMPARE
                         else ""
                     )
                     + ": ρ Спирмена, бутстреп-интервал, перестановочный тест.",

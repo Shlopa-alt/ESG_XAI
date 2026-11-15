@@ -89,13 +89,14 @@ export const launchAnalysis = (b: {
 
 // «Нейросети»: найденная связь → набор сетей → сравнение (backend/app/api/analysis.py: links, link_check)
 export interface NetResult {
-  run_id: number;
-  status: string; // queued | running | done | failed | stopped
+  run_id: number | null; // null — сеть не запускалась (не уложилась в лимит метода)
+  status: string; // queued | running | done | failed | stopped | skipped
   net: string; // mlp | transformer | gbm | linear
   title: string;
   r2: number | null; // R² на данных, которых не было в обучении
   placebo: number | null; // R² на перемешанной цели (связи нет по построению)
-  holds: boolean | null; // null — расчёт ещё не закончен
+  holds: boolean | null; // null — расчёт ещё не закончен или сеть не запускалась
+  reason?: string; // почему не запускалась
 }
 
 export interface LinkCheck {

@@ -349,3 +349,42 @@ def test_prediction_on_panel_splits_by_entity() -> None:
         assert r["params"]["group"] == "[страна]", r["key"]
         assert "[страна]" not in r["params"].get("context", [])
     assert any("которых не было в обучении" in w for w in recs[0]["why"])
+
+
+def test_net_over_limit_is_skipped_not_the_whole_set(  # type: ignore[no-untyped-def]
+    make_client, db_session: Session, tmp_path: Path, queue: list, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сеть, которая не укладывается в лимит метода (трансформер на больших данных), пропускается
+    с причиной; остальные сети набора считаются, итог — из запущенных."""
+    import app.api.analysis as api
+
+    real = api._fit_net
+
+    def fit(db, settings, table, rows, rec):  # type: ignore[no-untyped-def]
+        if rec["key"] == "lab-mlp:transformer":
+            return None, "[больше лимита метода]"
+        return real(db, settings, table, rows, rec)
+
+    monkeypatch.setattr(api, "_fit_net", fit)
+    sid = _snapshot(db_session, tmp_path)
+    scan = _scan_run(db_session, sid, [("[x1]", "[ROA_2022]")])
+    body = {"scan_run": scan, "a": "[x1]", "b": "[ROA_2022]", "target": "[ROA_2022]"}
+    r = make_client("own", "owner").post("/api/analysis/link-check", json=body)
+    assert r.status_code == 201, r.text
+    assert len(r.json()["run_ids"]) == 2 and len(queue) == 2
+    exp = db_session.scalar(select(Experiment).where(Experiment.code == r.json()["experiment"]))
+    assert exp is not None and any("не запускалась: [больше лимита метода]" in x for x in exp.limitations)
+    check = make_client("rd", "reader").get(f"/api/analysis/links?snapshot_id={sid}").json()["checks"][0]
+    tr = next(n for n in check["nets"] if n["net"] == "transformer")
+    assert tr["status"] == "skipped" and tr["reason"] == "[больше лимита метода]" and tr["run_id"] is None
+    assert [n["net"] for n in check["nets"]] == ["mlp", "transformer", "gbm", "linear"] and check["total"] == 3
+
+
+def test_year_is_not_compared_as_an_indicator() -> None:
+    from app.services.analysis import recommend
+    from app.services.data_files import Table
+
+    cols = ["[страна]", "[год]", "[x1]", "[x2]"]
+    t = Table(columns=cols, numeric={"[год]", "[x1]", "[x2]"}, sample=[])
+    first = recommend(t, 600, "", None)["recommendations"][0]
+    assert first["template"] == "rank-agreement" and first["params"]["columns"] == ["[x1]", "[x2]"]
