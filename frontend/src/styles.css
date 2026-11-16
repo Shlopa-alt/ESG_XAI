@@ -1044,3 +1044,8 @@ details[open] > .node-head .node-preview { display: none; }
 .method-code, .method-log { max-height: 420px; overflow: auto; padding: 12px; border-radius: 8px; background: var(--surface-soft);
   border: 1px solid var(--border); font-size: 12.5px; line-height: 1.5; white-space: pre; }
 .method-log { white-space: pre-wrap; }
+
+/* --- перевод черновиков данных --- */
+.translate-bar .filters { margin: 4px 0 8px; }
+.translate-bar p { margin: 6px 0; }
+.lang-badge { font-size: 11px; letter-spacing: 0.04em; padding: 1px 6px; }

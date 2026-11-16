@@ -19,10 +19,12 @@ from sqlalchemy.orm import Session
 
 from app.api.datasets import _add_snapshot, _root, _version
 from app.api.deps import current_user, require_role
+from app.api.qwen import translator_online
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import DataDraft, Dataset, QwenJob, User
 from app.services import data_drafts as svc
+from app.services import translation
 from app.services.codes import next_code
 from app.services.qwen_queue import enqueue
 
@@ -46,6 +48,8 @@ class DraftItem(BaseModel):
     created_at: datetime
     source_kind: str  # table — таблица статьи; link — данные по ссылке из статьи
     source_url: str
+    lang: str = ""  # язык таблицы (app/services/translation.py: detect); ru — русский, пусто — одни числа
+    title_ru: str = ""  # название по-русски, если черновик переведён
 
 
 class JobState(BaseModel):
@@ -71,6 +75,8 @@ class DraftOut(DraftItem):
     file_url: str
     file_name: str
     file_sha256: str
+    # перевод на русский: словарь «оригинал → перевод», идёт ли новый, жив ли переводчик
+    translation: dict[str, Any] = {}
 
 
 class DraftEdit(BaseModel):
@@ -91,6 +97,10 @@ class ApproveIn(BaseModel):
 
 class RejectIn(BaseModel):
     note: str = Field(min_length=3, max_length=2000)
+
+
+class TranslateIn(BaseModel):
+    lang: Literal["", "en", "ar", "zh", "fr", "de"] = ""  # язык оригинала; пусто — определить
 
 
 class ScanIn(BaseModel):
@@ -126,6 +136,7 @@ def _item(db: Session, d: DataDraft) -> dict[str, Any]:
         "created_at": d.created_at,
         "source_kind": d.source_kind or "table",
         "source_url": d.source_url,
+        "lang": translation.language(d),
     }
 
 
@@ -174,7 +185,14 @@ def _out(db: Session, d: DataDraft) -> DraftOut:
         file_url=d.file_url,
         file_name=d.file_name,
         file_sha256=d.file_sha256,
+        translation=_translation(db, d),
     )
+
+
+def _translation(db: Session, d: DataDraft) -> dict[str, Any]:
+    """Перевод для экрана; жив ли переводчик — только когда перевод ждёт (это вопрос к Redis)."""
+    st = translation.state(db, d)
+    return {**st, "translator_online": translator_online(get_settings()) if st["pending"] else None}
 
 
 @router.get("", response_model=list[DraftItem])
@@ -186,7 +204,8 @@ def list_drafts(
     q = select(DataDraft).order_by(DataDraft.id.desc())
     if status_ != "all":
         q = q.where(DataDraft.status == status_)
-    return [DraftItem(**_item(db, d)) for d in db.scalars(q.limit(300))]
+    ru = translation.titles(db)
+    return [DraftItem(**_item(db, d), title_ru=ru.get(d.id, {}).get(d.title, "")) for d in db.scalars(q.limit(300))]
 
 
 @router.get("/{did}", response_model=DraftOut)
@@ -239,6 +258,25 @@ def command(
         dedupe=False,
     )
     svc.note(d, "command", user.login, f"Команда Qwen: «{' '.join(body.text.split())}»")
+    db.commit()
+    return _out(db, d)
+
+
+@router.post("/{did}/translate", response_model=DraftOut, status_code=status.HTTP_202_ACCEPTED)
+def translate(
+    did: int,
+    body: TranslateIn,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Researcher],
+) -> DraftOut:
+    """Перевести черновик на русский (Argos Translate на процессоре лаборатории). Таблица не
+    меняется: перевод — для чтения, в набор данных уходит оригинал."""
+    d = _get(db, did)
+    job = translation.request(db, d, body.lang, user_id=user.id)
+    if job is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Переводить нечего: таблица по-русски, в ней одни числа или язык не из "
+                            f"переводимых ({', '.join(translation.LANGS.values())})")
     db.commit()
     return _out(db, d)
 

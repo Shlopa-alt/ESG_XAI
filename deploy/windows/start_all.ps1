@@ -108,3 +108,21 @@ if (-not $qwen) {
 } else {
     Say "обработчик Qwen уже работает"
 }
+
+# Переводчик черновиков данных на русский (Argos Translate, процессор): свой venv, видеокарта не нужна.
+# Установка — один раз, по runner\translate\requirements.txt
+$translatorPy = Join-Path $Platform "runner\translate\.venv\Scripts\python.exe"
+$translator = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object { $_.CommandLine -like "*translator.py*" }
+if (-not (Test-Path $translatorPy)) {
+    Say "переводчик не установлен — см. runner\translate\requirements.txt (черновики ждут перевода)"
+} elseif (-not $translator) {
+    $env:PYTHONIOENCODING = "utf-8"
+    Start-Process -FilePath $translatorPy -ArgumentList (Join-Path $Platform "runner\translate\translator.py") `
+        -WorkingDirectory $Platform -WindowStyle Hidden `
+        -RedirectStandardOutput (Join-Path $PSScriptRoot "logs\translator.log") `
+        -RedirectStandardError (Join-Path $PSScriptRoot "logs\translator.err.log")
+    Say "переводчик запущен"
+} else {
+    Say "переводчик уже работает"
+}
