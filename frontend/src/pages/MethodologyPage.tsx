@@ -23,6 +23,7 @@ import {
 } from "../api/methodology";
 import { useMe } from "../auth/useAuth";
 import { ArticlesSummaryTab } from "../components/ArticlesSummary";
+import { MethodologyScheme } from "../components/MethodologyScheme";
 import { plural } from "../components/Ux";
 
 const VERDICTS = { approve: "одобрено", changes: "нужны правки", reject: "отклонено" } as const;
@@ -559,6 +560,21 @@ export function Methodology() {
       {tab === "method" && (
         <div className="tree" role="tabpanel">
           {m.isPending && <p className="muted">Загрузка…</p>}
+          {m.isSuccess && (
+            <MethodologyScheme
+              nodes={nodes}
+              openTab={setTab}
+              counts={{
+                ideas: hyps.data?.length ?? 0,
+                checks: exps.data?.length ?? 0,
+                checksWithResult: (exps.data ?? []).filter((e) => e.outcome).length,
+                crOpen: openCount,
+                crAccepted: crList.filter((c) => c.status === "accepted").length,
+                versions: versionList.length,
+                version: m.data.version ?? null,
+              }}
+            />
+          )}
           <p className="muted">Нажмите на пункт, чтобы прочитать его полностью.</p>
           {directions.map((d) => (
             <div key={d.number} className="card node-card">
