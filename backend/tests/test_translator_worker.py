@@ -27,6 +27,12 @@ def test_texts_become_pairs_and_one_failure_does_not_stop_the_rest() -> None:
     job = {"payload": {"source": "fr", "texts": ["Taux", "[сломается]", "", "année"]}}
     out = T.job_translate(job, fake)
     assert out["pairs"] == {"Taux": "<Taux>", "année": "<année>"} and out["failed"] == 1
+    # заголовок с заглавной — перевод тоже с заглавной
+    low = T.job_translate({"payload": {"source": "en", "texts": ["Industry", "industry"]}},
+                          lambda s, t: lambda x: "промышленность")
+    assert low["pairs"] == {"Industry": "Промышленность", "industry": "промышленность"}
+    zh = T.job_translate({"payload": {"source": "zh", "texts": ["行业", "[x]"]}}, lambda s, t: lambda x: "промышленность")
+    assert zh["pairs"] == {"行业": "Промышленность", "[x]": "промышленность"}
     assert out["engine"].startswith("Argos Translate")
     with pytest.raises(ValueError, match="не знает"):
         T.job_translate({"payload": {"source": "es", "texts": ["hola"]}}, fake)

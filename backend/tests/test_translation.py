@@ -32,6 +32,12 @@ def test_language_is_detected(texts: list[str], lang: str) -> None:
     assert translation.detect(texts) == lang
 
 
+def test_which_strings_are_translated() -> None:
+    f = translation._foreign
+    assert f("Total assets") and f("[x] 表 1 样本公司") and f("Umsatz der Unternehmen [тыс. руб.]")
+    assert not f("Выручка, тыс. руб.") and not f("12,5") and not f("Выручка [revenue]")
+
+
 def _job(db: Session, kind: str = "tables") -> QwenJob:
     job = QwenJob(kind=kind, status="running", payload={})
     db.add(job)

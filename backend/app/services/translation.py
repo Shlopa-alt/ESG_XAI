@@ -65,9 +65,12 @@ def detect(texts: Iterable[str]) -> str:
 
 
 def _foreign(text: str) -> bool:
-    """Строку стоит переводить: в ней есть буквы и она не по-русски."""
+    """Строку стоит переводить: в ней есть буквы и иностранного в ней больше, чем русского
+    (иероглиф — за две буквы: он короче слова)."""
     letters = len(re.findall(r"[^\W\d_]", text))
-    return letters > 0 and len(_CYR.findall(text)) / letters < 0.5 and len(text) <= MAX_LEN
+    cyr = len(_CYR.findall(text))
+    other = letters - cyr + len(_CJK.findall(text))
+    return letters > 0 and other > cyr and len(text) <= MAX_LEN
 
 
 def source_texts(d: DataDraft) -> list[str]:

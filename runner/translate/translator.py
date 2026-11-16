@@ -116,6 +116,11 @@ def job_translate(job: dict[str, Any], translate: Callable[[str, str], Callable[
             failed += 1
             continue
         if out:
+            # заголовок с заглавной — и перевод с заглавной («Industry» → «Промышленность»); у письма без
+            # заглавных (китайский, арабский) — тоже: по-русски подпись начинается с заглавной
+            first = text.lstrip()[:1]
+            if (first.isupper() or first.upper() == first.lower() and first.isalpha()) and out[:1].islower():
+                out = out[:1].upper() + out[1:]
             pairs[text] = out
     return {"pairs": pairs, "engine": engine(), "failed": failed}
 
