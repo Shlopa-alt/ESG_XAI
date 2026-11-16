@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ManualMode } from "../components/ManualMode";
 
 import { checkLink, getLinks, launchAnalysis, recommend, type LinkCheck, type LinksOut, type NetResult, type ScanOut } from "../api/analysis";
 import { useMe } from "../auth/useAuth";
@@ -273,6 +274,7 @@ export function Nets() {
             {group && ` Строки повторяются по годам: каждая «${group}» — одно наблюдение, данные по ней усредняются.`}
           </p>
         )}
+        {snapshot !== "" && <ManualMode snapshot={snapshot} />}
         {(reco.isError || links.isError) && (
           <p className="error" role="alert">
             {(reco.error ?? links.error)?.message}

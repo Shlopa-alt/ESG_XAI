@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # Qwen по требованию: обработчик очереди на машине с видеокартой (runner/qwen/worker.py)
     qwen_token: str = ""
 
+    # Ручной режим (ноутбук Jupyter, командная строка esg): код методов кладётся в архив из рабочей
+    # копии репозитория, смонтированной только для чтения (deploy/docker-compose.yml: ..:/repo:ro)
+    repo_dir: str = "/repo"
+
 
 WEAK_LOCAL_PASSWORDS = frozenset({"", "dev", "change-me"})
 

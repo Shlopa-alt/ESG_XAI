@@ -66,6 +66,8 @@ services:
     volumes:
       - ${KB_INBOX_DIR:-../.local/kb_inbox}:/data/kb_inbox
       - ${ESG_DATA_HOST:-../.local/esg_data}:/data/esg
+      # ручной режим: код методов runner/ — в архив «Взять в свои руки» (только чтение)
+      - ..:/repo:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

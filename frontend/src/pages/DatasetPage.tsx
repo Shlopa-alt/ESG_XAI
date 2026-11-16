@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { ManualMode } from "../components/ManualMode";
 
 import { useMe } from "../auth/useAuth";
 
@@ -351,6 +352,7 @@ export function DatasetPage() {
                     Расчётов
                   </th>
                   <th scope="col">Файл</th>
+                  <th scope="col">Вручную</th>
                 </tr>
               </thead>
               <tbody>
@@ -363,6 +365,7 @@ export function DatasetPage() {
                     <td className="num mono">{s.row_count?.toLocaleString("ru-RU") ?? "—"}</td>
                     <td className="num mono">{s.runs}</td>
                     <td className="mono run-path">{ds.can_see_files ? s.storage_path || "—" : "под NDA"}</td>
+                    <td>{ds.can_see_files ? <ManualMode snapshot={s.id} compact /> : <span className="muted">под NDA</span>}</td>
                   </tr>
                 ))}
               </tbody>
