@@ -1044,3 +1044,7 @@ details[open] > .node-head .node-preview { display: none; }
 .method-code, .method-log { max-height: 420px; overflow: auto; padding: 12px; border-radius: 8px; background: var(--surface-soft);
   border: 1px solid var(--border); font-size: 12.5px; line-height: 1.5; white-space: pre; }
 .method-log { white-space: pre-wrap; }
+
+/* --- ход проверки (п. 13) --- */
+.progress-line { margin-top: 4px; font-size: 13px; line-height: 1.45; }
+.exp-actions .progress-line { flex-basis: 100%; }

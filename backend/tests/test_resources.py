@@ -103,15 +103,27 @@ def test_over_limit_is_refused_on_server_with_advice(
     assert queue == []
 
 
-def test_active_runs_and_daily_quota(make_client, snapshot: int, queue: list) -> None:  # type: ignore[no-untyped-def,type-arg]
+def test_active_checks_and_daily_quota(make_client, db_session: Session, snapshot: int, queue: list) -> None:  # type: ignore[no-untyped-def,type-arg]
+    """Лимит — на проверки, которые считаются одновременно (их 2 в настройках теста): расчёты в ту
+    же проверку (набор сетей) лимит не тратят; минуты ограничивает дневная квота."""
+    for code in ("EXP-002", "EXP-003"):
+        db_session.add(Experiment(code=code, title="[проверка]", status="running", config={}, setup=[],
+                                  results=[], limitations=[], reproducibility=[]))
+    db_session.commit()
     c = make_client("res", "researcher")
-    assert _launch(c, snapshot, 100).status_code == 201  # 75 мин из квоты 200
-    r = _launch(c, snapshot, 200)  # ещё 150 мин — больше квоты
+
+    def go(trials: int, exp: str = "EXP-007"):  # type: ignore[no-untyped-def]
+        return c.post("/api/runs", json={"template": "exp007-hsu", "snapshot_id": snapshot,
+                                         "params": {"trials": trials}, "experiment": exp})
+
+    assert go(100).status_code == 201  # 75 мин из квоты 200
+    r = go(200)  # ещё 150 мин — больше квоты
     assert r.status_code == 409 and "квота" in r.json()["detail"]
-    assert _launch(c, snapshot, 100).status_code == 201  # 150 из 200
-    r = _launch(c, snapshot, 5)  # уже два расчёта в очереди
-    assert r.status_code == 409 and "в очереди" in r.json()["detail"]
-    assert len(queue) == 2 and queue[0]["queue"] == "cpu"
+    assert go(20).status_code == 201  # та же проверка EXP-007 — лимит проверок не тратит
+    assert go(20, "EXP-002").status_code == 201  # вторая проверка
+    r = go(5, "EXP-003")  # третья — больше двух одновременно
+    assert r.status_code == 409 and "EXP-002, EXP-007" in r.json()["detail"]
+    assert len(queue) == 3 and queue[0]["queue"] == "cpu"
 
 
 def test_owner_has_no_daily_quota(make_client, snapshot: int, queue: list) -> None:  # type: ignore[no-untyped-def,type-arg]

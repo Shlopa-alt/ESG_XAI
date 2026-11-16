@@ -18,6 +18,7 @@ from app.db import get_db
 from app.models import Dataset, DatasetSnapshot, Experiment, Run, User
 from app.services import method_library, resources, run_queue
 from app.services.data_files import Table, is_table, table_columns, to_container
+from app.services.experiments import refresh_after_runs
 from app.services.report import Report, merge_run_report
 from app.services.run_templates import ParamError, check_params, script_args
 
@@ -326,7 +327,7 @@ def start_run(db: Session, settings: Settings, user: User, template: str, snapsh
     est = resources.estimate(db, settings, t, checked,
                                  resources.rows_of(settings, snap, str(checked.get("sheet") or "")))
     try:
-        resources.check_limits(db, settings, user, est)
+        resources.check_limits(db, settings, user, est, exp.id)
     except resources.LimitError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
     if est.resource == "gpu":
@@ -446,6 +447,10 @@ def stop(
     if run.status == "queued":
         run.status, run.finished_at = "stopped", datetime.now(UTC)
         run.message = f"Снят с очереди: {user.login}"
+        exp = db.get(Experiment, run.experiment_id)
+        if exp is not None:
+            db.flush()
+            refresh_after_runs(db, exp)
     else:
         run.message = f"Остановка запрошена: {user.login}"
     db.commit()
@@ -499,5 +504,8 @@ def worker_report(run_id: int, body: WorkerReport,
         run.status = "failed" if body.status == "done" else body.status
         run.finished_at = datetime.now(UTC)
         run.message = body.message or ("Расчёт не записал run.json" if body.status == "done" else "")
+    if exp is not None and run.status in run_queue.FINAL:
+        db.flush()
+        refresh_after_runs(db, exp)  # все расчёты проверки закончились — она не висит «в работе»
     db.commit()
     return _out(db, run)
