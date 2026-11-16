@@ -190,7 +190,7 @@ function AddSnapshot({ ds }: { ds: DatasetDetail }) {
       </p>
       <label className="field">
         Версия (по умолчанию — сегодняшняя дата)
-        <input value={version} onChange={(e) => setVersion(e.target.value)} maxLength={64} placeholder="2026-10-30" />
+        <input value={version} onChange={(e) => setVersion(e.target.value)} maxLength={64} placeholder={new Date().toISOString().slice(0, 10)} />
       </label>
       <div className="form-grid">
         <label className="field span-2">
@@ -262,7 +262,7 @@ export function DatasetPage() {
     <>
       <section className="page-head">
         <span className="eyebrow">
-          <Link to="/knowledge">БАНК СТАТЕЙ</Link> · ДАТАСЕТ
+          <Link to="/data">ДАННЫЕ</Link> · НАБОР ДАННЫХ
         </span>
         <h1 className="page-title">
           <span className="mono">{ds.code}</span> · {ds.title}

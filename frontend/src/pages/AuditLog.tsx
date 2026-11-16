@@ -38,7 +38,9 @@ export function AuditLog() {
         Пользователь
         <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="все" />
       </label>
-      <div className="table-wrap">
+      {/* на узком экране таблица прокручивается вбок — область доступна с клавиатуры (axe: scrollable-region-focusable) */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Журнал действий, таблица">
         <table className="table">
           <thead>
             <tr>
