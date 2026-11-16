@@ -30,14 +30,25 @@
 возможно, это один показатель (или соседние годы одного); связи второго столбца пары (в порядке
 файла) не ищутся, он перечислен в итогах (excluded_columns), сами пары — в same_pairs. Немонотонные дубли (y = f(x) при |ρ| < 0,98) псевдонимами не считаются и идут в находки.
 
+Способ поиска (method) меняет только тест пары в (2) и (4); деление, поправка, подтверждение и
+плацебо — те же для всех способов:
+  rank    — ρ Спирмена и ξ Чаттерджи, как описано выше (по умолчанию);
+  linear  — r Пирсона: только прямолинейная связь, привычная экономисту корреляция; чувствительна
+            к выбросам, немонотонных связей не видит;
+  partial — частная ρ: связь пары после того, как из обоих показателей убрано всё, что
+            объясняют остальные выбранные столбцы (регрессия рангов на ранги остальных). Связь,
+            за которой стоит третий показатель из набора, здесь пропадает. Нужны строки без
+            пропусков во всех столбцах и строк заметно больше, чем столбцов (PARTIAL_SPARE).
+
 Параметры (--params): columns — столбцы (пусто — все числовые; больше MAX_COLUMNS — отказ, а у
 «все числовые» — первые MAX_COLUMNS, остальные перечислены в итогах), group — столбец-группа
-панели (необязательно; по нему строки усредняются), holdout, fdr, seed, placebo (сколько раз
-повторить плацебо), sheet.
+панели (необязательно; по нему строки усредняются), method, holdout, fdr, seed, placebo (сколько
+раз повторить плацебо), sheet.
 Действующие значения всех параметров пишутся в summary.params.
 """
 
 import json
+import re
 import time
 from datetime import UTC, datetime
 from itertools import combinations
@@ -45,16 +56,28 @@ from itertools import combinations
 import numpy as np
 import pandas as pd
 from common import event, fmt, load_table, numeric, parse_args, results_dir, write_run
-from scipy.stats import norm, rankdata, spearmanr
+from scipy.stats import norm, pearsonr, rankdata, spearmanr
+from scipy.stats import t as student_t
 
 MAX_COLUMNS = 40  # пар — до 780
 MIN_PART = 20  # строк в каждой части; меньше — асимптотика грубая и подтверждать не на чем
 MIN_ROWS = 2 * MIN_PART
 YEAR_COL = ("year", "год", "fiscal year", "отчётный год", "период", "period")  # признак панели
+# номер строки или компании — не показатель: у «все числовые» не ищется (как ID_LIKE в app/services/analysis.py)
+_ID_WORDS = (r"id|code|код|инн|огрн|окпо|inn|ogrn|okpo|номер|n|no|№|#|index|row|ticker|тикер|isin|cusip|"
+             r"permno|gvkey")
+ID_COL = re.compile(rf"(?:{_ID_WORDS})|.+[ _.\-](?:id|code|код)|(?:id|code|код|номер)[ _.\-].+")
 MIN_PAIR_ROWS = MIN_PART  # у пары в части меньше строк без пропусков — пара не считается
 SAME = 0.98  # |ρ| не меньше — два названия одного показателя
 CONFIRM_ALPHA = 0.05
 DISCRETE = (20, 0.2)  # меньше max(20, 20 % строк) разных значений — столбец с повторами: без ξ
+METHODS = {  # способ поиска → как называется сила связи в итогах
+    "rank": "ρ Спирмена",
+    "linear": "r Пирсона",
+    "partial": "частная ρ (без влияния остальных столбцов)",
+}
+KIND = {"linear": "линейная", "partial": "частная"}  # у rank — монотонная или немонотонная
+PARTIAL_SPARE = 10  # частная ρ: строк без пропусков — хотя бы столбцов + 2 + столько
 
 
 def xi(x: np.ndarray, y: np.ndarray) -> float:
@@ -92,6 +115,48 @@ def pair_test(a: np.ndarray, b: np.ndarray) -> dict[str, float] | None:
             "p": min(1.0, 2 * min(p_rho, p_xi))}
 
 
+def linear_test(a: np.ndarray, b: np.ndarray) -> dict[str, float] | None:
+    """r Пирсона — только прямолинейная связь. Поля — как у pair_test, без ξ."""
+    ok = ~(np.isnan(a) | np.isnan(b))
+    a, b = a[ok], b[ok]
+    n = len(a)
+    if n < MIN_PAIR_ROWS or np.ptp(a) == 0 or np.ptp(b) == 0:
+        return None
+    r = pearsonr(a, b)
+    return {"n": n, "rho": float(r.statistic), "p_rho": float(r.pvalue), "xi": 0.0, "p_xi": 1.0,
+            "xi_used": False, "p": float(r.pvalue)}
+
+
+def partial_test(data: pd.DataFrame, a: str, b: str) -> dict[str, float] | None:
+    """Частная ρ пары a, b при остальных столбцах data: ранги a и b очищаются регрессией на ранги
+    остальных, остатки коррелируются; p — по t с n − 2 − k степенями свободы."""
+    controls = [c for c in data.columns if c not in (a, b)]
+    sub = data[[a, b, *controls]].dropna()
+    n, k = len(sub), len(controls)
+    df_ = n - 2 - k
+    if n < MIN_PAIR_ROWS or df_ < PARTIAL_SPARE or sub[a].nunique() < 2 or sub[b].nunique() < 2:
+        return None
+    ranks = sub.rank().to_numpy(float)
+    z = np.column_stack([np.ones(n), ranks[:, 2:]])
+    resid = ranks[:, :2] - z @ np.linalg.lstsq(z, ranks[:, :2], rcond=None)[0]
+    if resid[:, 0].std() < 1e-12 or resid[:, 1].std() < 1e-12:
+        return None  # пара целиком объясняется остальными столбцами
+    r = float(np.clip(np.corrcoef(resid[:, 0], resid[:, 1])[0, 1], -1.0, 1.0))
+    t = r * np.sqrt(df_ / max(1e-12, 1 - r * r))
+    p = float(min(1.0, 2 * student_t.sf(abs(t), df_)))
+    plain = float(spearmanr(sub[a], sub[b]).statistic)
+    return {"n": n, "rho": r, "p_rho": p, "xi": 0.0, "p_xi": 1.0, "xi_used": False, "p": p,
+            "rho_plain": plain}
+
+
+def pair_by_method(data: pd.DataFrame, a: str, b: str, method: str) -> dict[str, float] | None:
+    """Тест пары выбранным способом поиска."""
+    if method == "partial":
+        return partial_test(data, a, b)
+    x, y = data[a].to_numpy(float), data[b].to_numpy(float)
+    return linear_test(x, y) if method == "linear" else pair_test(x, y)
+
+
 def bh(pvalues: list[float], q: float) -> list[bool]:
     """Бенджамини — Хохберг: какие гипотезы отвергаются при доле ложных находок q."""
     m = len(pvalues)
@@ -104,10 +169,10 @@ def bh(pvalues: list[float], q: float) -> list[bool]:
     return [i in found for i in range(m)]
 
 
-def scan(data: pd.DataFrame, pairs: list[tuple[str, str]], q: float) -> list[dict]:
+def scan(data: pd.DataFrame, pairs: list[tuple[str, str]], q: float, method: str = "rank") -> list[dict]:
     rows = []
     for a, b in pairs:
-        t = pair_test(data[a].to_numpy(float), data[b].to_numpy(float))
+        t = pair_by_method(data, a, b, method)
         rows.append({"a": a, "b": b, **(t or {"n": int((data[a].notna() & data[b].notna()).sum())})})
     tested = [r for r in rows if "p" in r]
     for r, hit in zip(tested, bh([r["p"] for r in tested], q), strict=True):
@@ -161,6 +226,10 @@ def main() -> int:
     seed, holdout, q = int(p.get("seed", 42)), float(p.get("holdout", 50)) / 100, float(p.get("fdr", 10)) / 100
     n_placebo = int(p.get("placebo", 5))
     group = str(p.get("group") or "")
+    method = str(p.get("method") or "rank")
+    if method not in METHODS:
+        raise SystemExit(f"Нет способа поиска «{method}»: есть {', '.join(METHODS)}")
+    stat = METHODS[method]
     t0, started = time.time(), datetime.now(UTC).isoformat()
     out = results_dir(args.results_root)
     df = load_table(args.data, p.get("sheet", ""))
@@ -171,6 +240,7 @@ def main() -> int:
         raise SystemExit(f"В срезе нет столбца-группы «{group}»")
     # год строки — не показатель: у «все числовые» он не ищется
     cols = asked or [c for c in df.columns if c != group and _bare(c) not in YEAR_COL
+                     and not ID_COL.fullmatch(_bare(c))
                      and numeric(df, c).notna().sum() >= max(2, len(df) // 2)]
     skipped = cols[MAX_COLUMNS:]  # «все числовые» — первые MAX_COLUMNS в порядке файла
     cols = [c for c in cols[:MAX_COLUMNS] if c != group]
@@ -191,11 +261,19 @@ def main() -> int:
         raise SystemExit(f"В части поиска {len(find)} {unit}, в отложенной — {len(confirm)}: нужно в каждой "
                          f"хотя бы {MIN_PART}. Измените долю на подтверждение или возьмите больше данных")
     pairs = list(combinations(data.columns, 2))
+    if method == "partial":  # частной ρ нужны строки без пропусков во всех столбцах, и много
+        need = data.shape[1] + PARTIAL_SPARE
+        have = min(len(find.dropna()), len(confirm.dropna()))
+        if have < need:
+            raise SystemExit(f"Для частных связей в каждой части нужно хотя бы {need} {unit} без пропусков во "
+                             f"всех {data.shape[1]} столбцах, а есть {have}. Возьмите меньше столбцов или "
+                             "другой способ поиска")
 
     event("progress", done=0, total=3 + n_placebo, label=f"поиск: {len(pairs)} пар на {len(find)} {unit}")
-    rows = scan(find, pairs, q)
+    rows = scan(find, pairs, q, method)
     for r in rows:
-        r["same"] = bool("rho" in r and abs(r["rho"]) >= SAME)
+        # «почти одно и то же» — по обычной ρ: у частной ρ дубль может «раствориться» в остальных
+        r["same"] = bool("rho" in r and abs(r.get("rho_plain", r["rho"])) >= SAME)
     # почти-копия столбца (второй из пары «одно и то же») повторила бы все находки первого
     aliases = {r["b"] for r in rows if r["same"]}
     found = [r for r in rows if r.get("found") and not r["same"] and not {r["a"], r["b"]} & aliases]
@@ -205,8 +283,8 @@ def main() -> int:
     alpha = CONFIRM_ALPHA / max(1, len(found))
     for r in found:
         by_rho = r["p_rho"] <= r["p_xi"]  # подтверждаем тем тестом, которым нашли
-        r["kind"] = "монотонная" if by_rho else "немонотонная"
-        t = pair_test(confirm[r["a"]].to_numpy(float), confirm[r["b"]].to_numpy(float))
+        r["kind"] = KIND.get(method) or ("монотонная" if by_rho else "немонотонная")
+        t = pair_by_method(confirm, r["a"], r["b"], method)
         r["confirm"] = t
         if t is None:  # на отложенной части мало строк без пропусков — не на чем проверить
             r["confirmed"], r["reason"] = False, "no_data"
@@ -220,7 +298,7 @@ def main() -> int:
     placebo = []
     for i in range(n_placebo):
         event("progress", done=2 + i, total=3 + n_placebo, label=f"плацебо {i + 1} из {n_placebo}")
-        fake = scan(shuffled(find, np.random.default_rng([seed, i + 1])), pairs, q)
+        fake = scan(shuffled(find, np.random.default_rng([seed, i + 1])), pairs, q, method)
         placebo.append(sum(1 for r in fake if r.get("found")))
     event("metric", name="ложных находок поиска на перемешанных данных (среднее)",
           value=float(np.mean(placebo)) if placebo else 0)
@@ -243,9 +321,11 @@ def main() -> int:
                "found": len(found), "confirmed": len(confirmed), "same": sum(1 for r in rows if r["same"]),
                "placebo_found": placebo, "fdr": q, "holdout": holdout,
                "columns_used": list(data.columns), "columns_skipped": skipped,
-               "without_xi": sum(1 for r in rows if "xi_used" in r and not r["xi_used"]),
+               # «только по ρ» — у rank: у linear и partial ξ не считается по самому способу
+               "without_xi": sum(1 for r in rows if "xi_used" in r and not r["xi_used"]) if method == "rank" else 0,
+               "method": method, "stat": stat,
                # действующие значения: при запуске без платформы умолчания иначе не видны
-               "params": {"columns": asked, "group": group, "holdout": round(holdout * 100),
+               "params": {"columns": asked, "group": group, "method": method, "holdout": round(holdout * 100),
                           "fdr": round(q * 100), "placebo": n_placebo, "seed": seed,
                           "sheet": p.get("sheet", "")},
                # для страницы расчёта: «проверить сетями» и «сделать идеей» по каждой связи
@@ -256,9 +336,17 @@ def main() -> int:
                # панель: наблюдение — группа (среднее её строк); без группы — подсказка, если похоже на панель
                "unit": "group" if group else "row", "rows_raw": len(df), "panel_hint": hint}
     top = sorted(confirmed, key=lambda r: -abs(r["confirm"]["rho"]))
-    missed = sorted(missed_all, key=lambda r: -abs(r["rho"] if r["kind"] == "монотонная" else r["xi"]))
+    def strength(r: dict) -> float:  # сила на части поиска: у немонотонных — ξ, иначе ρ (или r)
+        return r["xi"] if r["kind"] == "немонотонная" else r["rho"]
+
+    missed = sorted(missed_all, key=lambda r: -abs(strength(r)))
+    sym = {"linear": "r", "partial": "частная ρ"}.get(method, "ρ")
     report = {
         "kpis": [
+            {"label": "Способ поиска", "value": stat,
+             "note": {"rank": "монотонные связи (ρ) и любые, в том числе U-образные (ξ)",
+                      "linear": "только прямолинейные связи",
+                      "partial": "связь пары за вычетом того, что объясняют остальные столбцы"}[method]},
             {"label": "Пар проверено", "value": str(len(pairs)), "note": f"{data.shape[1]} столбцов"},
             {"label": "Найдено на части поиска", "value": str(len(found)),
              "note": f"{len(find)} {unit}, доля ложных находок не больше {round(q * 100)} %"},
@@ -288,11 +376,11 @@ def main() -> int:
         ],
         "charts": [
             *([{
-                "id": "confirmed", "kind": "bars", "unit": "ρ",
-                "title": "Подтверждённые связи, ρ Спирмена на отложенной части",
+                "id": "confirmed", "kind": "bars", "unit": sym,
+                "title": f"Подтверждённые связи, {stat} на отложенной части",
                 "subtitle": f"{len(confirmed)} из {len(found)} находок", "reference": {"value": 0, "label": "нет связи"},
                 "categories": [name(r) for r in top[:20]],
-                "series": [{"name": "ρ на отложенной части", "values": [r["confirm"]["rho"] for r in top[:20]]}],
+                "series": [{"name": f"{sym} на отложенной части", "values": [r["confirm"]["rho"] for r in top[:20]]}],
                 "interpretation": ("Каждая — кандидат в идею для проверки, не вывод: связь не говорит, что из чего "
                                    "следует, и может объясняться третьим показателем."),
             }] if top else []),
@@ -300,11 +388,11 @@ def main() -> int:
             *([{
                 "id": "not_confirmed", "kind": "bars", "unit": "",
                 "title": "Находки, которые не подтвердились на отложенной части",
-                "subtitle": "сила связи на части поиска: ρ Спирмена у монотонных, ξ Чаттерджи у немонотонных",
+                "subtitle": ("сила связи на части поиска: ρ Спирмена у монотонных, ξ Чаттерджи у немонотонных"
+                             if method == "rank" else f"сила связи на части поиска: {stat}"),
                 "reference": {"value": 0, "label": "нет связи"},
-                "categories": [f"{name(r)} ({'ρ' if r['kind'] == 'монотонная' else 'ξ'})" for r in missed[:20]],
-                "series": [{"name": "на части поиска",
-                            "values": [r["rho"] if r["kind"] == "монотонная" else r["xi"] for r in missed[:20]]}],
+                "categories": [f"{name(r)} ({'ξ' if r['kind'] == 'немонотонная' else sym})" for r in missed[:20]],
+                "series": [{"name": "на части поиска", "values": [strength(r) for r in missed[:20]]}],
                 "interpretation": ("Связь была видна на части поиска и не подтвердилась на отложенной — чаще всего "
                                    "это случайность"
                                    + (f"; у {sum(1 for r in missed_all if r['reason'] == 'no_data')} на отложенной "

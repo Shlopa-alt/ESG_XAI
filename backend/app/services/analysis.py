@@ -120,7 +120,10 @@ def target_candidates(node: MethodologySection | None, t: Table) -> list[dict[st
 
 
 # столбцы-идентификаторы и годы строк — не показатели, во входы не идут
-ID_LIKE = re.compile(r"(id|инн|огрн|окпо|код|номер|n|№|year|год|fiscal year|отчётный год)")
+# (code, ticker, company_id, «код компании» — тоже: иначе номер компании «связывался» с показателями)
+_ID_WORDS = (r"id|code|код|инн|огрн|окпо|inn|ogrn|okpo|номер|n|no|№|#|index|row|ticker|тикер|isin|cusip|"
+             r"permno|gvkey|year|год|fiscal year|отчётный год")
+ID_LIKE = re.compile(rf"(?:{_ID_WORDS})|.+[ _.\-](?:id|code|код)|(?:id|code|код|номер)[ _.\-].+")
 
 
 def _bare(column: str) -> str:
