@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import type { User } from "../api/auth";
 import { useLogout } from "../auth/useAuth";
 import { ORG, WITH_LAB } from "../org";
+import { LangSwitch } from "./LangSwitch";
 import { ROLE_LABEL } from "./Ux";
 
 interface NavItem {
@@ -142,6 +143,7 @@ export function Layout({ user }: { user: User }) {
             />
           </form>
           <div className="topbar-actions">
+            <LangSwitch />
             <NavLink to="/password" className="btn-ghost">
               Пароль
             </NavLink>

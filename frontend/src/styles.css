@@ -1122,3 +1122,6 @@ a.scheme-box:focus-visible, button.scheme-box:focus-visible { outline: 2px solid
 .translate-bar .filters { margin: 4px 0 8px; }
 .translate-bar p { margin: 6px 0; }
 .lang-badge { font-size: 11px; letter-spacing: 0.04em; padding: 1px 6px; }
+/* --- переключатель языка RU / EN --- */
+.lang-switch { min-width: 44px; font-weight: 600; letter-spacing: 0.04em; }
+.login-lang { display: flex; justify-content: flex-end; margin-bottom: -8px; }
