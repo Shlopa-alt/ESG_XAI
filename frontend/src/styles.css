@@ -1118,3 +1118,7 @@ a.scheme-box:focus-visible, button.scheme-box:focus-visible { outline: 2px solid
   .nets-table tr.net-picker-row { padding: 0; }
   .nets-table .net-picker-row > td::before { content: none; }
 }
+/* --- перевод черновиков данных --- */
+.translate-bar .filters { margin: 4px 0 8px; }
+.translate-bar p { margin: 6px 0; }
+.lang-badge { font-size: 11px; letter-spacing: 0.04em; padding: 1px 6px; }

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.models import DataDraft, QwenJob
+from app.services import translation
 from app.services.data_files import EXCEL, TEXT, excel_sheets
 
 MAX_ROWS = 5000
@@ -368,6 +369,7 @@ def create_from_result(db: Session, job: QwenJob, result: dict[str, Any]) -> lis
         db.flush()
         have.add((doc_id, num))
         created.append(d.id)
+    translation.auto(db, created)  # таблица иностранной статьи — сразу в перевод (п. 6 фидбека)
     return created
 
 
@@ -500,6 +502,7 @@ def create_link_drafts(
         _attach_file(d, settings, item.get("file"), str(item.get("failure") or ""))
         have.add((doc_id, source.lower()))
         created.append(d.id)
+    translation.auto(db, created)
     return created
 
 

@@ -18,6 +18,8 @@ export interface DraftItem {
   created_at: string;
   source_kind: "table" | "link"; // таблица статьи или данные по ссылке из статьи (агент сбора данных)
   source_url: string;
+  lang?: string; // язык таблицы: en, ar, zh, fr, de; ru — русский; пусто — одни числа
+  title_ru?: string; // название по-русски, если черновик переведён
 }
 
 export interface DraftHistory {
@@ -33,6 +35,28 @@ export interface DraftJob {
   command: string;
   message: string;
 }
+
+/** Перевод на русский (Argos Translate на процессоре лаборатории); таблица не меняется. */
+export interface DraftTranslation {
+  lang: string; // язык оригинала, определённый платформой
+  lang_title: string; // «английский»; пусто — переводить нечего
+  can_translate: boolean;
+  pairs: Record<string, string>; // оригинал → по-русски
+  source: string; // с какого языка переведено
+  engine: string;
+  done_at: string | null;
+  pending: "" | "queued" | "running";
+  failed: string;
+  translator_online: boolean | null; // null — не спрашивали (перевод не ждёт)
+}
+
+export const LANG_TITLE: Record<string, string> = {
+  en: "английский",
+  ar: "арабский",
+  zh: "китайский",
+  fr: "французский",
+  de: "немецкий",
+};
 
 export interface Draft extends DraftItem {
   kb_path: string;
@@ -50,6 +74,7 @@ export interface Draft extends DraftItem {
   file_url: string;
   file_name: string;
   file_sha256: string;
+  translation?: DraftTranslation;
 }
 
 /** Операция правки — те же, что выбирает Qwen по команде (backend/app/services/data_drafts.py). */
@@ -84,6 +109,8 @@ export const approveDraft = (id: number, body: { title: string; description: str
   call<Draft>(`/data-drafts/${id}/approve`, { method: "POST", body: JSON.stringify(body) });
 export const rejectDraft = (id: number, note: string) =>
   call<Draft>(`/data-drafts/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) });
+export const translateDraft = (id: number, lang = "") =>
+  call<Draft>(`/data-drafts/${id}/translate`, { method: "POST", body: JSON.stringify({ lang }) });
 export const scanTables = (docId = "") =>
   call<{ job: number }>("/data-drafts/scan", { method: "POST", body: JSON.stringify({ doc_id: docId }) });
 

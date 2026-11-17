@@ -1,0 +1,6 @@
+# Переводчик черновиков данных (runner/translate/translator.py) — своё окружение на лабораторном ПК:
+#   py -3.12 -m venv runner\translate\.venv
+#   runner\translate\.venv\Scripts\python.exe -m pip install -r runner\translate\requirements.txt
+#   runner\translate\.venv\Scripts\python.exe runner\translate\translator.py --install   (модели языков, ~0,5 ГБ)
+# Работает на процессоре; видеокарта и модель Qwen не нужны.
+argostranslate>=1.9,<2

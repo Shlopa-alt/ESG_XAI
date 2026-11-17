@@ -14,12 +14,14 @@ import {
   editDraft,
   getDraft,
   JOB_STATUS,
+  LANG_TITLE,
   listDrafts,
   rejectDraft,
   scanLinks,
   scanTables,
 } from "../api/dataDrafts";
 import { useMe } from "../auth/useAuth";
+import { TranslationBar, translator, type View } from "../components/DraftTranslation";
 import { DataTabs } from "../components/SectionTabs";
 
 const FILTERS: Array<[DraftStatus | "all", string]> = [
@@ -111,9 +113,16 @@ export function DataDrafts() {
                 {q.data.map((d) => (
                   <tr key={d.id}>
                     <td>
-                      <Link to={`/data-drafts/${d.id}`}>{d.title || draftName(d)}</Link>
+                      <Link to={`/data-drafts/${d.id}`}>{d.title_ru || d.title || draftName(d)}</Link>
+                      {d.title_ru && d.title_ru !== d.title && <div className="muted">{d.title}</div>}
                     </td>
                     <td>
+                      {d.lang && LANG_TITLE[d.lang] && (
+                        <span className="badge st-planned lang-badge" title={`Язык таблицы: ${LANG_TITLE[d.lang]}`}>
+                          {d.lang.toUpperCase()}
+                          <span className="sr-only"> — язык таблицы: {LANG_TITLE[d.lang]}</span>
+                        </span>
+                      )}{" "}
                       {d.article_title || d.doc_id}
                       <div className="muted">
                         {d.source_kind === "link" ? (
@@ -200,7 +209,13 @@ type Editing = { kind: "cell"; row: number; col: number; value: string } | { kin
 // поле правки появляется по нажатию — фокус сразу в нём, чтобы печатать без лишнего щелчка
 const focus = (el: HTMLInputElement | null) => el?.focus();
 
-function DraftTable({ d, canEdit, apply, pending }: { d: Draft; canEdit: boolean; apply: (ops: DraftOp[]) => void; pending: boolean }) {
+function DraftTable({ d, canEdit, apply, pending, tr }: {
+  d: Draft;
+  canEdit: boolean;
+  apply: (ops: DraftOp[]) => void;
+  pending: boolean;
+  tr: (s: string) => string; // перевод для показа; правится всегда оригинал
+}) {
   const [all, setAll] = useState(false);
   const [editing, setEditing] = useState<Editing | null>(null);
   const rows = all ? d.rows : d.rows.slice(0, SHOWN);
@@ -227,7 +242,8 @@ function DraftTable({ d, canEdit, apply, pending }: { d: Draft; canEdit: boolean
       {canEdit && (
         <p className="muted">
           Нажмите на ячейку или имя столбца, чтобы поправить (Enter — сохранить, Esc — отмена). Каждая правка
-          попадает в журнал и в описание будущего набора данных.
+          попадает в журнал и в описание будущего набора данных. Правится оригинал таблицы, даже если она показана
+          по-русски.
         </p>
       )}
       <div className="table-wrap">
@@ -241,11 +257,12 @@ function DraftTable({ d, canEdit, apply, pending }: { d: Draft; canEdit: boolean
                     <input aria-label={`Новое имя столбца «${c}»`} value={editing.value} ref={focus}
                       onChange={(e) => setEditing({ ...editing, value: e.target.value })} onKeyDown={keys} onBlur={save} />
                   ) : canEdit ? (
-                    <button type="button" className="link-btn" disabled={pending} onClick={() => setEditing({ kind: "head", col: j, value: c })}>
-                      {c}
+                    <button type="button" className="link-btn" disabled={pending} title={tr(c) !== c ? c : undefined}
+                      onClick={() => setEditing({ kind: "head", col: j, value: c })}>
+                      {tr(c)}
                     </button>
                   ) : (
-                    c
+                    <span title={tr(c) !== c ? c : undefined}>{tr(c)}</span>
                   )}
                   <div className="draft-col-meta">
                     {d.numeric.includes(c) ? <span className="muted">число</span> : <span className="muted">текст</span>}
@@ -279,8 +296,10 @@ function DraftTable({ d, canEdit, apply, pending }: { d: Draft; canEdit: boolean
                       <button type="button" className="cell-btn" disabled={pending}
                         aria-label={`Править: строка ${i + 1}, «${d.columns[j]}»`}
                         onClick={() => setEditing({ kind: "cell", row: i, col: j, value: show(v) })}>
-                        {show(v) || <span className="muted">—</span>}
+                        {(typeof v === "string" ? tr(v) : show(v)) || <span className="muted">—</span>}
                       </button>
+                    ) : typeof v === "string" ? (
+                      tr(v)
                     ) : (
                       show(v)
                     )}
@@ -407,7 +426,7 @@ function Decide({ d }: { d: Draft }) {
   );
 }
 
-function About({ d, canEdit }: { d: Draft; canEdit: boolean }) {
+function About({ d, canEdit, tr }: { d: Draft; canEdit: boolean; tr: (s: string) => string }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(d.title);
@@ -440,7 +459,7 @@ function About({ d, canEdit }: { d: Draft; canEdit: boolean }) {
   }
   return (
     <section className="card">
-      <p>{d.description || <span className="muted">Описания нет.</span>}</p>
+      <p>{d.description ? tr(d.description) : <span className="muted">Описания нет.</span>}</p>
       <dl className="dl">
         <dt>Статья</dt>
         <dd>
@@ -453,7 +472,7 @@ function About({ d, canEdit }: { d: Draft; canEdit: boolean }) {
             <dd>
               {d.table_number}
               {d.page ? `, с. ${d.page}` : ""}
-              {d.caption && <span className="muted"> — {d.caption}</span>}
+              {d.caption && <span className="muted"> — {tr(d.caption)}</span>}
             </dd>
           </>
         )}
@@ -477,8 +496,13 @@ export function DataDraftPage() {
     queryKey: ["data-draft", id],
     queryFn: () => getDraft(id),
     // пока Qwen выполняет команду — обновлять, чтобы правка появилась сама
-    refetchInterval: (query) => (query.state.data?.jobs.some((j) => j.status === "queued" || j.status === "running") ? 4000 : false),
+    // и пока ждёт перевод — показать его, как только переводчик закончит
+    refetchInterval: (query) =>
+      query.state.data?.jobs.some((j) => j.status === "queued" || j.status === "running") || query.state.data?.translation?.pending
+        ? 4000
+        : false,
   });
+  const [view, setView] = useState<View>("ru");
   const apply = useMutation({
     mutationFn: (ops: DraftOp[]) => editDraft(id, { ops }),
     onSuccess: (data) => qc.setQueryData(["data-draft", id], data),
@@ -487,13 +511,14 @@ export function DataDraftPage() {
   const d = q.data;
   if (!d) return <p className="muted">Загрузка…</p>;
   const canEdit = canEditRole && d.status === "proposed";
+  const tr = translator(d, view);
   return (
     <>
       <section className="page-head">
         <span className="eyebrow">
           <Link to="/data-drafts">ЧЕРНОВИКИ ДАННЫХ</Link> · {d.source_kind === "link" ? "ССЫЛКА ИЗ СТАТЬИ" : `ТАБЛИЦА ${d.table_number}`}
         </span>
-        <h1 className="page-title">{d.title || draftName(d)}</h1>
+        <h1 className="page-title">{d.title ? tr(d.title) : draftName(d)}</h1>
         <div className="run-head">
           <span className={`badge ${DRAFT_BADGE[d.status]}`}>{DRAFT_STATUS[d.status]}</span>
           {d.dataset && (
@@ -504,11 +529,12 @@ export function DataDraftPage() {
           {d.status === "rejected" && d.note && <span className="muted">— {d.note}</span>}
         </div>
       </section>
-      <About key={`${d.title}|${d.description}`} d={d} canEdit={canEdit} />
+      <TranslationBar d={d} view={view} setView={setView} canTranslate={canEditRole} />
+      <About key={`${d.title}|${d.description}`} d={d} canEdit={canEdit} tr={tr} />
       {apply.isError && <p className="error" role="alert">{apply.error.message}</p>}
       {d.source_kind === "link" && <LinkSource d={d} />}
       {d.columns.length > 0 ? (
-        <DraftTable d={d} canEdit={canEdit} apply={(ops) => apply.mutate(ops)} pending={apply.isPending} />
+        <DraftTable d={d} canEdit={canEdit} apply={(ops) => apply.mutate(ops)} pending={apply.isPending} tr={tr} />
       ) : (
         <p className="muted">Таблицы в черновике нет — подробности в журнале ниже.</p>
       )}
