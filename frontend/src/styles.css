@@ -1048,3 +1048,44 @@ details[open] > .node-head .node-preview { display: none; }
 /* --- ход проверки (п. 13) --- */
 .progress-line { margin-top: 4px; font-size: 13px; line-height: 1.45; }
 .exp-actions .progress-line { flex-basis: 100%; }
+/* --- Схема методики (вкладка «Как мы исследуем») --- */
+.scheme { margin-bottom: 16px; }
+.scheme-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 24px; }
+.scheme-tree, .scheme-cycle { list-style: none; margin: 8px 0 0; padding: 0; }
+.scheme-box { position: relative; display: grid; gap: 2px; padding: 10px 44px 10px 12px; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--surface); color: var(--text); text-align: left; font: inherit; width: 100%; }
+a.scheme-box, button.scheme-box { cursor: pointer; text-decoration: none; }
+a.scheme-box:hover, button.scheme-box:hover { border-color: var(--accent); }
+a.scheme-box:focus-visible, button.scheme-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.scheme-box .muted { font-size: 13px; }
+.scheme-n { position: absolute; top: 10px; right: 10px; min-width: 24px; padding: 1px 7px; border-radius: 999px;
+  background: var(--ok-bg); color: var(--ok-text); font-size: 13px; font-weight: 600; text-align: center; }
+.scheme-level { position: relative; margin-top: 10px; }
+.scheme-level.level-1 { margin-left: 24px; }
+.scheme-level.level-2 { margin-left: 48px; }
+.scheme-level.level-1::before, .scheme-level.level-2::before { content: ""; position: absolute; left: -14px; top: -10px;
+  width: 12px; height: 30px; border-left: 2px solid var(--border); border-bottom: 2px solid var(--border); border-bottom-left-radius: 6px; }
+.scheme-rule { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--info-bg);
+  border: 1px solid var(--info-text); vertical-align: -1px; }
+.scheme-cycle { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 30px 28px; }
+.scheme-step { position: relative; display: flex; }
+.scheme-num { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.scheme-arrow { position: absolute; right: -25px; top: 50%; width: 22px; height: 22px; transform: translateY(-50%);
+  fill: none; stroke: var(--text-muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.scheme-step:nth-child(3n) .scheme-arrow { right: auto; left: 50%; top: auto; bottom: -27px; transform: translateX(-50%) rotate(90deg); }
+.scheme-loop { width: 16px; height: 16px; vertical-align: -3px; fill: none; stroke: var(--accent); stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.scheme-note { margin: 12px 0 0; font-size: 13px; }
+@media (max-width: 1023px) { .scheme-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .scheme-cycle { grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .scheme-arrow, .scheme-step:nth-child(3n) .scheme-arrow { right: auto; left: 50%; top: auto; bottom: -22px;
+    transform: translateX(-50%) rotate(90deg); }
+}
+@media (min-width: 641px) {
+  .scheme-step:nth-child(4) { grid-area: 2 / 3; }
+  .scheme-step:nth-child(5) { grid-area: 2 / 2; }
+  .scheme-step:nth-child(6) { grid-area: 2 / 1; }
+  .scheme-step:nth-child(4) .scheme-arrow, .scheme-step:nth-child(5) .scheme-arrow { right: auto; left: -25px; transform: translateY(-50%) rotate(180deg); }
+}
