@@ -8,7 +8,7 @@ import gzip
 import json
 import threading
 import time
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -16,10 +16,12 @@ from urllib.request import Request, urlopen
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi import Request as ApiRequest
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 from app.api.deps import current_user
 from app.config import Settings, get_settings
 from app.models import User
+from app.services import kb_topics
 
 router = APIRouter(prefix="/kb", tags=["kb"])
 
@@ -145,6 +147,22 @@ def network(url: str, settings: Settings) -> tuple[int, bytes, str]:
         if cached is not None:
             return 200, cached[1], cached[2]
         return _load_network(url, settings)
+
+
+class ConceptsIn(BaseModel):
+    ids: list[str] = Field(default_factory=list, max_length=1000)
+
+
+@router.post("/concept-topics")
+def concept_topics(
+    body: ConceptsIn,
+    _user: Annotated[User, Depends(current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Общий граф: в какой теме о каждом понятии пишут больше всего — для раскраски по темам.
+    Собирается в фоне раз в час (app/services/kb_topics.py); не готово — ready=False."""
+    kb_topics.ensure(settings, fetch)
+    return kb_topics.lookup(body.ids)
 
 
 @router.get("/{name}")

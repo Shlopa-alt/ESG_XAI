@@ -286,6 +286,43 @@ describe("Карта связей", () => {
     expect(rows()).toHaveLength(26);
   });
 
+  it("общий граф — все темы: круги цветом темы, тему можно скрыть, все связи между понятиями", async () => {
+    const TOPICS = {
+      ready: true, building: false, error: "",
+      topics: [
+        { path: "esg.finance", title: "[финансы]", articles: 300, concepts: 50 },
+        { path: "esg.ratings", title: "[тема рейтинги]", articles: 130, concepts: 20 },
+      ],
+      main: { "e:esg performance": "esg.ratings", "e:firm value": "esg.finance", "e:roa": "esg.finance", "e:corporate governance": "esg.ratings" },
+    };
+    const urls = stub("reader", { "/kb/concept-topics": TOPICS });
+    renderAt("/knowledge/graph");
+    expect(await screen.findByRole("heading", { name: "Общий граф банка статей" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Общий граф — все темы" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/Всего 5 понятий и 4 связи\. На графе — 5 самых связанных понятий и 4 связи между ними/)).toBeInTheDocument();
+    const color = (id: string) => graph.elements.find((e) => e.data.id === id)?.data.color;
+    await screen.findByRole("button", { name: "[финансы]" });
+    expect(color("e:firm value")).toBe(color("e:roa"));
+    expect(color("e:esg performance")).not.toBe(color("e:firm value"));
+    expect(urls.some((u) => u.includes("/kb/network?kb=esg"))).toBe(true);
+    // скрыть тему — её понятий на графе нет
+    await userEvent.click(screen.getByRole("button", { name: "[тема рейтинги]" }));
+    expect(graph.elements.find((e) => e.data.id === "e:esg performance")).toBeUndefined();
+    expect(graph.elements.find((e) => e.data.id === "e:firm value")).toBeDefined();
+    // граф одной темы — из её ветки банка, без раскраски
+    await userEvent.click(screen.getByRole("button", { name: "Граф одной темы" }));
+    expect(await screen.findByLabelText("Тема")).toHaveValue("esg.ratings");
+    expect(urls.some((u) => u.includes("/kb/network?kb=esg.ratings"))).toBe(true);
+    expect(screen.queryByRole("heading", { name: "Общий граф банка статей" })).not.toBeInTheDocument();
+  });
+
+  it("пока раскраска по темам собирается, граф уже виден и это сказано", async () => {
+    stub("reader", { "/kb/concept-topics": { ready: false, building: true, error: "", topics: [], main: {} } });
+    renderAt("/knowledge/graph");
+    expect(await screen.findByText(/Раскраска по темам собирается/)).toBeInTheDocument();
+    expect(graph.elements.some((e) => e.data.id === "e:firm value")).toBe(true);
+  });
+
   it("если в теме нет связей, говорит об этом", async () => {
     stub("reader", { "/kb/network": { nodes: [entity("стоимость капитала", 5)], edges: [] } });
     renderAt("/knowledge/graph");
