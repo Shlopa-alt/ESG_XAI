@@ -5,6 +5,7 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-r
 import { listExperiments } from "../api/experiments";
 import { useMe } from "../auth/useAuth";
 import { ExperimentWizard } from "../components/ExperimentWizard";
+import { ManualMode } from "../components/ManualMode";
 import { defaults, type MethodParam, ParamsEditor, type ParamValue } from "../components/ParamsEditor";
 import { RunCost } from "../components/RunCost";
 import { ScanLinks } from "../components/ScanLinks";
@@ -466,6 +467,7 @@ export function RunDetail() {
           )}
         </div>
         {r.message && <p className={r.status === "failed" ? "error" : "muted"}>{r.message}</p>}
+        {r.snapshot_id !== null && <ManualMode run={r.id} />}
         <NextStep
           action={
             r.status === "done" ? (

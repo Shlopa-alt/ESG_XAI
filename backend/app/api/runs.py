@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -16,7 +16,7 @@ from app.api.deps import current_user, require_role
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import Dataset, DatasetSnapshot, Experiment, Run, User
-from app.services import method_library, resources, run_queue
+from app.services import manual, method_library, resources, run_queue
 from app.services.data_files import Table, is_table, table_columns, to_container
 from app.services.experiments import refresh_after_runs
 from app.services.report import Report, merge_run_report
@@ -410,6 +410,69 @@ def launch(
 @router.get("/runs/{run_id}", response_model=RunOut, dependencies=[Depends(current_user)])
 def get_run(run_id: int, db: Annotated[Session, Depends(get_db)]) -> RunOut:
     return _out(db, _get_run(db, run_id))
+
+
+# --- ручной режим: взять работу в свои руки (app/services/manual.py) ---
+
+
+def _zip_response(name: str, body: bytes) -> Response:
+    return Response(content=body, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"',
+                             "Cache-Control": "private, no-store"})
+
+
+def _snapshot_of(db: Session, snapshot_id: int) -> tuple[DatasetSnapshot, Dataset]:
+    snap = db.get(DatasetSnapshot, snapshot_id)
+    ds = db.get(Dataset, snap.dataset_id) if snap else None
+    if snap is None or ds is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет среза №{snapshot_id}")
+    return snap, ds
+
+
+def _sees_files(ds: Dataset, user: User) -> bool:
+    """Файлы датасета под NDA — только допущенным (правило 6), как выгрузка и столбцы среза."""
+    return ds.access_level != "nda" or user.role == "owner"
+
+
+@router.get("/runs/{run_id}/manual.zip")
+def run_manual(run_id: int, db: Annotated[Session, Depends(get_db)],
+               settings: Annotated[Settings, Depends(get_settings)],
+               user: Annotated[User, Depends(current_user)]) -> Response:
+    """Архив «взять расчёт в свои руки»: ноутбук Jupyter, данные (если видны), код метода, параметры."""
+    run = _get_run(db, run_id)
+    exp = db.get(Experiment, run.experiment_id)
+    if exp is None or run.dataset_snapshot_id is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "У расчёта нет данных — повторять нечего")
+    snap, ds = _snapshot_of(db, run.dataset_snapshot_id)
+    t = method_library.template(db, run.template) if run.template else None
+    author = db.get(User, run.created_by) if run.created_by else None
+    name, body = manual.run_bundle(settings, run, exp, t, snap, ds, _sees_files(ds, user),
+                                   author.login if author else "")
+    return _zip_response(name, body)
+
+
+@router.get("/snapshots/{snapshot_id}/manual.zip")
+def snapshot_manual(snapshot_id: int, db: Annotated[Session, Depends(get_db)],
+                    settings: Annotated[Settings, Depends(get_settings)],
+                    user: Annotated[User, Depends(current_user)]) -> Response:
+    """Архив версии данных: файл и ноутбук, чтобы обрабатывать данные вручную."""
+    snap, ds = _snapshot_of(db, snapshot_id)
+    name, body = manual.snapshot_bundle(settings, snap, ds, _sees_files(ds, user))
+    return _zip_response(name, body)
+
+
+@router.get("/snapshots/{snapshot_id}/file")
+def snapshot_file(snapshot_id: int, db: Annotated[Session, Depends(get_db)],
+                  settings: Annotated[Settings, Depends(get_settings)],
+                  user: Annotated[User, Depends(current_user)]) -> FileResponse:
+    """Файл версии данных как есть (командная строка: esg download). sha256 — в заголовке X-SHA256."""
+    snap, ds = _snapshot_of(db, snapshot_id)
+    if not _sees_files(ds, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Файлы датасета под NDA — только для допущенных")
+    path = to_container(settings, snap.storage_path) if snap.storage_path else None
+    if path is None or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файла среза нет на сервере")
+    return FileResponse(path, filename=path.name, headers={"X-SHA256": snap.sha256, "Cache-Control": "private, no-store"})
 
 
 @router.get("/runs/{run_id}/stream", dependencies=[Depends(current_user)])
