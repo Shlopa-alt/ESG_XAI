@@ -42,16 +42,24 @@ const LINKS = {
     },
   ],
 };
+const option = (id: string, recommended: boolean, minutes: number) => ({
+  id, net: id, title: `[${id}]`, minutes, note: "", runnable: true, warnings: [], recommended, done: false,
+});
+const NET_MENU = { nets: [option("mlp", true, 12), option("transformer", false, 90), option("gbm", true, 2)], existing: null, existing_status: null };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-function stub(role: string, links: unknown = LINKS, onCheck = vi.fn(), onScan = vi.fn()) {
+function stub(role: string, links: unknown = LINKS, onCheck = vi.fn(), onScan = vi.fn(), onLinks = vi.fn()) {
   vi.stubGlobal(
     "fetch",
     vi.fn((url: string, init?: RequestInit) => {
       if (url.includes("/auth/me")) return Promise.resolve(json(user(role)));
       if (url.includes("/run-templates")) return Promise.resolve(json([TEMPLATE]));
       if (url.includes("/analysis/recommend")) return Promise.resolve(json(RECO));
-      if (url.includes("/analysis/links")) return Promise.resolve(json(links));
+      if (url.includes("/analysis/links")) {
+        onLinks(url);
+        return Promise.resolve(json(links));
+      }
+      if (url.includes("/analysis/link-nets")) return Promise.resolve(json(NET_MENU));
       if (url.includes("/analysis/link-check")) {
         onCheck(JSON.parse(String(init?.body)));
         return Promise.resolve(json({ experiment: "EXP-012", run_ids: [8, 9, 10] }, 201));
@@ -96,10 +104,20 @@ describe("Нейросети", () => {
     expect(within(checked).getByText(/R² 0,02, на перемешанной цели 0,05 — не держится/)).toBeInTheDocument();
     expect(within(checked).getByRole("link", { name: "EXP-011" })).toHaveAttribute("href", "/experiments/EXP-011");
 
+    // сети выбирает человек: что предсказываем, какими сетями, сколько это займёт
     const fresh = within(table).getByRole("rowheader", { name: /«\[a\]» — «\[c\]»/ }).closest("tr") as HTMLElement;
-    await userEvent.selectOptions(within(fresh).getByLabelText(/Что предсказываем/), "[a]");
-    await userEvent.click(within(fresh).getByRole("button", { name: "Проверить сетями" }));
-    expect(onCheck).toHaveBeenCalledWith({ scan_run: 3, a: "[a]", b: "[c]", target: "[a]", node: "" });
+    await userEvent.click(within(fresh).getByRole("button", { name: "Выбрать сети и проверить" }));
+    const picker = await screen.findByRole("group", { name: "Какими сетями проверить" });
+    await userEvent.click(screen.getByRole("radio", { name: /«\[a\]» по «\[c\]» и остальным показателям/ }));
+    const mlp = await within(picker).findByRole("checkbox", { name: /\[mlp\]/ });
+    expect(mlp).toBeChecked();
+    expect(within(picker).getByRole("checkbox", { name: /\[transformer\]/ })).not.toBeChecked();
+    expect(within(picker).getByText(/Нейросеть лаборатории/)).toBeInTheDocument();
+    await userEvent.click(within(picker).getByRole("checkbox", { name: /\[gbm\]/ }));
+    await userEvent.click(within(picker).getByRole("checkbox", { name: /\[transformer\]/ }));
+    expect(screen.getByText(/в сумме ≈ 102 мин расчёта/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Проверить: 2 сети" }));
+    expect(onCheck).toHaveBeenCalledWith({ scan_run: 3, a: "[a]", b: "[c]", target: "[a]", node: "", nets: ["mlp", "transformer"] });
 
     // шаг 4: связь, которая держится, — в идею, с итогами сетей в обосновании
     await userEvent.click(screen.getByRole("button", { name: "Предложить идеей" }));
@@ -114,21 +132,42 @@ describe("Нейросети", () => {
     const { unmount } = renderAt("/nets?snapshot=5");
     await userEvent.click(await screen.findByRole("button", { name: "Найти связи" }));
     expect(onScan).toHaveBeenCalledWith(
-      expect.objectContaining({ template: "correlation-scan", params: { columns: ["[a]", "[b]", "[c]"], group: "[страна]", sheet: "" } }),
+      expect.objectContaining({
+        template: "correlation-scan",
+        params: { columns: ["[a]", "[b]", "[c]"], group: "[страна]", sheet: "", method: "rank" },
+      }),
     );
     unmount();
     stub("reader", LINKS);
     renderAt("/nets?snapshot=5");
     expect(await screen.findByText("держится у 3 из 5")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Проверить сетями" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Выбрать сети и проверить" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Добавить сеть" })).not.toBeInTheDocument();
     expect(screen.getByText("не проверялась")).toBeInTheDocument();
   });
 
-  it("вкладки раздела: «Связи и сети» и «Один показатель» — прежний мастер", async () => {
+  it("вкладки раздела названы по задаче: найти связи или предсказать показатель", async () => {
     stub("researcher");
     renderAt("/analysis");
     const tabs = await screen.findByRole("navigation", { name: "Разделы вкладки «Нейросети»" });
-    expect(within(tabs).getByRole("link", { name: "Один показатель" })).toHaveClass("active");
-    expect(screen.getByRole("heading", { name: "Один показатель", level: 1 })).toBeInTheDocument();
+    expect(within(tabs).getByRole("link", { name: "Найти и проверить связи" })).toHaveAttribute("href", "/nets");
+    expect(within(tabs).getByRole("link", { name: "Предсказать один показатель" })).toHaveClass("active");
+    expect(screen.getByRole("heading", { name: "Предсказать один показатель", level: 1 })).toBeInTheDocument();
+  });
+
+  it("способов поиска несколько: у каждого — как работает, когда подходит и чего не видит", async () => {
+    const onLinks = vi.fn();
+    const onScan = vi.fn();
+    const scans = [{ method: "rank", run_id: 3, status: "done", confirmed: 2, pairs: 3 }];
+    stub("researcher", { ...LINKS, scans }, vi.fn(), onScan, onLinks);
+    renderAt("/nets?snapshot=5");
+    const methods = await screen.findByRole("group", { name: "Каким способом искать связи" });
+    expect(within(methods).getByRole("radio", { name: /Любые связи/ })).toBeChecked();
+    expect(within(methods).getByText("нашёл: 2")).toBeInTheDocument();
+    expect(within(methods).getAllByText("Не видит")).toHaveLength(3);
+    expect(screen.getByText(/Способ «Любые связи»: подтверждено/)).toBeInTheDocument();
+    await userEvent.click(within(methods).getByRole("radio", { name: /Без влияния остальных показателей/ }));
+    expect(onLinks).toHaveBeenLastCalledWith(expect.stringContaining("method=partial"));
+    expect(screen.getByText(/Как поиск отличает связь от случайности/)).toBeInTheDocument();
   });
 });

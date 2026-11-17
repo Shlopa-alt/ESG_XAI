@@ -221,7 +221,7 @@ export function Analysis() {
     <>
       <section className="page-head">
         <span className="eyebrow">НЕЙРОСЕТИ</span>
-        <h1 className="page-title">Один показатель</h1>
+        <h1 className="page-title">Предсказать один показатель</h1>
         <p className="lead">
           Выберите набор данных и показатель — платформа подберёт сеть или метод, объяснит выбор и запустит расчёт.
           Расчёт попадёт в «Проверки» со всем, что нужно, чтобы его повторить.

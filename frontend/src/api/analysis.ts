@@ -124,16 +124,51 @@ export interface ScanOut {
   panel_hint: string | null;
   not_confirmed_total: number | null;
   links_total: number | null;
+  // kind: монотонная | немонотонная (способ rank), линейная (linear), частная (partial)
   links: Array<{ a: string; b: string; kind: string; rho: number; xi: number; rho_confirm: number | null; xi_confirm: number | null; n: number }>;
+  method?: LinkMethod;
 }
+
+/** Способ поиска связей (runner/methods/correlation_scan.py: METHODS) */
+export type LinkMethod = "rank" | "linear" | "partial";
 
 export interface LinksOut {
   snapshot: { id: number; dataset: string; title: string; version: string };
   scan: ScanOut | null;
   checks: LinkCheck[];
+  // последний поиск каждым способом — чтобы сравнить, что нашли разные способы
+  scans?: Array<{ method: LinkMethod; run_id: number; status: string; confirmed: number | null; pairs: number | null }>;
 }
 
-export const getLinks = (snapshotId: number) => call<LinksOut>(`/analysis/links?snapshot_id=${snapshotId}`);
+export const getLinks = (snapshotId: number, method: LinkMethod | "" = "") =>
+  call<LinksOut>(`/analysis/links?snapshot_id=${snapshotId}${method ? `&method=${method}` : ""}`);
 
-export const checkLink = (b: { scan_run: number; a: string; b: string; target: string; node: string }) =>
-  call<{ experiment: string; run_ids: number[] }>("/analysis/link-check", { method: "POST", body: JSON.stringify(b) });
+export interface LinkTarget {
+  scan_run: number;
+  a: string;
+  b: string;
+  target: string; // a или b — что предсказываем
+  node: string;
+}
+
+/** Сеть, которую можно выбрать для проверки связи (POST /analysis/link-nets) */
+export interface NetOption {
+  id: string; // mlp | transformer | gbm | method:M-NN
+  net: string;
+  title: string;
+  minutes: number | null; // оценка времени расчёта
+  note: string;
+  runnable: boolean;
+  warnings: string[];
+  recommended: boolean;
+  done: boolean; // уже считалась в проверке этой связи
+}
+
+export const linkNets = (b: LinkTarget) =>
+  call<{ nets: NetOption[]; existing: string | null; existing_status: string | null }>("/analysis/link-nets", {
+    method: "POST",
+    body: JSON.stringify(b),
+  });
+
+export const checkLink = (b: LinkTarget & { nets?: string[] }) =>
+  call<{ experiment: string; run_ids: number[]; added?: boolean }>("/analysis/link-check", { method: "POST", body: JSON.stringify(b) });

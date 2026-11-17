@@ -1088,4 +1088,33 @@ a.scheme-box:focus-visible, button.scheme-box:focus-visible { outline: 2px solid
   .scheme-step:nth-child(5) { grid-area: 2 / 2; }
   .scheme-step:nth-child(6) { grid-area: 2 / 1; }
   .scheme-step:nth-child(4) .scheme-arrow, .scheme-step:nth-child(5) .scheme-arrow { right: auto; left: -25px; transform: translateY(-50%) rotate(180deg); }
+/* --- «Нейросети»: выбор способа поиска и сетей --- */
+.method-picker, .net-picker fieldset { border: 0; margin: 0 0 12px; padding: 0; min-width: 0; }
+.method-picker legend, .net-picker legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
+.method-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.method-picker legend { grid-column: 1 / -1; }
+.method-option, .net-option { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--surface); cursor: pointer; }
+.method-option.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.method-option input, .net-option input { margin-top: 3px; flex: none; }
+.method-option:focus-within, .net-option:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.method-option-body { display: grid; gap: 4px; min-width: 0; }
+.method-option-body .badge { justify-self: start; }
+.method-line { font-size: 13px; line-height: 1.45; }
+.method-tag { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.method-tag.ok { background: var(--ok-bg); color: var(--ok-text); }
+.method-tag.warn { background: var(--warn-bg); color: var(--warn-text); }
+.how-search { margin: 4px 0 12px; }
+.how-search > summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+.net-picker-row > td { background: var(--surface-soft); }
+.net-picker { display: grid; gap: 4px; padding: 6px 2px; }
+.net-picker fieldset { display: grid; gap: 8px; }
+.net-target { display: block; }
+.net-option.disabled { cursor: default; opacity: 0.85; }
+.net-option .badge { margin-left: 6px; }
+.net-picker-go { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+@media (max-width: 1023px) { .method-picker { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) {
+  .nets-table tr.net-picker-row { padding: 0; }
+  .nets-table .net-picker-row > td::before { content: none; }
 }
