@@ -2,6 +2,8 @@
 // по-английски: новичок не поймёт «firm value» или «roa». Перевод только для показа: запросы в банк
 // статей идут по исходному названию. Чего нет в словаре, показывается как есть.
 
+import { getLang } from "./i18n";
+
 const RU: Record<string, string> = {
   "firm value": "Стоимость компании",
   "company value": "Стоимость компании",
@@ -284,6 +286,8 @@ export const conceptKey = (name: string) => name.toLowerCase().split(/\s+/).join
 
 /** Название для человека: русское, если есть, иначе как в статье. */
 export const ruName = (name: string): string => {
+  // английская версия: понятие — как в статьях (они в основном по-английски), с заглавной
+  if (getLang() === "en") return /^[a-z]/.test(name) ? name.charAt(0).toUpperCase() + name.slice(1) : name;
   const known = RU[conceptKey(name)];
   if (known) return known;
   // часть понятий в базе уже по-русски, но со строчной буквы
@@ -291,4 +295,4 @@ export const ruName = (name: string): string => {
 };
 
 /** Исходное название, когда оно отличается от показанного: мелкой подписью, для точности. */
-export const originalName = (name: string): string => (RU[conceptKey(name)] ? name : "");
+export const originalName = (name: string): string => (getLang() !== "en" && RU[conceptKey(name)] ? name : "");

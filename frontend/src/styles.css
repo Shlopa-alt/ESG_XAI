@@ -1044,3 +1044,7 @@ details[open] > .node-head .node-preview { display: none; }
 .method-code, .method-log { max-height: 420px; overflow: auto; padding: 12px; border-radius: 8px; background: var(--surface-soft);
   border: 1px solid var(--border); font-size: 12.5px; line-height: 1.5; white-space: pre; }
 .method-log { white-space: pre-wrap; }
+
+/* --- переключатель языка RU / EN --- */
+.lang-switch { min-width: 44px; font-weight: 600; letter-spacing: 0.04em; }
+.login-lang { display: flex; justify-content: flex-end; margin-bottom: -8px; }
