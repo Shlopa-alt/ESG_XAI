@@ -1088,6 +1088,8 @@ a.scheme-box:focus-visible, button.scheme-box:focus-visible { outline: 2px solid
   .scheme-step:nth-child(5) { grid-area: 2 / 2; }
   .scheme-step:nth-child(6) { grid-area: 2 / 1; }
   .scheme-step:nth-child(4) .scheme-arrow, .scheme-step:nth-child(5) .scheme-arrow { right: auto; left: -25px; transform: translateY(-50%) rotate(180deg); }
+}
+
 /* --- «Нейросети»: выбор способа поиска и сетей --- */
 .method-picker, .net-picker fieldset { border: 0; margin: 0 0 12px; padding: 0; min-width: 0; }
 .method-picker legend, .net-picker legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
