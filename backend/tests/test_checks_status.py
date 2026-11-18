@@ -49,6 +49,29 @@ def test_status_follows_runs(db_session: Session, statuses: list[str], expected:
     assert e.status == expected
 
 
+def _scan_check(db: Session, reproducible: bool) -> Experiment:
+    e = _exp(db)
+    if reproducible:
+        e.runner_commit, e.env_lock, e.seed = "[commit]", "[lock]", 0
+        e.dataset_snapshot_id = 1
+    db.add(Run(experiment_id=e.id, status="done", template="correlation-scan", config={}))
+    db.flush()
+    return e
+
+
+def test_link_search_is_finished_without_review(db_session: Session) -> None:
+    e = _scan_check(db_session, reproducible=True)
+    refresh_after_runs(db_session, e)
+    assert e.status == "done" and e.finished_at is not None
+
+
+def test_link_search_without_reproducibility_is_not_finished(db_session: Session) -> None:
+    # правило 3: без коммита, среза, окружения и seed «завершён» не ставится — остаётся рецензии
+    e = _scan_check(db_session, reproducible=False)
+    refresh_after_runs(db_session, e)
+    assert e.status == "review"
+
+
 def test_reviewed_or_finished_checks_are_not_rolled_back(db_session: Session) -> None:
     for st in ("review", "done"):
         e = _exp(db_session, f"EXP-0{1 if st == 'review' else 2}", st)
