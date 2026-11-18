@@ -14,7 +14,7 @@ import {
   editDraft,
   getDraft,
   JOB_STATUS,
-  LANG_TITLE,
+  LANG_NAMES,
   listDrafts,
   rejectDraft,
   scanLinks,
@@ -117,10 +117,10 @@ export function DataDrafts() {
                       {d.title_ru && d.title_ru !== d.title && <div className="muted">{d.title}</div>}
                     </td>
                     <td>
-                      {d.lang && LANG_TITLE[d.lang] && (
-                        <span className="badge st-planned lang-badge" title={`Язык таблицы: ${LANG_TITLE[d.lang]}`}>
+                      {d.lang && LANG_NAMES[d.lang] && (
+                        <span className="badge st-planned lang-badge" title={`Язык таблицы: ${LANG_NAMES[d.lang]}`}>
                           {d.lang.toUpperCase()}
-                          <span className="sr-only"> — язык таблицы: {LANG_TITLE[d.lang]}</span>
+                          <span className="sr-only"> — язык таблицы: {LANG_NAMES[d.lang]}</span>
                         </span>
                       )}{" "}
                       {d.article_title || d.doc_id}

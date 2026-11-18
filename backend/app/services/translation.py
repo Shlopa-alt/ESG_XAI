@@ -20,41 +20,79 @@ from app.models import DataDraft, QwenJob
 from app.services.qwen_queue import enqueue
 
 LANGS = {"en": "английский", "ar": "арабский", "zh": "китайский", "fr": "французский", "de": "немецкий"}
+# языки, которые платформа узнаёт, но переводчик (модели Argos на лабораторном ПК) не знает:
+# их таблицы не переводятся сами — лучше без перевода, чем испанский «по-французски»
+# (транслитерация вместо смысла)
+OTHER = {"es": "испанский", "pt": "португальский", "it": "итальянский", "tr": "турецкий",
+         "vi": "вьетнамский", "fa": "персидский", "uk": "украинский"}
+NAMES = {**LANGS, **OTHER}
 TARGET = "ru"
 MAX_TEXTS = 3000  # разных строк в одном черновике
 MAX_LEN = 2000  # длиннее — не переводим (это уже не подпись таблицы)
 
-_ARABIC = re.compile(r"[؀-ۿݐ-ݿ]")
-_CJK = re.compile(r"[㐀-䶿一-鿿]")
-_CYR = re.compile(r"[а-яё]", re.IGNORECASE)
-_LATIN = re.compile(r"[a-zà-ÿœß]", re.IGNORECASE)
-_WORD = re.compile(r"[a-zà-ÿœß']+")
+# арабское письмо — и обычные буквы, и «формы представления» (U+FB50–FDFF, U+FE70–FEFF):
+# так его часто отдаёт PDF (docling), и без них арабская или персидская таблица была «без языка»
+_ARABIC = re.compile("[\\u0600-\\u06ff\\u0750-\\u077f\\ufb50-\\ufdff\\ufe70-\\ufefc]")
+# буквы, которых нет в арабском, но есть в персидском: پ چ ژ گ ک ی — и их формы представления
+_PERSIAN = re.compile("[\\u067e\\u0686\\u0698\\u06af\\u06a9\\u06cc\\ufb56-\\ufb59\\ufb7a-\\ufb7d"
+                      "\\ufb8a\\ufb8b\\ufb8e-\\ufb95\\ufbfc-\\ufbff]")
+_CJK = re.compile("[\\u3400-\\u4dbf\\u4e00-\\u9fff]")
+_CYR = re.compile(r"[а-яёіїєґ]", re.IGNORECASE)
+_UKR = re.compile(r"[іїєґ]", re.IGNORECASE)
+_LATIN = re.compile(r"[a-zà-ÿœßğışăđơưạ-ỹ]", re.IGNORECASE)
+_WORD = re.compile(r"[a-zà-ÿœßğışãõ']+")
+# вьетнамский: буквы с тоном (U+1EA0–1EF9) и ă đ ơ ư — их нет в европейских языках
+_VI = re.compile(r"[ăđơưạ-ỹ]", re.IGNORECASE)
+# у европейских языков таких букв единицы процентов, у «кракозябр» (Òàáëèöà) — большинство
+_MOJIBAKE = re.compile(r"[À-ÿ]")
+_TR = re.compile(r"[ğışĞİŞ]")  # без IGNORECASE: «ı» без учёта регистра совпадает с латинской i
 STOP = {
     "en": {"the", "and", "of", "in", "to", "is", "for", "with", "on", "by", "from", "total", "year", "average",
            "number", "firms", "share", "rate", "growth", "value", "per", "or", "as", "at"},
     "fr": {"le", "la", "les", "des", "et", "du", "de", "en", "pour", "une", "un", "est", "au", "aux", "sur",
-           "par", "année", "taux", "moyenne", "entreprises", "nombre", "chiffre", "affaires"},
+           "par", "année", "taux", "moyenne", "entreprises", "nombre", "chiffre", "affaires",
+           "tableau"},
     "de": {"der", "die", "das", "und", "den", "dem", "mit", "für", "von", "im", "ist", "zu", "nach", "jahr",
            "unternehmen", "anteil", "anzahl", "durchschnitt", "umsatz", "summe", "insgesamt", "oder"},
+    # общие с французским «de», «la», «en» — в обоих списках: решают слова и буквы, которых
+    # у соседа нет
+    "es": {"el", "los", "las", "del", "de", "la", "en", "y", "para", "por", "con", "una", "que",
+           "tabla", "año", "años", "empresas", "media", "número", "tasa", "valor", "estadísticos",
+           "diferencias"},
+    "pt": {"o", "os", "as", "do", "da", "dos", "das", "de", "em", "e", "para", "com", "uma", "não",
+           "tabela", "ano", "anos", "empresas", "média", "número", "taxa", "valor"},
+    "it": {"il", "lo", "gli", "della", "delle", "dei", "degli", "di", "e", "per", "con", "una",
+           "che", "tabella", "anno", "anni", "imprese", "media", "numero", "tasso", "valore"},
 }
-_MARKS = {"de": re.compile(r"[äöüß]"), "fr": re.compile(r"[éèêàçœëîôùû]")}
+_MARKS = {"de": re.compile(r"[äöüß]"), "fr": re.compile(r"[éèêàçœëîôùû]"),
+          "es": re.compile(r"[ñáíóú¿¡]"), "pt": re.compile(r"[ãõ]"), "it": re.compile(r"[ìò]")}
 
 
 def detect(texts: Iterable[str]) -> str:
-    """Язык текстов таблицы: по письменности (арабский, китайский, русский), латиница — по частым
-    словам и буквам с диакритикой. Пусто — букв нет (одни числа). Русский — «ru»: переводить нечего."""
+    """Язык текстов таблицы: по письменности (арабский или персидский, китайский, русский или
+    украинский), латиница — по особым буквам (вьетнамский, турецкий), частым словам и диакритике.
+    Пусто — букв нет (одни числа). Русский — «ru»: переводить нечего."""
     sample = " ".join(texts)[:30000]
     letters = len(re.findall(r"[^\W\d_]", sample))
     if not letters:
         return ""
-    if len(_ARABIC.findall(sample)) / letters > 0.3:
-        return "ar"
+    arabic = len(_ARABIC.findall(sample))
+    if arabic / letters > 0.3:
+        return "fa" if len(_PERSIAN.findall(sample)) / arabic > 0.02 else "ar"
     if len(_CJK.findall(sample)) / letters > 0.2:
         return "zh"
-    if len(_CYR.findall(sample)) / letters > 0.5:
-        return TARGET
-    if len(_LATIN.findall(sample)) / letters < 0.5:
+    cyr = len(_CYR.findall(sample))
+    if cyr / letters > 0.5:
+        return "uk" if len(_UKR.findall(sample)) / cyr > 0.02 else TARGET
+    latin = len(_LATIN.findall(sample))
+    if latin / letters < 0.5:
         return ""
+    if len(_MOJIBAKE.findall(sample)) / latin > 0.3:
+        return ""  # «Òàáëèöà» — русский текст в чужой кодировке: это не язык, переводить нечего
+    if len(_VI.findall(sample)) / latin > 0.03:
+        return "vi"
+    if len(_TR.findall(sample)) / latin > 0.01:
+        return "tr"
     low = sample.lower()
     words = _WORD.findall(low)
     score = {lang: sum(1 for w in words if w in stop) for lang, stop in STOP.items()}
@@ -64,13 +102,27 @@ def detect(texts: Iterable[str]) -> str:
     return best if score[best] > 0 else "en"  # латиница без подсказок — чаще всего английские заголовки
 
 
+# код, а не слова: «H2», «H1a», «HRM -> HQXH», «PROC-INDEP», «ROA», «CA» — переводчик делал из них
+# кириллицу («Н2», «ГОК»), и в таблице по-русски это выглядело как данные
+_TOKEN = re.compile(r"[^\W_]+")
+
+
+def _code_like(text: str) -> bool:
+    """Строка — одни коды: в каждом слове цифра (H1a, 2021), или это заглавная аббревиатура
+    до пяти букв (HRM, HQXH, INDEP), или одна-две буквы (p, t, CA). «TOTAL ASSETS» — уже слова."""
+    words = _TOKEN.findall(text)
+    return bool(words) and all(
+        any(ch.isdigit() for ch in w) or (w.isupper() and len(w) <= 5) or len(w) <= 2 for w in words
+    )
+
+
 def _foreign(text: str) -> bool:
     """Строку стоит переводить: в ней есть буквы и иностранного в ней больше, чем русского
     (иероглиф — за две буквы: он короче слова)."""
     letters = len(re.findall(r"[^\W\d_]", text))
     cyr = len(_CYR.findall(text))
     other = letters - cyr + len(_CJK.findall(text))
-    return letters > 0 and other > cyr and len(text) <= MAX_LEN
+    return letters > 0 and other > cyr and len(text) <= MAX_LEN and not _code_like(text)
 
 
 def source_texts(d: DataDraft) -> list[str]:
@@ -147,8 +199,12 @@ def state(db: Session, d: DataDraft) -> dict[str, Any]:
     res = done.result if done is not None and isinstance(done.result, dict) else {}
     return {
         "lang": lang,
-        "lang_title": LANGS.get(lang, ""),
+        "lang_title": NAMES.get(lang, ""),
+        "supported": lang in LANGS,  # язык знает переводчик: переводится сам, без выбора языка
         "can_translate": lang in LANGS and bool(texts(d)),
+        # есть что переводить (иностранные строки), даже если язык не определился или переводчик его
+        # не знает: тогда язык выбирают вручную
+        "has_texts": bool(texts(d)),
         "pairs": res.get("pairs") or {},
         "source": res.get("source") or "",
         "engine": res.get("engine") or "",

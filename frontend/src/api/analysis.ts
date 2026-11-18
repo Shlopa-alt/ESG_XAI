@@ -32,6 +32,7 @@ export interface RecommendOut {
   snapshot: { id: number; dataset: string; title: string; version: string };
   columns: string[];
   numeric: string[];
+  measures?: string[]; // числовые столбцы-величины: без идентификаторов и кодов отрасли
   categories: string[];
   sheet: string;
   sheets: string[];

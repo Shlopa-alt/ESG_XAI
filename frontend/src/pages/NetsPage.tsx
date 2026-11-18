@@ -287,8 +287,9 @@ export function Nets() {
         )}
         {reco.data && (
           <p className="muted">
-            {reco.data.rows !== null && `${reco.data.rows} строк, `}
-            {plural(reco.data.numeric.length, "числовой показатель", "числовых показателя", "числовых показателей")}.
+            {reco.data.rows !== null && `${plural(reco.data.rows, "строка", "строки", "строк")}, `}
+            {/* показатели — без идентификаторов (code, ISIN) и кодов отрасли: их в поиске связей нет */}
+            {plural((reco.data.measures ?? reco.data.numeric).length, "числовой показатель", "числовых показателя", "числовых показателей")}.
             {group && ` Строки повторяются по годам: каждая «${group}» — одно наблюдение, данные по ней усредняются.`}
           </p>
         )}

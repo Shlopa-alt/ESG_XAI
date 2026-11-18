@@ -504,12 +504,17 @@ def stop(
         run_queue.request_stop(settings.redis_url, run.id)
         if run.status == "queued" and run.task_id:
             run_queue.revoke(settings.redis_url, run.task_id)
+        # «идёт», а пульса исполнителя нет: итог потерялся (платформа его не приняла) или
+        # исполнитель упал — ждать некого, иначе запуск висел бы «идёт» и занимал место в лимите
+        orphan = run.status == "running" and not run_queue.is_alive(settings.redis_url, run.id)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             f"Очередь запусков недоступна: {exc}") from exc
-    if run.status == "queued":
+    if run.status == "queued" or orphan:
+        run.message = (f"Снят с очереди: {user.login}" if run.status == "queued" else
+                       f"Остановлен: {user.login}. Исполнитель этот расчёт уже не вёл — "
+                       "итог не дошёл до платформы")
         run.status, run.finished_at = "stopped", datetime.now(UTC)
-        run.message = f"Снят с очереди: {user.login}"
         exp = db.get(Experiment, run.experiment_id)
         if exp is not None:
             db.flush()
@@ -538,6 +543,12 @@ def orphans(queue: Literal["cpu", "gpu"], db: Annotated[Session, Depends(get_db)
     for run in runs:
         run.status, run.finished_at = "failed", datetime.now(UTC)
         run.message = "Исполнитель перезапустился во время расчёта — запустите заново"
+    db.flush()
+    # проверки этих расчётов: если других расчётов у них нет — не висеть «в работе» (п. 12)
+    for exp_id in {run.experiment_id for run in runs}:
+        exp = db.get(Experiment, exp_id)
+        if exp is not None:
+            refresh_after_runs(db, exp)
     db.commit()
     return {"failed": len(runs)}
 

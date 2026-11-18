@@ -39,8 +39,10 @@ export interface DraftJob {
 /** Перевод на русский (Argos Translate на процессоре лаборатории); таблица не меняется. */
 export interface DraftTranslation {
   lang: string; // язык оригинала, определённый платформой
-  lang_title: string; // «английский»; пусто — переводить нечего
+  lang_title: string; // «английский», «испанский»; пусто — язык не определился (или русский, одни числа)
+  supported: boolean; // язык знает переводчик: таблица переводится сама
   can_translate: boolean;
+  has_texts: boolean; // есть иностранные строки — перевести можно, выбрав язык вручную
   pairs: Record<string, string>; // оригинал → по-русски
   source: string; // с какого языка переведено
   engine: string;
@@ -50,12 +52,25 @@ export interface DraftTranslation {
   translator_online: boolean | null; // null — не спрашивали (перевод не ждёт)
 }
 
+/** Языки, которые знает переводчик (модели Argos на лабораторном ПК). */
 export const LANG_TITLE: Record<string, string> = {
   en: "английский",
   ar: "арабский",
   zh: "китайский",
   fr: "французский",
   de: "немецкий",
+};
+
+/** Все языки, которые платформа узнаёт в таблицах; переводятся только LANG_TITLE. */
+export const LANG_NAMES: Record<string, string> = {
+  ...LANG_TITLE,
+  es: "испанский",
+  pt: "португальский",
+  it: "итальянский",
+  tr: "турецкий",
+  vi: "вьетнамский",
+  fa: "персидский",
+  uk: "украинский",
 };
 
 export interface Draft extends DraftItem {

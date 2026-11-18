@@ -442,7 +442,9 @@ def _link_set(
     node = _node(db, node_number)
     rows = resources.rows_of(settings, snap, table.sheet)
     try:
-        out = analysis.recommend(table, rows, target, node, library=_library(db))
+        # второй показатель связи — во входах всегда: проверяем именно эту связь
+        out = analysis.recommend(table, rows, target, node, library=_library(db),
+                                 keep=b if target == a else a)
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     # набор: перцептрон, трансформер, бустинг с линейной — и включённые методы из статей

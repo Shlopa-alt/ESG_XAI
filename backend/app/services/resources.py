@@ -357,8 +357,8 @@ def check_limits(
     if u["active"] >= settings.run_active_per_user:
         raise LimitError(
             f"У вас уже считаются проверки {', '.join(u['active_checks'])} (одновременно можно "
-            f"{settings.run_active_per_user}) — дождитесь, пока одна закончится, или остановите её расчёты "
-            "на странице проверки."
+            f"{settings.run_active_per_user}) — дождитесь, пока одна закончится, или остановите её "
+            "расчёты: расчёты проверки — внизу её страницы, кнопка «Остановить» — на странице расчёта."
         )
     if not u["unlimited"] and u["minutes_today"] + est.minutes > settings.run_cpu_minutes_per_day:
         left = max(0.0, settings.run_cpu_minutes_per_day - u["minutes_today"])

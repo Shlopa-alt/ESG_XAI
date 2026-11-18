@@ -27,6 +27,18 @@ def settings() -> Settings:
     (["总资产", "女性董事比例"], "zh"),
     (["Выручка компаний", "Доля женщин"], "ru"),
     (["12", "3,5", "—"], ""),
+    # языки, которых переводчик не знает, узнаются — и не уходят в чужую модель
+    # (испанский ≠ французский)
+    (["Tabla 3 Número de empresas por año", "Tasa de crecimiento de la empresa"], "es"),
+    (["Tabela 2 Número de empresas por ano", "Taxa de crescimento não"], "pt"),
+    (["Tabella 1 Numero di imprese per anno", "Tasso di crescita delle imprese"], "it"),
+    (["Bảng 3. Kiểm định mối quan hệ trực tiếp", "Kết quả"], "vi"),
+    (["Şirketlerin toplam varlıkları", "Büyüme oranı"], "tr"),
+    (["Виручка підприємств", "Частка жінок у раді"], "uk"),
+    (["جدول ۲ میانگین بازده", "شرکت های پذیرفته شده"], "fa"),
+    # арабское письмо из PDF — «формы представления» (U+FExx): тоже арабский
+    (["ﺍﻟﺎﺩﺎﺮﺓ", "ﺣﺼﺔ"], "ar"),
+    (["Òàáëèöà 2 Ýêîëîãè÷åñêèé ïðîôèëü"], ""),  # русский в чужой кодировке — не язык
 ])
 def test_language_is_detected(texts: list[str], lang: str) -> None:
     assert translation.detect(texts) == lang
@@ -36,6 +48,27 @@ def test_which_strings_are_translated() -> None:
     f = translation._foreign
     assert f("Total assets") and f("[x] 表 1 样本公司") and f("Umsatz der Unternehmen [тыс. руб.]")
     assert not f("Выручка, тыс. руб.") and not f("12,5") and not f("Выручка [revenue]")
+    # коды не переводятся: переводчик делал из них кириллицу («H2» → «Н2», «HQXH» → «ГОК»)
+    assert not any(f(x) for x in ("H2", "H1a", "HRM -> HQXH", "PROC-INDEP", "p", "CA"))
+    assert f("TOTAL ASSETS") and f("TABLE 2 MEAN VALUES") and f("ESG-gap Pre-Directive")
+
+
+def test_unsupported_language_is_named_but_not_translated(db_session: Session) -> None:
+    """Испанская таблица: язык назван, сама в перевод не встаёт, но перевести вручную можно."""
+    job = _job(db_session)
+    did = data_drafts.create_from_result(db_session, job, {"drafts": [
+        {"doc_id": "[doc-es]", "table_number": 1,
+         "columns": ["Empresa", "Tasa de crecimiento del año"],
+         "rows": [[f"[empresa {i}]", i] for i in range(5)],
+         "caption": "Tabla 1 Número de empresas por año", "title": "[название]"}]})[0]
+    db_session.commit()
+    d = db_session.get(DataDraft, did)
+    assert d is not None
+    st = translation.state(db_session, d)
+    got = (st["lang"], st["lang_title"], st["supported"], st["can_translate"], st["has_texts"])
+    assert got == ("es", "испанский", False, False, True)
+    assert not translation._jobs(db_session, d)  # сама не встала
+    assert translation.request(db_session, d, "fr") is not None  # вручную — с выбранным языком
 
 
 def _job(db: Session, kind: str = "tables") -> QwenJob:

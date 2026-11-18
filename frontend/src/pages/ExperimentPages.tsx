@@ -141,6 +141,10 @@ function WhyMethod({ e }: { e: { config?: Record<string, unknown> } }) {
 
 const minutes = (m: number) => (m < 1 ? "меньше минуты" : `${Math.round(m)} мин`);
 
+/** Расчёт идёт втрое дольше оценки и больше чем на 10 мин сверх неё — скорее всего, завис. */
+const overdue = (a: { elapsed_min: number; estimate_min: number }) =>
+  a.estimate_min > 0 && a.elapsed_min > Math.max(3 * a.estimate_min, a.estimate_min + 10);
+
 /** Ход проверки (п. 13): сколько расчётов готово, что идёт сейчас и примерно сколько осталось. */
 function ProgressLine({ p, detailed = false }: { p?: CheckProgress | null; detailed?: boolean }) {
   if (!p || p.active.length === 0) return null;
@@ -155,6 +159,12 @@ function ProgressLine({ p, detailed = false }: { p?: CheckProgress | null; detai
       {now ? (
         <span>
           Идёт «{now.title}»{now.estimate_min ? ` — ${minutes(now.elapsed_min)} из ~${minutes(now.estimate_min)}` : ""}.
+          {overdue(now) && (
+            <>
+              {" "}
+              <strong>Идёт намного дольше оценки</strong> — откройте расчёт: если он не движется, остановите его.
+            </>
+          )}
         </span>
       ) : (
         <span>Расчёты ждут исполнителя в очереди.</span>
@@ -498,7 +508,9 @@ export function Experiment() {
           <p>
             {e.progress && e.progress.active.length > 0
               ? "Вывод появится, когда закончатся расчёты, — ход работы виден выше."
-              : "Вывода пока нет — он появится, когда проверка будет посчитана."}
+              : e.progress && e.progress.done > 0
+                ? "Расчёты закончены. Черновой вывод ИИ-помощник напишет по отчёту — он появится здесь сам, обычно за несколько минут. Свой вывод можно записать кнопкой «Редактировать»."
+                : "Вывода пока нет — он появится, когда проверка будет посчитана."}
           </p>
         )}
         {a.summary && e.conclusion && <p className="muted" style={{ marginTop: 8 }}>{e.conclusion}</p>}

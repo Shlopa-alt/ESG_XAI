@@ -51,6 +51,7 @@ DATA_HOST = os.environ.get("ESG_DATA_HOST", "").replace("\\", "/").rstrip("/")
 QUEUE = os.environ.get("RUNNER_QUEUE", "cpu")
 LOG_KEEP = 5000  # строк лога в Redis на запуск
 KEEP_S = 7 * 86400
+ALIVE_S, ALIVE_EVERY_S = 120, 10  # пульс запуска в Redis: живёт 2 мин, обновляется раз в 10 с
 
 app = Celery("runner", broker=REDIS_URL)
 app.conf.update(task_default_queue=QUEUE, worker_prefetch_multiplier=1, task_acks_late=False,
@@ -111,22 +112,61 @@ class Events:
     def stop_requested(self) -> bool:
         return bool(self.r.exists(f"{self.key}:stop"))
 
+    def alive(self) -> None:
+        """Пульс: исполнитель ведёт этот запуск. Нет пульса — платформа по «Остановить» снимает запуск
+        сама (его итог потерялся или исполнитель упал), а не ждёт исполнителя, которого нет."""
+        now = time.time()
+        if now - getattr(self, "_beat", 0.0) >= ALIVE_EVERY_S:
+            self.r.set(f"{self.key}:alive", 1, ex=ALIVE_S)
+            self._beat = now
 
-def report(run_id: int, body: dict[str, Any], path: str | None = None) -> int:
-    """Платформе: ход и итог запуска. Код ответа (409 — запуск уже снят)."""
+
+def post(run_id: int, body: dict[str, Any], path: str | None = None) -> tuple[int, str]:
+    """Платформе: ход и итог запуска. Код ответа (409 — запуск уже снят, 0 — нет связи) и текст ошибки."""
     url = f"{PLATFORM_URL}/api/runs/worker/{path or run_id}"
     req = Request(url, data=json.dumps(body, ensure_ascii=False, default=str).encode(),
                   headers={"X-Runner-Token": RUNNER_TOKEN, "Content-Type": "application/json"},
                   method="POST")
     try:
         with urlopen(req, timeout=60) as r:
-            return int(r.status)
+            return int(r.status), ""
     except HTTPError as exc:
-        print(f"платформа ответила {exc.code} на {url}: {exc.read()[:500]!r}", flush=True)
-        return exc.code
+        detail = exc.read()[:2000].decode("utf-8", "replace")
+        print(f"платформа ответила {exc.code} на {url}: {detail[:500]}", flush=True)
+        return exc.code, detail
     except URLError as exc:
         print(f"платформа недоступна ({url}): {exc}", flush=True)
-        return 0
+        return 0, str(exc)
+
+
+def report(run_id: int, body: dict[str, Any], path: str | None = None) -> int:
+    return post(run_id, body, path)[0]
+
+
+START_WAIT_S = (0.5, 1, 2, 3, 5)  # платформа ставит задачу в очередь до того, как запишет запуск в базу
+
+
+def report_start(run_id: int) -> int:
+    """«Начал»: задача может прийти раньше, чем платформа закончит запись запуска (404) — подождать."""
+    code = report(run_id, {"status": "running", "started_at": datetime.now(UTC).isoformat()})
+    for wait in START_WAIT_S:
+        if code != 404:
+            break
+        time.sleep(wait)
+        code = report(run_id, {"status": "running", "started_at": datetime.now(UTC).isoformat()})
+    return code
+
+
+def platform_error(detail: str) -> str:
+    """Ошибка схемы от FastAPI ({"detail": [...]}) — коротко, по-человечески."""
+    try:
+        items = json.loads(detail).get("detail")
+    except (ValueError, AttributeError):
+        return detail[:300]
+    if isinstance(items, list):
+        return "; ".join(f"{'.'.join(str(x) for x in i.get('loc', [])[-4:])}: {i.get('msg', '')}"
+                         for i in items[:3] if isinstance(i, dict))
+    return str(items)[:300]
 
 
 class Tracker:
@@ -217,6 +257,7 @@ def run_script(argv: list[str], cwd: Path, ev: Events, tracker: Tracker, limit_s
                 log.write(line + "\n")
                 handle_line(line, ev, tracker)
             if not reason and proc.poll() is None:
+                ev.alive()
                 if ev.stop_requested():
                     reason = "stopped"
                 elif time.time() - t0 > limit_s:
@@ -265,8 +306,9 @@ def execute(job: dict[str, Any]) -> str:
         report(run_id, {"status": "stopped", "message": "Снят с очереди до начала расчёта"})
         ev.emit("status", status="stopped")
         return "stopped"
-    if report(run_id, {"status": "running", "started_at": datetime.now(UTC).isoformat()}) == 409:
+    if report_start(run_id) == 409:
         return "skipped"
+    ev.alive()
     ev.emit("status", status="running")
     tracker = Tracker(ev)
     results: Path | None = None
@@ -314,9 +356,14 @@ def execute(job: dict[str, Any]) -> str:
         data["results_path"] = to_host(str(run_json.parent))
         if isinstance(data.get("dataset"), dict) and data["dataset"].get("path"):
             data["dataset"]["path"] = to_host(str(data["dataset"]["path"]))
+        accepted, detail = post(run_id, {"status": "done", "run": data, "mlflow_run_id": tracker.run_id,
+                                         "message": "" if code == 0 else f"Скрипт завершился с кодом {code}"})
+        if 400 <= accepted < 500 and accepted != 409:
+            # платформа отвергла итог (например, схема отчёта): без этого запуск навсегда остался бы
+            # «идёт» и занимал место в лимите — отмечаем сбоем с причиной
+            raise Failure(f"Платформа не приняла итог расчёта ({accepted}): {platform_error(detail)}. "
+                          f"Результаты — {host_results}")
         tracker.finish("done" if code == 0 else "failed", run_json.parent, data.get("summary") or {})
-        report(run_id, {"status": "done", "run": data, "mlflow_run_id": tracker.run_id,
-                        "message": "" if code == 0 else f"Скрипт завершился с кодом {code}"})
         ev.emit("status", status="done" if code == 0 else "failed")
         return "done"
     except Failure as exc:

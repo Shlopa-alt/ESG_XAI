@@ -28,7 +28,12 @@ def queue(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     monkeypatch.setattr(runs_api.run_queue, "enqueue", enqueue)
     monkeypatch.setattr(runs_api.run_queue, "request_stop", lambda url, run_id: None)
     monkeypatch.setattr(runs_api.run_queue, "revoke", lambda broker, task_id: None)
+    ALIVE.clear()
+    monkeypatch.setattr(runs_api.run_queue, "is_alive", lambda url, run_id: run_id in ALIVE)
     return sent
+
+
+ALIVE: set[int] = set()  # запуски, у которых есть пульс исполнителя
 
 
 @pytest.fixture
@@ -96,7 +101,8 @@ def test_worker_cycle_fills_reproducibility(make_client, snapshot: int, queue: l
     db_session.refresh(exp)
     assert exp.runner_commit == "abc1234" and exp.seed == 42
     # законченный запуск исполнитель не переписывает
-    assert c.post(f"/api/runs/worker/{run_id}", headers=TOKEN, json={"status": "failed"}).status_code == 409
+    late = c.post(f"/api/runs/worker/{run_id}", headers=TOKEN, json={"status": "failed"})
+    assert late.status_code == 409
 
 
 def test_failed_run_does_not_touch_experiment(make_client, snapshot: int, queue: list,  # type: ignore[no-untyped-def,type-arg]
@@ -120,9 +126,40 @@ def test_stop_queued_run_and_permissions(make_client, snapshot: int, queue: list
     assert author.post(f"/api/runs/{run_id}/stop").status_code == 409
 
 
-def test_orphans_fail_running_runs(make_client, snapshot: int, queue: list) -> None:  # type: ignore[no-untyped-def,type-arg]
+def test_stop_running_run_waits_for_live_runner(make_client, snapshot: int, queue: list) -> None:  # type: ignore[no-untyped-def,type-arg]
+    """Исполнитель ведёт расчёт (есть пульс) — остановка только запрашивается, итог пришлёт он."""
     c = make_client("res", "researcher")
     run_id = _launch(c, snapshot).json()["id"]
     c.post(f"/api/runs/worker/{run_id}", headers=TOKEN, json={"status": "running"})
+    ALIVE.add(run_id)
+    r = c.post(f"/api/runs/{run_id}/stop")
+    assert r.status_code == 200 and r.json()["status"] == "running"
+    assert "запрошена" in r.json()["message"]
+
+
+def test_stop_orphan_run_releases_it(make_client, snapshot: int, queue: list) -> None:  # type: ignore[no-untyped-def,type-arg]
+    """«Идёт», а пульса нет (итог не дошёл до платформы, исполнитель упал) — снимается сразу,
+    иначе висел бы «идёт» и занимал место в лимите проверок."""
+    c = make_client("res", "researcher")
+    run_id = _launch(c, snapshot).json()["id"]
+    c.post(f"/api/runs/worker/{run_id}", headers=TOKEN, json={"status": "running"})
+    r = c.post(f"/api/runs/{run_id}/stop")
+    assert r.status_code == 200 and r.json()["status"] == "stopped"
+    assert "уже не вёл" in r.json()["message"]
+    # итог, пришедший потом, запуск не переписывает
+    assert c.post(f"/api/runs/worker/{run_id}", headers=TOKEN, json={"status": "failed"}).status_code == 409
+
+
+def test_orphans_fail_running_runs(make_client, snapshot: int, queue: list,  # type: ignore[no-untyped-def,type-arg]
+                                   db_session: Session) -> None:
+    c = make_client("res", "researcher")
+    run_id = _launch(c, snapshot).json()["id"]
+    c.post(f"/api/runs/worker/{run_id}", headers=TOKEN, json={"status": "running"})
+    exp = db_session.query(Experiment).filter_by(code="EXP-001").one()
+    exp.status = "running"
+    db_session.commit()
     assert c.post("/api/runs/worker/orphans?queue=cpu", headers=TOKEN).json() == {"failed": 1}
     assert c.get(f"/api/runs/{run_id}").json()["status"] == "failed"
+    # проверка не висит «в работе»: её единственный расчёт закончился сбоем
+    db_session.refresh(exp)
+    assert exp.status == "failed"

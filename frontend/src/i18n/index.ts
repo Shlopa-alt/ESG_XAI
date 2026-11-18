@@ -138,6 +138,15 @@ function walk(node: Node): void {
 /** Включить английский: перевести то, что уже на странице, и всё, что появится. */
 export function startTranslator(root: HTMLElement): MutationObserver {
   document.documentElement.lang = "en";
+  // английский выбран сознательно — встроенный переводчик браузера (Chrome «всегда переводить
+  // английский») не должен переводить страницу обратно машинным переводом. Только meta: атрибут
+  // translate="no" на <html> выключил бы и наш словарь (SKIP пропускает [translate='no'])
+  if (!document.querySelector('meta[name="google"]')) {
+    const meta = document.createElement("meta");
+    meta.name = "google";
+    meta.content = "notranslate";
+    document.head.appendChild(meta);
+  }
   walk(root);
   const title = () => {
     const t = translate(document.title);

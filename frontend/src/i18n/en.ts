@@ -8,6 +8,20 @@ export const EN: {
   plural: Record<string, [string, string]>;
 } = {
  "exact": {
+  "испанский": "Spanish",
+  "португальский": "Portuguese",
+  "итальянский": "Italian",
+  "турецкий": "Turkish",
+  "вьетнамский": "Vietnamese",
+  "персидский": "Persian",
+  "украинский": "Ukrainian",
+  "строка": "row",
+  "строки": "rows",
+  ". Этот язык переводчик пока не знает, поэтому таблица не переводится сама. Если язык определён неверно, выберите его ниже.": ". The translator does not know this language yet, so the table is not translated automatically. If the language was detected wrongly, choose it below.",
+  "Язык таблицы не определился сам. Выберите язык оригинала и нажмите «Перевести на русский».": "The table language was not detected automatically. Choose the original language and click “Translate into Russian”.",
+  "Идёт намного дольше оценки": "Running much longer than estimated",
+  "— откройте расчёт: если он не движется, остановите его.": "— open the run: if it is not progressing, stop it.",
+  "Расчёты закончены. Черновой вывод ИИ-помощник напишет по отчёту — он появится здесь сам, обычно за несколько минут. Свой вывод можно записать кнопкой «Редактировать».": "The runs are finished. The AI assistant will write a draft conclusion from the report — it will appear here by itself, usually within a few minutes. You can write your own conclusion with the “Edit” button.",
   "(в библиотеке пока нет)": "(not in the library yet)",
   "(задача №": "(task #",
   "(идея": "(idea",
@@ -1555,6 +1569,7 @@ export const EN: {
   "нашёл: {0}": "found: {0}",
   "немонотонная, ξ {0}": "non-monotonic, ξ {0}",
   "определён: {0}": "detected: {0}",
+  "определён: {0} (не переводится)": "detected: {0} (not translated)",
   "открытых предложений: {0}": "open proposals: {0}",
   "предложил {0}": "proposed by {0}",
   "с итогом: {0}": "with a result: {0}",
@@ -1565,7 +1580,8 @@ export const EN: {
   "— {0} из ~{1}": "— {0} of ~{1}",
   "— в библиотеке её пока нет, ближайшая замена: {0}": "— not in the library yet, the closest substitute: {0}",
   "≈ {0} мин": "≈ {0} min",
-  "черновиков: {0}": "drafts: {0}"
+  "черновиков: {0}": "drafts: {0}",
+  "оспаривается: {0}": "disputed: {0}"
  },
  "plural": {
   "вариант|варианта|вариантов": [

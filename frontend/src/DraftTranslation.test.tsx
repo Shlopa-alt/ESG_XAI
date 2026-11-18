@@ -14,7 +14,7 @@ const ITEM = {
   lang: "en", title_ru: "[Выборка компаний]",
 };
 const TRANSLATION = {
-  lang: "en", lang_title: "английский", can_translate: true, source: "en", engine: "Argos Translate 1.9", done_at: null,
+  lang: "en", lang_title: "английский", supported: true, can_translate: true, has_texts: true, source: "en", engine: "Argos Translate 1.9", done_at: null,
   pending: "", failed: "", translator_online: null,
   pairs: { "[Sample of firms]": "[Выборка компаний]", "[Size]": "[Размер]", "[Large]": "[Крупная]" },
 };
@@ -81,6 +81,27 @@ describe("Перевод черновиков данных", () => {
     expect(onTranslate).toHaveBeenCalledWith({ lang: "de" });
     expect(await screen.findByText(/Перевод в очереди/)).toBeInTheDocument();
     expect(screen.getByText(/Переводчик на лабораторном ПК сейчас не запущен/)).toBeInTheDocument();
+  });
+
+  it("язык не определился — блок перевода есть, язык выбирают вручную", async () => {
+    const onTranslate = vi.fn();
+    const unknown = { ...TRANSLATION, lang: "", lang_title: "", supported: false, can_translate: false, pairs: {}, source: "", engine: "" };
+    stub("researcher", { ...DRAFT, translation: unknown }, onTranslate);
+    renderAt("/data-drafts/9");
+    expect(await screen.findByText(/Язык таблицы не определился сам/)).toBeInTheDocument();
+    const go = screen.getByRole("button", { name: "Перевести на русский" });
+    expect(go).toBeDisabled(); // пока язык не выбран
+    await userEvent.selectOptions(screen.getByLabelText("Язык оригинала"), "арабский");
+    await userEvent.click(go);
+    expect(onTranslate).toHaveBeenCalledWith({ lang: "ar" });
+  });
+
+  it("язык, которого переводчик не знает, назван, но сам не переводится", async () => {
+    const es = { ...TRANSLATION, lang: "es", lang_title: "испанский", supported: false, can_translate: false, pairs: {}, source: "", engine: "" };
+    stub("researcher", { ...DRAFT, translation: es });
+    renderAt("/data-drafts/9");
+    expect(await screen.findByText(/Таблица на языке: испанский\. Этот язык переводчик пока не знает/)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "определён: испанский (не переводится)" })).toBeInTheDocument();
   });
 
   it("в списке — название по-русски, оригинал и язык таблицы", async () => {

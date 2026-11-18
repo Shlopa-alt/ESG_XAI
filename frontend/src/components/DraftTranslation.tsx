@@ -33,8 +33,9 @@ export function TranslationBar({
   });
   if (!t) return null;
   const has = Object.keys(t.pairs).length > 0;
-  // русская таблица или одни числа — и перевода не было: показывать нечего
-  if (!has && !t.lang_title && !t.pending && !t.failed) return null;
+  // русская таблица или одни числа — и перевода не было: показывать нечего. Язык не определился или
+  // переводчик его не знает, а иностранные строки есть — блок нужен: язык выбирают вручную
+  if (!has && !t.has_texts && !t.pending && !t.failed) return null;
   const from = LANG_TITLE[t.source] ?? t.lang_title;
   return (
     <section className="card translate-bar" aria-labelledby="tr-title">
@@ -63,7 +64,18 @@ export function TranslationBar({
           оригинал таблицы.
         </p>
       )}
-      {!has && !t.pending && t.lang_title && <p className="muted">Таблица на языке: {t.lang_title}. Перевода пока нет.</p>}
+      {!has && !t.pending && t.lang_title && t.supported && (
+        <p className="muted">Таблица на языке: {t.lang_title}. Перевода пока нет.</p>
+      )}
+      {!has && !t.pending && t.lang_title && !t.supported && (
+        <p className="muted">
+          Таблица на языке: {t.lang_title}. Этот язык переводчик пока не знает, поэтому таблица не переводится сама. Если язык
+          определён неверно, выберите его ниже.
+        </p>
+      )}
+      {!has && !t.pending && !t.lang_title && t.has_texts && (
+        <p className="muted">Язык таблицы не определился сам. Выберите язык оригинала и нажмите «Перевести на русский».</p>
+      )}
       {t.pending && (
         <p role="status">
           {t.pending === "running" ? "Переводится…" : "Перевод в очереди…"}
@@ -85,7 +97,9 @@ export function TranslationBar({
           <label className="field">
             Язык оригинала
             <select value={lang} onChange={(e) => setLang(e.target.value)}>
-              <option value="">{t.lang_title ? `определён: ${t.lang_title}` : "определить"}</option>
+              <option value="">
+                {!t.lang_title ? "— выберите —" : t.supported ? `определён: ${t.lang_title}` : `определён: ${t.lang_title} (не переводится)`}
+              </option>
               {Object.entries(LANG_TITLE).map(([k, v]) => (
                 <option key={k} value={k}>
                   {v}

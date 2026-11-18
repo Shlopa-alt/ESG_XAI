@@ -244,6 +244,36 @@ def test_future_years_and_ids_are_not_inputs() -> None:
     assert any("[ROA 2022]" in w and "подсмотрел" in w for w in first["why"])
 
 
+def test_link_partner_is_always_an_input_and_target_derivatives_are_not() -> None:
+    """Проверка связи «ROA 2021 — ROA 2022»: ROA 2021 — во входах, хоть это и прошлый год цели;
+    «roa_up» (рост ROA 2021 → 2022) посчитан из цели — его во входах нет, а у ROE — есть."""
+    from app.services.analysis import recommend
+    from app.services.data_files import Table
+
+    cols = ["roa_2021", "roa_2022", "roe_2022", "roa_up", "roe_up", "x1"]
+    t = Table(columns=cols, numeric=set(cols), sample=[])
+    plain = recommend(t, 120, "roa_2022", None)["recommendations"][0]["params"]
+    assert plain["features"] == ["roe_2022", "roe_up", "x1"] and plain["lag"] == "roa_2021"
+    link = recommend(t, 120, "roa_2022", None, keep="roa_2021")["recommendations"][0]["params"]
+    assert link["features"] == ["roa_2021", "roe_2022", "roe_up", "x1"] and link["lag"] == ""
+    # у цели без года одноимённые столбцы — другие показатели, не производные
+    flat = Table(columns=["roa", "roa_up", "x1"], numeric={"roa", "roa_up", "x1"}, sample=[])
+    panel = recommend(flat, 120, "roa", None)["recommendations"][0]["params"]
+    assert panel["features"] == ["roa_up", "x1"]
+
+
+def test_category_codes_are_not_searched_for_links() -> None:
+    """«industry» = 01, 17, 24 — номер отрасли, не величина: в поиск связей и в число
+    показателей не идёт."""
+    from app.services.analysis import recommend
+    from app.services.data_files import Table
+
+    cols = ["code", "x1", "x2", "industry", "[Sector code]", "roa"]
+    out = recommend(Table(columns=cols, numeric=set(cols), sample=[]), 600, "", None)
+    scan = next(r for r in out["recommendations"] if r["template"] == "correlation-scan")
+    assert scan["params"]["columns"] == out["measures"] == ["x1", "x2", "roa"]
+
+
 def test_panel_scan_groups_by_entity() -> None:
     """Панель «страна × год»: поиск связей усредняет строки по стране — иначе годы одной страны
     считаются независимыми наблюдениями и связи «подтверждаются» на шуме."""

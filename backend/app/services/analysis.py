@@ -126,6 +126,20 @@ _ID_WORDS = (r"id|code|код|инн|огрн|окпо|inn|ogrn|okpo|номер|
 ID_LIKE = re.compile(rf"(?:{_ID_WORDS})|.+[ _.\-](?:id|code|код)|(?:id|code|код|номер)[ _.\-].+")
 
 
+# код отрасли или региона числом («industry» = 01, 17, 24): это категория, а не величина —
+# корреляция «номера отрасли» с показателями ничего не значит, в поиск связей такие столбцы не идут
+CATEGORY_CODE = re.compile(
+    r"(?:industry|sector|отрасль|отрасли|оквэд|okved|sic|naics|gics|region|регион)"
+    r"(?:[ _.\-]?(?:code|код|id|no))?"
+)
+
+
+def measures(numeric: list[str]) -> list[str]:
+    """Числовые столбцы, которые — величины: без идентификаторов, годов строк и кодов категорий."""
+    return [c for c in numeric
+            if not ID_LIKE.fullmatch(_bare(c)) and not CATEGORY_CODE.fullmatch(_bare(c))]
+
+
 def _bare(column: str) -> str:
     return re.sub(r"[\[\]()]", "", column).strip().lower()
 
@@ -157,6 +171,23 @@ def _same_indicator(a: str, b: str) -> bool:
         return re.sub(r"[\s_\-]+", " ", YEAR.sub("", _bare(c))).strip()
 
     return bool(stem(a)) and stem(a) == stem(b)
+
+
+def _tokens(column: str) -> list[str]:
+    return [w for w in re.split(r"[\s_\-.,:;/]+", YEAR.sub("", _bare(column))) if w]
+
+
+def _derived_from(target: str, numeric: list[str]) -> list[str]:
+    """Столбцы, посчитанные из цели: у цели есть год (ROA 2022), а у столбца того же показателя года
+    нет и есть приписка — «roa_up», «ROA change», «avg ROA». Это рост, среднее или изменение за
+    периоды, куда входит и год цели, — во входах это утечка ответа
+    (roa_up = [roa_2022 > roa_2021])."""
+    if not _year(target):
+        return []  # цель без года (панель): одноимённые столбцы — другие показатели
+    stem = _tokens(target)
+    return [c for c in numeric
+            if c != target and not _year(c) and stem and len(_tokens(c)) > len(stem)
+            and all(w in _tokens(c) for w in stem)]
 
 
 def _year(column: str) -> int:
@@ -194,25 +225,36 @@ def recommend(
     node: MethodologySection | None,
     authors: dict[str, Any] | None = None,
     library: list[tuple[Template, str]] | None = None,
+    keep: str = "",
 ) -> dict[str, Any]:
     """Тип задачи и рекомендации по данным. target — выбранный показатель (пусто — не выбран);
     authors — сеть из статьи-источника идеи (net_catalog.authors_net + article_title);
-    library — включённые методы из статей банка (шаблон и сеть каталога): карточки прогноза."""
+    library — включённые методы из статей банка (шаблон и сеть каталога): карточки прогноза;
+    keep — второй показатель проверяемой связи: он во входах всегда, даже если это прошлый год цели
+    (иначе проверка связи «ROA 2021 — ROA 2022» шла бы без ROA 2021)."""
     numeric = [c for c in t.columns if c in t.numeric]
     cats = categories(t)
     recs: list[Recommendation] = []
     if target:
         if target not in numeric:
             raise ValueError(f"Показатель «{target}» — не числовой столбец этой версии данных")
+        if keep and keep not in numeric:
+            raise ValueError(f"Показатель «{keep}» — не числовой столбец этой версии данных")
         lag = guess_lag(target, numeric)
-        # во входы не берём: будущие годы того же показателя (утечка ответа) и номера/годы строк
+        if keep and keep == lag:
+            # прошлый год цели — сам проверяемый показатель: он во входах, а не наивный прогноз
+            lag = ""
+        # во входы не берём: будущие годы того же показателя (утечка ответа), столбцы, посчитанные
+        # из самой цели («roa_up» при цели «roa_2022»), и номера/годы строк
         future = [
             c
             for c in numeric
             if c != target and _same_indicator(c, target) and _year(c) > _year(target)
         ]
+        derived = _derived_from(target, numeric)
         ids = [c for c in numeric if ID_LIKE.fullmatch(_bare(c))]
-        features = [c for c in numeric if c not in (target, lag, *future, *ids)]
+        features = [c for c in numeric
+                    if c == keep or c not in (target, lag, *future, *derived, *ids)]
         if not features:
             raise ValueError(
                 "Кроме показателя, в данных нет числовых столбцов — предсказывать не по чему"
@@ -372,7 +414,7 @@ def recommend(
             )
         )
         ok_scan, why_not_scan = _rows_note(rows, MIN_ROWS["correlation-scan"])
-        scan_cols = [c for c in numeric if not ID_LIKE.fullmatch(_bare(c))][:MAX_SCAN]
+        scan_cols = measures(numeric)[:MAX_SCAN]
         group = panel_group(t)
         panel = (
             [
@@ -411,6 +453,8 @@ def recommend(
     return {
         "columns": t.columns,
         "numeric": numeric,
+        # что считать «показателями» в подписи данных и в поиске связей
+        "measures": measures(numeric),
         "categories": cats,
         "sheet": t.sheet,
         "sheets": t.sheets,
