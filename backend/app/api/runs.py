@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -16,8 +16,9 @@ from app.api.deps import current_user, require_role
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import Dataset, DatasetSnapshot, Experiment, Run, User
-from app.services import method_library, resources, run_queue
+from app.services import manual, method_library, resources, run_queue
 from app.services.data_files import Table, is_table, table_columns, to_container
+from app.services.experiments import refresh_after_runs
 from app.services.report import Report, merge_run_report
 from app.services.run_templates import ParamError, check_params, script_args
 
@@ -326,7 +327,7 @@ def start_run(db: Session, settings: Settings, user: User, template: str, snapsh
     est = resources.estimate(db, settings, t, checked,
                                  resources.rows_of(settings, snap, str(checked.get("sheet") or "")))
     try:
-        resources.check_limits(db, settings, user, est)
+        resources.check_limits(db, settings, user, est, exp.id)
     except resources.LimitError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
     if est.resource == "gpu":
@@ -411,6 +412,69 @@ def get_run(run_id: int, db: Annotated[Session, Depends(get_db)]) -> RunOut:
     return _out(db, _get_run(db, run_id))
 
 
+# --- ручной режим: взять работу в свои руки (app/services/manual.py) ---
+
+
+def _zip_response(name: str, body: bytes) -> Response:
+    return Response(content=body, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"',
+                             "Cache-Control": "private, no-store"})
+
+
+def _snapshot_of(db: Session, snapshot_id: int) -> tuple[DatasetSnapshot, Dataset]:
+    snap = db.get(DatasetSnapshot, snapshot_id)
+    ds = db.get(Dataset, snap.dataset_id) if snap else None
+    if snap is None or ds is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет среза №{snapshot_id}")
+    return snap, ds
+
+
+def _sees_files(ds: Dataset, user: User) -> bool:
+    """Файлы датасета под NDA — только допущенным (правило 6), как выгрузка и столбцы среза."""
+    return ds.access_level != "nda" or user.role == "owner"
+
+
+@router.get("/runs/{run_id}/manual.zip")
+def run_manual(run_id: int, db: Annotated[Session, Depends(get_db)],
+               settings: Annotated[Settings, Depends(get_settings)],
+               user: Annotated[User, Depends(current_user)]) -> Response:
+    """Архив «взять расчёт в свои руки»: ноутбук Jupyter, данные (если видны), код метода, параметры."""
+    run = _get_run(db, run_id)
+    exp = db.get(Experiment, run.experiment_id)
+    if exp is None or run.dataset_snapshot_id is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "У расчёта нет данных — повторять нечего")
+    snap, ds = _snapshot_of(db, run.dataset_snapshot_id)
+    t = method_library.template(db, run.template) if run.template else None
+    author = db.get(User, run.created_by) if run.created_by else None
+    name, body = manual.run_bundle(settings, run, exp, t, snap, ds, _sees_files(ds, user),
+                                   author.login if author else "")
+    return _zip_response(name, body)
+
+
+@router.get("/snapshots/{snapshot_id}/manual.zip")
+def snapshot_manual(snapshot_id: int, db: Annotated[Session, Depends(get_db)],
+                    settings: Annotated[Settings, Depends(get_settings)],
+                    user: Annotated[User, Depends(current_user)]) -> Response:
+    """Архив версии данных: файл и ноутбук, чтобы обрабатывать данные вручную."""
+    snap, ds = _snapshot_of(db, snapshot_id)
+    name, body = manual.snapshot_bundle(settings, snap, ds, _sees_files(ds, user))
+    return _zip_response(name, body)
+
+
+@router.get("/snapshots/{snapshot_id}/file")
+def snapshot_file(snapshot_id: int, db: Annotated[Session, Depends(get_db)],
+                  settings: Annotated[Settings, Depends(get_settings)],
+                  user: Annotated[User, Depends(current_user)]) -> FileResponse:
+    """Файл версии данных как есть (командная строка: esg download). sha256 — в заголовке X-SHA256."""
+    snap, ds = _snapshot_of(db, snapshot_id)
+    if not _sees_files(ds, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Файлы датасета под NDA — только для допущенных")
+    path = to_container(settings, snap.storage_path) if snap.storage_path else None
+    if path is None or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файла среза нет на сервере")
+    return FileResponse(path, filename=path.name, headers={"X-SHA256": snap.sha256, "Cache-Control": "private, no-store"})
+
+
 @router.get("/runs/{run_id}/stream", dependencies=[Depends(current_user)])
 def stream(
     run_id: int, request: Request, db: Annotated[Session, Depends(get_db)],
@@ -440,12 +504,21 @@ def stop(
         run_queue.request_stop(settings.redis_url, run.id)
         if run.status == "queued" and run.task_id:
             run_queue.revoke(settings.redis_url, run.task_id)
+        # «идёт», а пульса исполнителя нет: итог потерялся (платформа его не приняла) или
+        # исполнитель упал — ждать некого, иначе запуск висел бы «идёт» и занимал место в лимите
+        orphan = run.status == "running" and not run_queue.is_alive(settings.redis_url, run.id)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             f"Очередь запусков недоступна: {exc}") from exc
-    if run.status == "queued":
+    if run.status == "queued" or orphan:
+        run.message = (f"Снят с очереди: {user.login}" if run.status == "queued" else
+                       f"Остановлен: {user.login}. Исполнитель этот расчёт уже не вёл — "
+                       "итог не дошёл до платформы")
         run.status, run.finished_at = "stopped", datetime.now(UTC)
-        run.message = f"Снят с очереди: {user.login}"
+        exp = db.get(Experiment, run.experiment_id)
+        if exp is not None:
+            db.flush()
+            refresh_after_runs(db, exp)
     else:
         run.message = f"Остановка запрошена: {user.login}"
     db.commit()
@@ -470,6 +543,12 @@ def orphans(queue: Literal["cpu", "gpu"], db: Annotated[Session, Depends(get_db)
     for run in runs:
         run.status, run.finished_at = "failed", datetime.now(UTC)
         run.message = "Исполнитель перезапустился во время расчёта — запустите заново"
+    db.flush()
+    # проверки этих расчётов: если других расчётов у них нет — не висеть «в работе» (п. 12)
+    for exp_id in {run.experiment_id for run in runs}:
+        exp = db.get(Experiment, exp_id)
+        if exp is not None:
+            refresh_after_runs(db, exp)
     db.commit()
     return {"failed": len(runs)}
 
@@ -499,5 +578,8 @@ def worker_report(run_id: int, body: WorkerReport,
         run.status = "failed" if body.status == "done" else body.status
         run.finished_at = datetime.now(UTC)
         run.message = body.message or ("Расчёт не записал run.json" if body.status == "done" else "")
+    if exp is not None and run.status in run_queue.FINAL:
+        db.flush()
+        refresh_after_runs(db, exp)  # все расчёты проверки закончились — она не висит «в работе»
     db.commit()
     return _out(db, run)

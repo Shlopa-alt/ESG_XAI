@@ -49,7 +49,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     runner_token: str = ""
     gpu_runs_per_user: int = 1
-    # Учёт ресурсов (app/services/resources.py): расчётов человека в очереди и в работе, оценённых
+    # Учёт ресурсов (app/services/resources.py): проверок человека, расчёты которых в очереди или идут
+    # (набор сетей одной проверки — одна проверка), оценённых
     # минут за сутки (администратора не держит); исполнитель видеокарты подключён — трансформер
     # может считаться на ней
     run_active_per_user: int = 3
@@ -63,6 +64,10 @@ class Settings(BaseSettings):
 
     # Qwen по требованию: обработчик очереди на машине с видеокартой (runner/qwen/worker.py)
     qwen_token: str = ""
+
+    # Ручной режим (ноутбук Jupyter, командная строка esg): код методов кладётся в архив из рабочей
+    # копии репозитория, смонтированной только для чтения (deploy/docker-compose.yml: ..:/repo:ro)
+    repo_dir: str = "/repo"
 
 
 WEAK_LOCAL_PASSWORDS = frozenset({"", "dev", "change-me"})

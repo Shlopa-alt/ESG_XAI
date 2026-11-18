@@ -46,6 +46,11 @@ def request_stop(url: str, run_id: int) -> None:
     redis.Redis.from_url(url).set(f"run:{run_id}:stop", 1, ex=7 * 86400)
 
 
+def is_alive(url: str, run_id: int) -> bool:
+    """Исполнитель ведёт запуск: его пульс run:{id}:alive обновляется раз в 10 с и живёт 2 мин."""
+    return bool(redis.Redis.from_url(url).exists(f"run:{run_id}:alive"))
+
+
 def sse(event: dict[str, Any]) -> str:
     head = f"id: {event['seq']}\n" if "seq" in event else ""
     return f"{head}data: {json.dumps(event, ensure_ascii=False)}\n\n"

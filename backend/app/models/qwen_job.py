@@ -13,7 +13,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
 QWEN_KINDS = ("graph", "ping", "hypotheses", "experiment", "report", "cr", "tables", "table_edit",
-              "data_links", "method")
+              "data_links", "method", "translate")
+# задачи без модели и видеокарты — их разбирает свой обработчик на процессоре (runner/translate/worker.py);
+# обработчик Qwen их не видит, иначе поднимал бы модель ради перевода
+CPU_KINDS = ("translate",)
 QWEN_STATUSES = ("queued", "running", "done", "failed", "cancelled")
 
 

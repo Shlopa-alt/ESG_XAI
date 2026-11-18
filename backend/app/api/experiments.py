@@ -13,6 +13,7 @@ from app.models import (
     DatasetSnapshot,
     Experiment,
     ExperimentLink,
+    ExperimentReport,
     Hypothesis,
     KbRef,
     MethodologySection,
@@ -20,7 +21,7 @@ from app.models import (
     User,
 )
 from app.services.codes import next_code
-from app.services.experiments import DomainError, set_status
+from app.services.experiments import DomainError, progress, set_status
 from app.services.report import Report
 
 router = APIRouter(tags=["experiments"])
@@ -76,6 +77,10 @@ class ExperimentOut(BaseModel):
     report_path: str
     report: dict[str, Any] = {}
     config: dict[str, Any] = {}  # config.analysis — какой метод и сеть выбраны и почему
+    # ход проверки: сколько расчётов готово, что идёт, сколько примерно осталось (п. 13)
+    progress: dict[str, Any] | None = None
+    # вывод последнего отчёта ИИ-помощника, пока его не одобрил рецензент: статус, вердикт, резюме
+    draft: dict[str, Any] | None = None
     created_at: datetime
     finished_at: datetime | None
 
@@ -172,7 +177,20 @@ def node_number(db: Session, nid: int | None) -> str:
 def _out(db: Session, exp: Experiment) -> ExperimentOut:
     out = ExperimentOut.model_validate(exp)
     out.methodology_node = node_number(db, exp.methodology_node_id)
+    out.progress = progress(db, exp)
+    out.draft = _draft(db, exp)
     return out
+
+
+def _draft(db: Session, exp: Experiment) -> dict[str, Any] | None:
+    """Последний отчёт по проверке: его вывод виден сразу, с пометкой, что рецензент ещё не смотрел."""
+    r = db.scalar(select(ExperimentReport).where(ExperimentReport.experiment_id == exp.id)
+                  .order_by(ExperimentReport.version.desc()).limit(1))
+    if r is None:
+        return None
+    sec = r.sections if isinstance(r.sections, dict) else {}
+    return {"version": r.version, "status": r.status, "verdict": str(sec.get("verdict") or ""),
+            "summary": str(sec.get("summary") or ""), "verdict_reason": str(sec.get("verdict_reason") or "")}
 
 
 def _detail(db: Session, exp: Experiment) -> ExperimentDetail:

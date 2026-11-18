@@ -1,0 +1,16 @@
+[project]
+name = "esg-cli"
+version = "0.1"
+description = "Командная строка ESG Open Research: данные, расчёты, ноутбуки Jupyter"
+requires-python = ">=3.11"
+dependencies = []  # только стандартная библиотека
+
+[project.scripts]
+esg = "esg_cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["esg_cli"]

@@ -54,7 +54,7 @@ services:
       # Запуск экспериментов из формы: очередь Celery в Redis, исполнитель runner-cpu
       REDIS_URL: redis://redis:6379/0
       RUNNER_TOKEN: ${RUNNER_TOKEN:-}
-      # Учёт ресурсов (docs/DATA_ANALYSIS.md): расчётов человека в очереди и в работе, минут за сутки,
+      # Учёт ресурсов (docs/DATA_ANALYSIS.md): проверок человека, которые считаются одновременно, минут за сутки,
       # есть ли исполнитель видеокарты
       RUN_ACTIVE_PER_USER: ${RUN_ACTIVE_PER_USER:-3}
       RUN_CPU_MINUTES_PER_DAY: ${RUN_CPU_MINUTES_PER_DAY:-600}
@@ -66,6 +66,8 @@ services:
     volumes:
       - ${KB_INBOX_DIR:-../.local/kb_inbox}:/data/kb_inbox
       - ${ESG_DATA_HOST:-../.local/esg_data}:/data/esg
+      # ручной режим: код методов runner/ — в архив «Взять в свои руки» (только чтение)
+      - ..:/repo:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

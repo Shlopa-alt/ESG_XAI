@@ -3,7 +3,7 @@ import cytoscape, { type ElementDefinition } from "cytoscape";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { type KbNetwork, kbNetwork, kbTree } from "../api/kb";
+import { conceptTopics, type KbNetwork, kbNetwork, kbTree } from "../api/kb";
 import { BankTabs } from "../components/SectionTabs";
 import { plural } from "../components/Ux";
 import { conceptKey, originalName, POPULAR, ruName } from "../concepts";
@@ -17,6 +17,15 @@ const REL_GROUPS = [
 ] as const;
 type RelKey = (typeof REL_GROUPS)[number]["key"];
 const groupOf = (rel: string): (typeof REL_GROUPS)[number] => REL_GROUPS.find((g) => g.match(rel)) ?? REL_GROUPS[3];
+
+// Общий граф (п. 1 фидбека): цвет круга — тема, где о понятии пишут больше всего. Цвета не совпадают
+// с цветами связей (зелёный, оранжевый, серый, синий), остальные темы — «другие темы»
+const TOPIC_COLORS = ["#7b5ea7", "#1f7a8c", "#9c6644", "#c2417f", "#3d4f8a", "#8a8f2b", "#c99a06", "#e07a8f"];
+const OTHER_TOPIC = "#a3aaa6";
+const NODE_COLOR = "#2a4a3a";
+const ROOT = "esg"; // корень банка: в нём все связи всех тем
+const TOPIC_IDS = 600; // для скольких самых связанных понятий спрашивать тему
+const MAX_EDGES = 4000;
 
 const SIDE_ROWS = 6; // сколько связей с каждой стороны видно в панели сразу
 const NEIGHBOURS = 11; // сколько соседей с каждой стороны рисовать на графе: больше подписи не читаются
@@ -191,13 +200,27 @@ function Side({
 }
 
 /** Что нарисовать: вся карта или понятие в центре со связями по сторонам. */
-function overviewElements(facts: Fact[], nodes: Concept[], size: number): ElementDefinition[] {
+/** Самые связанные понятия: сумма весов их связей. */
+function topConcepts(facts: Fact[], n: number, allow: (id: string) => boolean = () => true): string[] {
   const degree = new Map<string, number>();
   for (const e of facts) {
+    if (!allow(e.source) || !allow(e.target)) continue;
     degree.set(e.source, (degree.get(e.source) ?? 0) + (e.weight ?? 1));
     degree.set(e.target, (degree.get(e.target) ?? 0) + (e.weight ?? 1));
   }
-  const keep = new Set([...degree].sort((a, b) => b[1] - a[1]).slice(0, size).map(([id]) => id));
+  return [...degree].sort((a, b) => b[1] - a[1]).slice(0, n).map(([id]) => id);
+}
+
+interface Overview {
+  size: number;
+  allLinks: boolean; // все связи между показанными понятиями, а не только самые весомые
+  colorOf?: (id: string) => string | undefined;
+  allow?: (id: string) => boolean; // понятия скрытых тем не рисуются
+}
+
+function overviewElements(facts: Fact[], nodes: Concept[], o: Overview): ElementDefinition[] {
+  const { size } = o;
+  const keep = new Set(topConcepts(facts, size, o.allow));
   const pairs = new Map<string, Fact>();
   for (const e of facts) {
     if (!keep.has(e.source) || !keep.has(e.target) || e.source === e.target) continue;
@@ -205,12 +228,13 @@ function overviewElements(facts: Fact[], nodes: Concept[], size: number): Elemen
     const was = pairs.get(k);
     if (!was || (e.weight ?? 1) > (was.weight ?? 1)) pairs.set(k, e);
   }
-  const drawn = [...pairs.values()].sort((a, b) => (b.weight ?? 1) - (a.weight ?? 1)).slice(0, size * 2);
+  const drawn = [...pairs.values()].sort((a, b) => (b.weight ?? 1) - (a.weight ?? 1)).slice(0, o.allLinks ? MAX_EDGES : size * 2);
   const linked = new Set(drawn.flatMap((e) => [e.source, e.target]));
   const out: ElementDefinition[] = [];
   for (const n of nodes) {
     if (linked.has(n.id)) {
-      out.push({ data: { id: n.id, label: label(n), size: Math.min(58, 18 + 4 * Math.log2(Math.max(1, n.facts ?? 1))) } });
+      const color = o.colorOf?.(n.id);
+      out.push({ data: { id: n.id, label: label(n), size: Math.min(58, 18 + 4 * Math.log2(Math.max(1, n.facts ?? 1))), ...(color ? { color } : {}) } });
     }
   }
   for (const e of drawn) {
@@ -278,7 +302,7 @@ function GraphCanvas({ elements, focused, onNode, onEdge }: { elements: ElementD
         {
           selector: "node",
           style: {
-            "background-color": "#2a4a3a",
+            "background-color": NODE_COLOR,
             label: "data(label)",
             width: "data(size)",
             height: "data(size)",
@@ -296,6 +320,7 @@ function GraphCanvas({ elements, focused, onNode, onEdge }: { elements: ElementD
             "border-color": "#ffffff",
           },
         },
+        { selector: "node[color]", style: { "background-color": "data(color)" } },
         { selector: 'node[place = "center"]', style: { "background-color": "#b5651d", "font-weight": "bold", "text-margin-y": 6, "text-background-color": "#ffffff", "text-background-opacity": 1, "text-background-padding": "3px", "text-background-shape": "roundrectangle" } },
         { selector: 'node[place = "left"]', style: { "text-halign": "left", "text-valign": "center", "text-margin-x": -8, "text-margin-y": 0, "text-max-width": "190px" } },
         { selector: 'node[place = "right"]', style: { "text-halign": "right", "text-valign": "center", "text-margin-x": 8, "text-margin-y": 0, "text-max-width": "190px" } },
@@ -313,7 +338,7 @@ function GraphCanvas({ elements, focused, onNode, onEdge }: { elements: ElementD
       ],
       layout: focused
         ? { name: "preset", fit: true, padding: 24 }
-        : { name: "cose", animate: false, nodeDimensionsIncludeLabels: true, numIter: 1500, nodeRepulsion: () => 120000, idealEdgeLength: () => 170, nodeOverlap: 60, gravity: 0.3, componentSpacing: 70, padding: 20 },
+        : { name: "cose", animate: false, nodeDimensionsIncludeLabels: true, numIter: elements.length > 600 ? 500 : 1500, nodeRepulsion: () => 120000, idealEdgeLength: () => 170, nodeOverlap: 60, gravity: 0.3, componentSpacing: 70, padding: 20 },
     });
     cy.current = instance;
     if (instance.zoom() > 1.25) {
@@ -372,7 +397,7 @@ function GraphCanvas({ elements, focused, onNode, onEdge }: { elements: ElementD
   };
   return (
     <div className="card graph-stage">
-      <div ref={box} className="graph-canvas" role="img" aria-label={focused ? "Граф: выбранное понятие в центре, слева что на него влияет, справа на что влияет оно" : "Граф: самые связанные понятия банка статей"} />
+      <div ref={box} className="graph-canvas" role="img" aria-label={focused ? "Граф: выбранное понятие в центре, слева что на него влияет, справа на что влияет оно" : "Граф: самые связанные понятия банка статей и связи между ними"} />
       <div className="graph-zoom" role="group" aria-label="Масштаб графа">
         <button type="button" className="btn-ghost" aria-label="Крупнее" onClick={() => zoom(1.25)}>
           +
@@ -389,7 +414,12 @@ function GraphCanvas({ elements, focused, onNode, onEdge }: { elements: ElementD
 }
 
 export function Graph() {
-  const [kb, setKb] = useState("esg");
+  const [mode, setMode] = useState<"all" | "topic">("all"); // общий граф или граф одной темы
+  const [topic, setTopic] = useState("");
+  const [allLinks, setAllLinks] = useState(true);
+  const [hidden, setHidden] = useState<Set<string>>(new Set()); // темы, понятия которых не рисуем
+  const kb = mode === "all" || !topic ? ROOT : topic;
+  const maxSize = kb === ROOT ? 300 : 100;
   const [rels, setRels] = useState<Set<RelKey>>(new Set(["up", "down", "none", "other"]));
   const [size, setSize] = useState(30);
   const [current, setCurrent] = useState<string | null>(null); // null — вся карта
@@ -458,12 +488,47 @@ export function Graph() {
   const concept = current ? byId.get(current) : undefined;
   const incoming = useMemo(() => sideLinks(shownFacts, byId, (e) => (e.target === current && e.source !== current ? e.source : null)), [shownFacts, byId, current]);
   const outgoing = useMemo(() => sideLinks(shownFacts, byId, (e) => (e.source === current && e.target !== current ? e.target : null)), [shownFacts, byId, current]);
+  // общий граф: тема каждого понятия — для раскраски и для «показать темы»
+  const topIds = useMemo(() => (kb === ROOT ? topConcepts(shownFacts, TOPIC_IDS) : []), [kb, shownFacts]);
+  const topics = useQuery({
+    queryKey: ["kb", "concept-topics", topIds],
+    queryFn: () => conceptTopics(topIds),
+    enabled: topIds.length > 0,
+    retry: false,
+    refetchInterval: (q) => (q.state.data && !q.state.data.ready && q.state.data.building ? 10_000 : false),
+  });
+  const topicColor = useMemo(() => {
+    const m = new Map<string, string>();
+    (topics.data?.topics ?? []).forEach((t, i) => m.set(t.path, TOPIC_COLORS[i] ?? OTHER_TOPIC));
+    return m;
+  }, [topics.data]);
+  const mainOf = useCallback((id: string) => topics.data?.main[id], [topics.data]);
+  const colorOf = useCallback((id: string) => {
+    const t = mainOf(id);
+    return t ? topicColor.get(t) : undefined;
+  }, [mainOf, topicColor]);
+  const allow = useCallback((id: string) => {
+    const t = mainOf(id);
+    return !t || !hidden.has(t);
+  }, [mainOf, hidden]);
+  const coloured = kb === ROOT && Boolean(topics.data?.ready);
   const elements = useMemo(
-    () => (concept ? focusElements(concept, incoming, outgoing) : overviewElements(shownFacts, nodes, size)),
-    [concept, incoming, outgoing, shownFacts, nodes, size],
+    () =>
+      concept
+        ? focusElements(concept, incoming, outgoing)
+        : overviewElements(shownFacts, nodes, { size: Math.min(size, maxSize), allLinks, ...(coloured ? { colorOf, allow } : {}) }),
+    [concept, incoming, outgoing, shownFacts, nodes, size, maxSize, allLinks, coloured, colorOf, allow],
   );
+  const drawnNodes = elements.filter((e) => !e.data.source).length;
+  const drawnLinks = elements.length - drawnNodes;
+  const toggleTopic = (path: string) => {
+    const next = new Set(hidden);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    setHidden(next);
+  };
   const evidenceNode = evidence ? byId.get(evidence) : undefined;
-  const branches = (tree.data?.nodes ?? []).filter((n) => n.path === "esg" || n.path.startsWith("esg."));
+  const branches = (tree.data?.nodes ?? []).filter((n) => n.path.startsWith(`${ROOT}.`) && n.in_db);
   const toggle = (k: RelKey) => {
     const next = new Set(rels);
     if (next.has(k)) next.delete(k);
@@ -481,7 +546,8 @@ export function Graph() {
         <h1 className="page-title">Карта связей</h1>
         <p className="lead">
           Граф того, что говорят статьи: круги — понятия, стрелки — утверждения вида «одно влияет на другое», и каждое
-          подтверждено цитатой. Нажмите на понятие, чтобы вывести его в центр.
+          подтверждено цитатой. Общий граф собирает связи всех тем банка; граф темы — только её статьи. Нажмите на
+          понятие, чтобы вывести его в центр.
         </p>
       </section>
       <BankTabs />
@@ -495,22 +561,50 @@ export function Graph() {
             Найти
           </button>
         </form>
-        <label className="field inline">
-          Тема
-          <select value={kb} onChange={(e) => setKb(e.target.value)}>
-            {branches.map((b) => (
-              <option key={b.path} value={b.path}>
-                {"  ".repeat(b.depth)}
-                {b.title}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="filters" role="group" aria-label="Какой граф">
+          <button type="button" className={mode === "all" ? "chip active" : "chip"} aria-pressed={mode === "all"} onClick={() => setMode("all")}>
+            Общий граф — все темы
+          </button>
+          <button
+            type="button"
+            className={mode === "topic" ? "chip active" : "chip"}
+            aria-pressed={mode === "topic"}
+            onClick={() => {
+              setMode("topic");
+              if (!topic && branches[0]) setTopic(branches[0].path);
+            }}
+          >
+            Граф одной темы
+          </button>
+        </div>
+        {mode === "topic" && (
+          <label className="field inline">
+            Тема
+            <select value={topic} onChange={(e) => setTopic(e.target.value)}>
+              {branches.map((b) => (
+                <option key={b.path} value={b.path}>
+                  {"  ".repeat(Math.max(0, b.depth - 1))}
+                  {b.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {!concept && (
           <label className="field inline">
-            Понятий на графе: {size}
-            <input type="range" min={15} max={100} step={5} value={size} onChange={(e) => setSize(Number(e.target.value))} />
+            Понятий на графе: {Math.min(size, maxSize)}
+            <input type="range" min={15} max={maxSize} step={5} value={Math.min(size, maxSize)} onChange={(e) => setSize(Number(e.target.value))} />
           </label>
+        )}
+        {!concept && (
+          <div className="filters" role="group" aria-label="Какие связи между понятиями рисовать">
+            <button type="button" className={allLinks ? "chip active" : "chip"} aria-pressed={allLinks} onClick={() => setAllLinks(true)}>
+              Все связи между ними
+            </button>
+            <button type="button" className={!allLinks ? "chip active" : "chip"} aria-pressed={!allLinks} onClick={() => setAllLinks(false)}>
+              Только самые весомые
+            </button>
+          </div>
         )}
         {net.isSuccess && facts.length > 0 && (
           <div className="rel-legend" role="group" aria-label="Какие связи показывать">
@@ -523,6 +617,44 @@ export function Graph() {
           </div>
         )}
       </div>
+      {kb === ROOT && !concept && net.isSuccess && facts.length > 0 && (
+        <section className="card topic-legend" aria-labelledby="topics-title">
+          <h2 className="h3" id="topics-title">
+            Общий граф банка статей
+          </h2>
+          <p className="muted">
+            Всего {plural(nodes.length, "понятие", "понятия", "понятий")} и {plural(facts.length, "связь", "связи", "связей")}. На
+            графе — {plural(drawnNodes, "самое связанное понятие", "самых связанных понятия", "самых связанных понятий")} и{" "}
+            {plural(drawnLinks, "связь", "связи", "связей")} между ними; любое другое понятие найдётся поиском.
+          </p>
+          {topics.data?.ready ? (
+            <>
+              <p className="muted">Цвет круга — тема, где о понятии пишут больше всего. Нажмите на тему, чтобы скрыть или показать её понятия.</p>
+              <div className="filters" role="group" aria-label="Темы на общем графе">
+                {topics.data.topics.map((t) => (
+                  <button
+                    key={t.path}
+                    type="button"
+                    className={hidden.has(t.path) ? "chip" : "chip active-rel"}
+                    aria-pressed={!hidden.has(t.path)}
+                    onClick={() => toggleTopic(t.path)}
+                  >
+                    <span className="rel-swatch" style={{ background: topicColor.get(t.path) ?? OTHER_TOPIC }} aria-hidden="true" />
+                    {t.title}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : topics.data?.error ? (
+            <p className="muted">Раскраска по темам не собралась: {topics.data.error}. Граф показан без неё.</p>
+          ) : topIds.length > 0 ? (
+            <p className="muted" role="status">
+              Раскраска по темам собирается: графы тем идут с компьютера лаборатории, это несколько минут. Граф уже можно
+              смотреть.
+            </p>
+          ) : null}
+        </section>
+      )}
       {net.isError && (
         <p className="error" role="alert">
           {net.error.message}
@@ -536,7 +668,7 @@ export function Graph() {
       {net.isSuccess && facts.length === 0 && (
         <div className="card empty-state">
           <h2 className="h2">В этой теме связей пока нет</h2>
-          <p className="muted">ИИ-помощник выписывает их из статей темы, и они появятся по мере обработки. Попробуйте выбрать «Все».</p>
+          <p className="muted">ИИ-помощник выписывает их из статей темы, и они появятся по мере обработки. Посмотрите общий граф — в нём все темы.</p>
         </div>
       )}
       {found && (
@@ -598,6 +730,7 @@ export function Graph() {
                   <ul className="list">
                     <li>Чем больше круг, тем чаще о понятии пишут.</li>
                     <li>Цвет стрелки показывает связь: повышает, снижает, не влияет.</li>
+                    {coloured && <li>Цвет круга — тема, где о понятии пишут больше всего.</li>}
                     <li>Наведите на круг, чтобы выделить его связи.</li>
                     <li>Нажмите на круг, чтобы вывести понятие в центр и прочитать цитаты.</li>
                   </ul>

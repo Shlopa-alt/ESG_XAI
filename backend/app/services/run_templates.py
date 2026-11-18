@@ -63,6 +63,12 @@ ARCHITECTURE = Param("architecture", "Нейросеть", "mlp", kind="choice",
                      options=(("mlp", "перцептрон лаборатории (MLP)"),
                               ("transformer", "трансформер для таблиц (FT-Transformer)")),
                      hint="перцептрон — как в постановке лаборатории; трансформер — замена")
+# способ поиска связей (runner/methods/correlation_scan.py: METHODS); объяснения — на вкладке «Нейросети»
+LINK_METHOD = Param("method", "Способ поиска связей", "rank", kind="choice", required=False,
+                    options=(("rank", "любые связи: монотонные (ρ Спирмена) и U-образные (ξ Чаттерджи)"),
+                             ("linear", "только прямолинейные (r Пирсона)"),
+                             ("partial", "без влияния остальных показателей (частная ρ)")),
+                    hint="деление на поиск и подтверждение, поправка и плацебо — у всех способов одни")
 # у книги Excel — какой лист считать (пусто — первый лист-таблица); у CSV параметра не видно
 SHEET = Param("sheet", "Лист книги", "", kind="sheet", required=False, hint="для срезов Excel")
 
@@ -98,6 +104,7 @@ TEMPLATES: dict[str, Template] = {
                     Param("group", "Столбец-группа", "", kind="column", required=False,
                           numeric=False,
                           hint="у панели компания × год — компания: строки усредняются по ней"),
+                    LINK_METHOD,
                     Param("holdout", "Отложенная часть (на подтверждение), %", 50, 20, 70),
                     Param("fdr", "Допустимая доля ложных находок, %", 10, 1, 25),
                     Param("placebo", "Повторов на перемешанных данных", 5, 0, 20),

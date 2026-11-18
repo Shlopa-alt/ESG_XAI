@@ -23,14 +23,22 @@ from app.api.deps import require_role
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import DataDraft, ExperimentReport, QwenJob, User
-from app.models.qwen_job import QWEN_KINDS
-from app.services import data_drafts, qwen_cr, qwen_experiments, qwen_hypotheses, qwen_reports
+from app.models.qwen_job import CPU_KINDS, QWEN_KINDS
+from app.services import (
+    data_drafts,
+    qwen_cr,
+    qwen_experiments,
+    qwen_hypotheses,
+    qwen_reports,
+    translation,
+)
 from app.services.qwen_queue import enqueue
 
 router = APIRouter(prefix="/qwen", tags=["qwen"])
 
 Owner = Depends(require_role())  # только owner
 HEARTBEAT = "qwen:heartbeat"
+TRANSLATOR_HEARTBEAT = "translate:heartbeat"  # переводчик на процессоре (runner/translate/worker.py)
 HEARTBEAT_TTL_S = 120  # обработчик отмечается раз в 30 с; дольше молчит — считается остановленным
 MANUAL_KINDS = ("graph", "ping", "hypotheses", "tables")  # что owner может поставить кнопкой
 
@@ -63,6 +71,18 @@ class StatusOut(BaseModel):
 class JobIn(BaseModel):
     kind: str = Field(min_length=1, max_length=32)
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkerKinds(BaseModel):
+    """Какие задачи берёт обработчик. Пусто — все, кроме задач без модели (CPU_KINDS): так их не видит
+    обработчик Qwen, в том числе прежней версии, который тела запроса не шлёт."""
+
+    kinds: list[str] = Field(default_factory=list, max_length=20)
+
+
+def _kinds_filter(body: WorkerKinds | None) -> Any:
+    kinds = body.kinds if body is not None else []
+    return QwenJob.kind.in_(kinds) if kinds else QwenJob.kind.not_in(CPU_KINDS)
 
 
 class Heartbeat(BaseModel):
@@ -160,18 +180,34 @@ def heartbeat(body: Heartbeat, settings: Annotated[Settings, Depends(get_setting
 
 
 @router.post("/worker/requeue", dependencies=[Worker])
-def requeue(db: Annotated[Session, Depends(get_db)]) -> dict[str, int]:
-    """При старте обработчика: то, что он делал до остановки, — снова в очередь."""
-    n = db.execute(update(QwenJob).where(QwenJob.status == "running")
+def requeue(db: Annotated[Session, Depends(get_db)], body: WorkerKinds | None = None) -> dict[str, int]:
+    """При старте обработчика: то, что он делал до остановки, — снова в очередь (только свои виды
+    задач: перезапуск Qwen не трогает перевод, который сейчас идёт)."""
+    n = db.execute(update(QwenJob).where(QwenJob.status == "running", _kinds_filter(body))
                    .values(status="queued", started_at=None)).rowcount
     db.commit()
     return {"requeued": n}
 
 
 @router.post("/worker/peek", dependencies=[Worker])
-def peek(db: Annotated[Session, Depends(get_db)]) -> dict[str, int]:
+def peek(db: Annotated[Session, Depends(get_db)], body: WorkerKinds | None = None) -> dict[str, int]:
     """Есть ли работа — чтобы поднять модель до того, как брать задачу."""
-    return {"queued": len(list(db.scalars(select(QwenJob.id).where(QwenJob.status == "queued"))))}
+    q = select(QwenJob.id).where(QwenJob.status == "queued", _kinds_filter(body))
+    return {"queued": len(list(db.scalars(q)))}
+
+
+@router.post("/worker/translator-heartbeat", dependencies=[Worker])
+def translator_heartbeat(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, bool]:
+    """Переводчик жив — на экране черновика видно, что перевод в очереди не зависнет."""
+    _redis(settings).set(TRANSLATOR_HEARTBEAT, json.dumps({"at": time.time()}), ex=HEARTBEAT_TTL_S)
+    return {"ok": True}
+
+
+def translator_online(settings: Settings) -> bool:
+    try:
+        return _redis(settings).get(TRANSLATOR_HEARTBEAT) is not None
+    except redis.RedisError:
+        return False
 
 
 @router.post("/worker/context", dependencies=[Worker])
@@ -273,8 +309,8 @@ def worker_link_drafts(body: TableDraftsIn, db: Annotated[Session, Depends(get_d
 
 @router.post("/worker/next", response_model=JobOut, dependencies=[Worker],
              responses={204: {"description": "очередь пуста"}})
-def next_job(db: Annotated[Session, Depends(get_db)]) -> JobOut | Response:
-    job = db.scalars(select(QwenJob).where(QwenJob.status == "queued").order_by(QwenJob.id)
+def next_job(db: Annotated[Session, Depends(get_db)], body: WorkerKinds | None = None) -> JobOut | Response:
+    job = db.scalars(select(QwenJob).where(QwenJob.status == "queued", _kinds_filter(body)).order_by(QwenJob.id)
                      .limit(1).with_for_update(skip_locked=True)).first()
     if job is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -324,6 +360,8 @@ def job_result(job_id: int, body: JobResult, db: Annotated[Session, Depends(get_
         total = db.scalar(select(func.count()).select_from(DataDraft).where(DataDraft.qwen_job_id == job.id)) or 0
         job.message = (f"Черновиков данных по ссылкам из статей: {total}" if total
                        else "Новых ссылок на данные авторов не найдено")
+    if job.kind == "translate" and body.status == "done":
+        job.result, job.message = translation.clean_result(job, body.result)
     if job.kind == "table_edit" and body.status == "done":
         job.message = data_drafts.apply_edit_result(db, job, body.result)
     if job.kind == "experiment" and body.status == "done":

@@ -7,6 +7,7 @@ import {
   createExperiment,
   type Experiment as ExperimentRow,
   type ExpStatus,
+  type CheckProgress,
   type Outcome,
   getExperiment,
   listExperiments,
@@ -135,6 +136,53 @@ function WhyMethod({ e }: { e: { config?: Record<string, unknown> } }) {
         <Link to={`/analysis?h=${encodeURIComponent(c.hypothesis)}`}>Заменить сеть и посчитать ещё раз</Link>
       )}
     </section>
+  );
+}
+
+const minutes = (m: number) => (m < 1 ? "меньше минуты" : `${Math.round(m)} мин`);
+
+/** Расчёт идёт втрое дольше оценки и больше чем на 10 мин сверх неё — скорее всего, завис. */
+const overdue = (a: { elapsed_min: number; estimate_min: number }) =>
+  a.estimate_min > 0 && a.elapsed_min > Math.max(3 * a.estimate_min, a.estimate_min + 10);
+
+/** Ход проверки (п. 13): сколько расчётов готово, что идёт сейчас и примерно сколько осталось. */
+function ProgressLine({ p, detailed = false }: { p?: CheckProgress | null; detailed?: boolean }) {
+  if (!p || p.active.length === 0) return null;
+  const now = p.active.find((a) => a.status === "running");
+  const queued = p.active.filter((a) => a.status === "queued").length;
+  return (
+    <div className="progress-line muted">
+      <span>
+        Готово расчётов: {p.done} из {p.total}
+        {p.failed ? `, не удалось: ${p.failed}` : ""}.
+      </span>{" "}
+      {now ? (
+        <span>
+          Идёт «{now.title}»{now.estimate_min ? ` — ${minutes(now.elapsed_min)} из ~${minutes(now.estimate_min)}` : ""}.
+          {overdue(now) && (
+            <>
+              {" "}
+              <strong>Идёт намного дольше оценки</strong> — откройте расчёт: если он не движется, остановите его.
+            </>
+          )}
+        </span>
+      ) : (
+        <span>Расчёты ждут исполнителя в очереди.</span>
+      )}{" "}
+      {queued > 0 && <span>В очереди ещё {queued}. </span>}
+      {p.left_min > 0 && <span>Осталось примерно {minutes(p.left_min)}.</span>}
+      {detailed && (
+        <span>
+          {" "}
+          {p.active.map((a, i) => (
+            <span key={a.run_id}>
+              {i > 0 && ", "}
+              <Link to={`/run/${a.run_id}`}>расчёт №{a.run_id}</Link>
+            </span>
+          ))}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -304,6 +352,7 @@ export function Experiments() {
                 <td className="mono">{e.methodology_node || e.direction || "—"}</td>
                 <td>
                   <span className={`badge ${BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>
+                  <ProgressLine p={e.progress} />
                 </td>
                 <td>{e.data_summary}</td>
                 <td>
@@ -413,6 +462,7 @@ export function Experiment() {
           <span className={`badge ${BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>{" "}
           {e.outcome && <span className="badge st-planned">{OUTCOME_LABEL[e.outcome]}</span>}
         </span>
+        <ProgressLine p={e.progress} detailed />
         {canEdit && !editing && (
           <button type="button" className="btn-primary" onClick={() => setEditing(true)}>
             Редактировать
@@ -441,7 +491,28 @@ export function Experiment() {
       )}
       <section className="card summary-card">
         <h2 className="h2">Вывод</h2>
-        <p>{a.summary || e.conclusion || "Вывода пока нет — он появится, когда проверка будет посчитана."}</p>
+        {a.summary || e.conclusion ? (
+          <p>{a.summary || e.conclusion}</p>
+        ) : e.draft?.summary ? (
+          <>
+            <p>
+              {e.draft.verdict && <span className={`badge ${OUTCOME_BADGE[e.draft.verdict]}`}>{OUTCOME_LABEL[e.draft.verdict]}</span>}{" "}
+              {e.draft.summary}
+            </p>
+            <p className="muted" style={{ marginTop: 8 }}>
+              Предварительный вывод ИИ-помощника по расчёту (отчёт v{e.draft.version}, черновик): его ещё не смотрел
+              рецензент. Отчёт целиком и кнопка «На рецензию» — ниже.
+            </p>
+          </>
+        ) : (
+          <p>
+            {e.progress && e.progress.active.length > 0
+              ? "Вывод появится, когда закончатся расчёты, — ход работы виден выше."
+              : e.progress && e.progress.done > 0
+                ? "Расчёты закончены. Черновой вывод ИИ-помощник напишет по отчёту — он появится здесь сам, обычно за несколько минут. Свой вывод можно записать кнопкой «Редактировать»."
+                : "Вывода пока нет — он появится, когда проверка будет посчитана."}
+          </p>
+        )}
         {a.summary && e.conclusion && <p className="muted" style={{ marginTop: 8 }}>{e.conclusion}</p>}
       </section>
       <div className="grid-2">

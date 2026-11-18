@@ -74,7 +74,7 @@ def test_scan_end_to_end(synthetic: Path, tmp_path: Path) -> None:
     assert all((x["a"], x["b"]) not in {(y["a"], y["b"]) for y in s["links"]} for x in s["not_confirmed"])
     # всё для повтора расчёта (правило 3)
     assert run["dataset"]["sha256"] and run["seeds"]["split"] == 3 and run["env_lock_sha256"]
-    assert s["params"] == {"columns": [], "group": "", "holdout": 50, "fdr": 10, "placebo": 5, "seed": 3,
+    assert s["params"] == {"columns": [], "group": "", "method": "rank", "holdout": 50, "fdr": 10, "placebo": 5, "seed": 3,
                            "sheet": ""}
     assert s["columns_used"][:2] == ["[x]", "[y]"] and s["columns_skipped"] == []
 
@@ -163,3 +163,67 @@ def test_scan_refuses_too_few_rows(tmp_path: Path) -> None:
         cwd=HERE, env=UTF8, capture_output=True, text=True, encoding="utf-8", check=False,
     )
     assert done.returncode != 0 and "нужно хотя бы 40" in done.stderr
+
+
+def test_id_column_is_not_an_indicator(tmp_path: Path) -> None:
+    # номер компании идёт по порядку и случайно растёт вместе с показателем — связью это не считается
+    rng = np.random.default_rng(7)
+    n = 200
+    x = np.sort(rng.normal(size=n))
+    path = tmp_path / "ids.csv"
+    pd.DataFrame({"code": np.arange(n), "[x]": x, "[y]": x + rng.normal(size=n)}).to_csv(path, index=False)
+    run = _run(tmp_path, path, {"seed": 1}, "ids")
+    assert "code" not in run["summary"]["columns_used"]
+    assert all("code" not in (x["a"], x["b"]) for x in run["summary"]["links"])
+
+
+def test_linear_method_misses_u_shape_that_rank_finds(synthetic: Path, tmp_path: Path) -> None:
+    # способ «линейная связь»: прямую связь находит, U-образную — нет; так и сказано в итогах
+    lin = _run(tmp_path, synthetic, {"seed": 3, "method": "linear"}, "lin")
+    pairs = {(x["a"], x["b"]) for x in lin["summary"]["links"]}
+    assert ("[x]", "[y]") in pairs and ("[x]", "[u]") not in pairs
+    assert lin["summary"]["method"] == "linear" and lin["summary"]["params"]["method"] == "linear"
+    assert all(x["kind"] == "линейная" for x in lin["summary"]["links"])
+    assert lin["report"]["kpis"][0] == {"label": "Способ поиска", "value": "r Пирсона",
+                                        "note": "только прямолинейные связи"}
+    assert "r Пирсона" in lin["report"]["charts"][0]["title"]
+
+
+def test_partial_method_drops_link_explained_by_third_column(tmp_path: Path) -> None:
+    # [доход] и [выбросы] связаны только через [размер]: обычный поиск связь находит,
+    # частный — нет, а связи с самим [размером] остаются
+    rng = np.random.default_rng(4)
+    n = 400
+    size = rng.normal(size=n)
+    path = tmp_path / "conf.csv"
+    pd.DataFrame({"[размер]": size, "[доход]": size + 0.6 * rng.normal(size=n),
+                  "[выбросы]": size + 0.6 * rng.normal(size=n),
+                  **{f"[шум {i}]": rng.normal(size=n) for i in range(3)}}).to_csv(path, index=False)
+    plain = {(x["a"], x["b"]) for x in _run(tmp_path, path, {"seed": 2}, "plain")["summary"]["links"]}
+    assert ("[доход]", "[выбросы]") in plain
+    part = _run(tmp_path, path, {"seed": 2, "method": "partial"}, "part")["summary"]
+    links = {(x["a"], x["b"]) for x in part["links"]}
+    assert ("[доход]", "[выбросы]") not in links
+    assert {("[размер]", "[доход]"), ("[размер]", "[выбросы]")} <= links
+    assert part["without_xi"] == 0 and all(x["kind"] == "частная" for x in part["links"])
+
+
+def test_partial_needs_rows_without_gaps(tmp_path: Path) -> None:
+    rng = np.random.default_rng(6)
+    path = tmp_path / "wide.csv"
+    pd.DataFrame({f"[x{i}]": rng.normal(size=60) for i in range(30)}).to_csv(path, index=False)
+    done = subprocess.run(
+        [sys.executable, "correlation_scan.py", str(tmp_path), str(tmp_path / "res"), "--data", str(path),
+         "--params", json.dumps({"method": "partial"}), "--experiment", "EXP-000", "--dataset", "DS-00"],
+        cwd=HERE, env=UTF8, capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    assert done.returncode != 0 and "Для частных связей" in done.stderr
+
+
+def test_unknown_method_is_refused(synthetic: Path, tmp_path: Path) -> None:
+    done = subprocess.run(
+        [sys.executable, "correlation_scan.py", str(tmp_path), str(tmp_path / "res"), "--data", str(synthetic),
+         "--params", json.dumps({"method": "[нет такого]"}), "--experiment", "EXP-000", "--dataset", "DS-00"],
+        cwd=HERE, env=UTF8, capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    assert done.returncode != 0 and "Нет способа поиска" in done.stderr

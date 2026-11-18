@@ -244,6 +244,36 @@ def test_future_years_and_ids_are_not_inputs() -> None:
     assert any("[ROA 2022]" in w and "подсмотрел" in w for w in first["why"])
 
 
+def test_link_partner_is_always_an_input_and_target_derivatives_are_not() -> None:
+    """Проверка связи «ROA 2021 — ROA 2022»: ROA 2021 — во входах, хоть это и прошлый год цели;
+    «roa_up» (рост ROA 2021 → 2022) посчитан из цели — его во входах нет, а у ROE — есть."""
+    from app.services.analysis import recommend
+    from app.services.data_files import Table
+
+    cols = ["roa_2021", "roa_2022", "roe_2022", "roa_up", "roe_up", "x1"]
+    t = Table(columns=cols, numeric=set(cols), sample=[])
+    plain = recommend(t, 120, "roa_2022", None)["recommendations"][0]["params"]
+    assert plain["features"] == ["roe_2022", "roe_up", "x1"] and plain["lag"] == "roa_2021"
+    link = recommend(t, 120, "roa_2022", None, keep="roa_2021")["recommendations"][0]["params"]
+    assert link["features"] == ["roa_2021", "roe_2022", "roe_up", "x1"] and link["lag"] == ""
+    # у цели без года одноимённые столбцы — другие показатели, не производные
+    flat = Table(columns=["roa", "roa_up", "x1"], numeric={"roa", "roa_up", "x1"}, sample=[])
+    panel = recommend(flat, 120, "roa", None)["recommendations"][0]["params"]
+    assert panel["features"] == ["roa_up", "x1"]
+
+
+def test_category_codes_are_not_searched_for_links() -> None:
+    """«industry» = 01, 17, 24 — номер отрасли, не величина: в поиск связей и в число
+    показателей не идёт."""
+    from app.services.analysis import recommend
+    from app.services.data_files import Table
+
+    cols = ["code", "x1", "x2", "industry", "[Sector code]", "roa"]
+    out = recommend(Table(columns=cols, numeric=set(cols), sample=[]), 600, "", None)
+    scan = next(r for r in out["recommendations"] if r["template"] == "correlation-scan")
+    assert scan["params"]["columns"] == out["measures"] == ["x1", "x2", "roa"]
+
+
 def test_panel_scan_groups_by_entity() -> None:
     """Панель «страна × год»: поиск связей усредняет строки по стране — иначе годы одной страны
     считаются независимыми наблюдениями и связи «подтверждаются» на шуме."""
@@ -389,3 +419,92 @@ def test_year_is_not_compared_as_an_indicator() -> None:
     t = Table(columns=cols, numeric={"[год]", "[x1]", "[x2]"}, sample=[])
     first = recommend(t, 600, "", None)["recommendations"][0]
     assert first["template"] == "rank-agreement" and first["params"]["columns"] == ["[x1]", "[x2]"]
+
+
+def test_id_columns_are_not_searched_for_links() -> None:
+    """Номер компании (code, ticker, company_id, «код компании») — не показатель: на сервере поиск
+    «подтвердил» связь code — roe_2022, потому что номера шли по порядку отрасли."""
+    from app.services.analysis import ID_LIKE, _bare, recommend
+    from app.services.data_files import Table
+
+    ids = ["code", "[Ticker]", "company_id", "[код компании]", "ISIN", "No", "row"]
+    cols = [*ids, "[x1]", "[x2]", "[covid cases]", "[decode rate]"]
+    t = Table(columns=cols, numeric=set(cols), sample=[])
+    scan = next(r for r in recommend(t, 600, "", None)["recommendations"] if r["template"] == "correlation-scan")
+    assert scan["params"]["columns"] == ["[x1]", "[x2]", "[covid cases]", "[decode rate]"]
+    first = recommend(t, 600, "[x1]", None)["recommendations"][0]
+    assert not set(ids) & set(first["params"]["features"])
+    assert not ID_LIKE.fullmatch(_bare("[ROA 2021]"))
+
+
+def test_chosen_nets_only_and_adding_a_net_later(  # type: ignore[no-untyped-def]
+    make_client, db_session: Session, tmp_path: Path, queue: list,
+) -> None:
+    """Сеть выбирает человек: сначала только быстрая проверка, потом к той же проверке — перцептрон.
+    Перед запуском видно, из чего выбирать и сколько каждая сеть считается."""
+    sid = _snapshot(db_session, tmp_path)
+    scan = _scan_run(db_session, sid, [("[x1]", "[ROA_2022]")])
+    body = {"scan_run": scan, "a": "[x1]", "b": "[ROA_2022]", "target": "[ROA_2022]"}
+    c, rd = make_client("own", "owner"), make_client("rd", "reader")
+
+    menu = rd.post("/api/analysis/link-nets", json=body)
+    assert menu.status_code == 200, menu.text
+    nets = {n["id"]: n for n in menu.json()["nets"]}
+    assert set(nets) == {"mlp", "transformer", "gbm"} and menu.json()["existing"] is None
+    assert nets["mlp"]["recommended"] and nets["gbm"]["recommended"] and not nets["transformer"]["recommended"]
+    assert all(n["runnable"] and n["minutes"] and not n["done"] for n in nets.values())
+
+    assert c.post("/api/analysis/link-check", json={**body, "nets": ["[нет такой]"]}).status_code == 422
+    r = c.post("/api/analysis/link-check", json={**body, "nets": ["gbm"]})
+    assert r.status_code == 201, r.text
+    assert not r.json()["added"]
+    code = r.json()["experiment"]
+    assert [q["job"]["template"] for q in queue] == ["predictive-check"]
+    assert rd.post("/api/analysis/link-nets", json=body).json()["existing"] == code
+    assert c.post("/api/analysis/link-check", json={**body, "nets": ["gbm"]}).status_code == 409
+
+    more = c.post("/api/analysis/link-check", json={**body, "nets": ["gbm", "mlp"]})
+    assert more.status_code == 201, more.text
+    assert more.json()["experiment"] == code and more.json()["added"] and len(more.json()["run_ids"]) == 1
+    exp = db_session.scalar(select(Experiment).where(Experiment.code == code))
+    assert exp is not None
+    db_session.refresh(exp)
+    assert [x["key"] for x in exp.config["analysis_runs"]] == ["predictive-check", "lab-mlp:mlp"]
+    assert exp.status == "running" and "Добавлены сети" in exp.setup[-1]
+    done = {n["id"]: n["done"] for n in rd.post("/api/analysis/link-nets", json=body).json()["nets"]}
+    assert done == {"mlp": True, "transformer": False, "gbm": True}
+    check = rd.get(f"/api/analysis/links?snapshot_id={sid}").json()["checks"]
+    assert len(check) == 1 and [n["net"] for n in check[0]["nets"]] == ["mlp", "gbm", "linear"]
+
+
+def test_links_by_search_method(make_client, db_session: Session, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """Поиск разными способами: вкладка показывает поиск выбранным способом и сводку по всем."""
+    sid = _snapshot(db_session, tmp_path)
+    rank = _scan_run(db_session, sid, [("[x1]", "[x2]")])
+    exp = db_session.scalar(select(Experiment).where(Experiment.code == "EXP-090"))
+    assert exp is not None
+    part = Run(experiment_id=exp.id, status="done", template="correlation-scan", dataset_snapshot_id=sid,
+               config={"params": {"sheet": "", "group": "", "method": "partial"}},
+               summary={"links": [], "unit": "row", "confirmed": 0, "pairs": 6})
+    db_session.add(part)
+    db_session.commit()
+    rd = make_client("rd", "reader")
+    url = f"/api/analysis/links?snapshot_id={sid}"
+    assert rd.get(url).json()["scan"]["run_id"] == part.id  # без способа — последний поиск
+    assert rd.get(url + "&method=rank").json()["scan"]["run_id"] == rank
+    assert rd.get(url + "&method=partial").json()["scan"]["method"] == "partial"
+    assert rd.get(url + "&method=linear").json()["scan"] is None
+    scans = rd.get(url).json()["scans"]
+    assert [(s["method"], s["confirmed"]) for s in scans] == [("rank", 1), ("partial", 0)]
+
+
+def test_search_method_is_checked_before_launch() -> None:
+    from app.services.run_templates import TEMPLATES, ParamError, check_params
+
+    t = TEMPLATES["correlation-scan"]
+    cols = ["[x1]", "[x2]"]
+    ok = check_params(t, {"columns": cols, "method": "partial"}, cols, set(cols), [], "")
+    assert ok["method"] == "partial"
+    assert check_params(t, {"columns": cols}, cols, set(cols), [], "")["method"] == "rank"
+    with pytest.raises(ParamError):
+        check_params(t, {"columns": cols, "method": "[нет]"}, cols, set(cols), [], "")

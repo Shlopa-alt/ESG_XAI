@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 
 import { useLogin } from "../auth/useAuth";
+import { LangSwitch } from "../components/LangSwitch";
 import { ORG, WITH_LAB } from "../org";
 
 export function Login() {
@@ -16,6 +17,9 @@ export function Login() {
   return (
     <div className="login-wrap">
       <form className="card login-card" onSubmit={submit}>
+        <div className="login-lang">
+          <LangSwitch />
+        </div>
         <div>
           <span className="eyebrow">{ORG.toUpperCase()}</span>
           <h1 style={{ margin: "6px 0 0", fontSize: 28 }}>ESG Open Research</h1>

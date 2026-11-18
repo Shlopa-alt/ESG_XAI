@@ -66,8 +66,8 @@ export function NetsTabs() {
     <SectionTabs
       label="Разделы вкладки «Нейросети»"
       items={[
-        { to: "/nets", label: "Связи и сети", end: true },
-        { to: "/analysis", label: "Один показатель" },
+        { to: "/nets", label: "Найти и проверить связи", end: true },
+        { to: "/analysis", label: "Предсказать один показатель" },
         { to: "/nets/library", label: "Библиотека методов" },
       ]}
     />

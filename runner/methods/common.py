@@ -49,8 +49,11 @@ def sha256(path: Path) -> str:
 
 def git_commit() -> str:
     try:
-        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=HERE, text=True).strip()
-        dirty = subprocess.check_output(["git", "status", "--porcelain", "--", "."], cwd=HERE, text=True).strip()
+        # вне клона (распакованный архив ручного режима) git ругается в stderr — это не ошибка расчёта
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=HERE, text=True,
+                                         stderr=subprocess.DEVNULL).strip()
+        dirty = subprocess.check_output(["git", "status", "--porcelain", "--", "."], cwd=HERE, text=True,
+                                        stderr=subprocess.DEVNULL).strip()
         return commit + ("-dirty" if dirty else "")
     except (OSError, subprocess.CalledProcessError):
         return ""
@@ -144,6 +147,20 @@ def fmt(v: float, signed: bool = False) -> str:
     return text.replace(".", ",").replace("-", "−")
 
 
+KPI_VALUE_MAX, KPI_LABEL_MAX = 40, 120  # как в схеме отчёта платформы (backend/app/services/report.py, Kpi)
+
+
+def fit_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Ключевые цифры — в пределах схемы платформы. Длиннее — платформа отвергла бы весь итог (422),
+    и расчёт остался бы «идёт»: лучше обрезать подпись, чем потерять результат."""
+    for k in report.get("kpis") or []:
+        for key, limit in (("value", KPI_VALUE_MAX), ("label", KPI_LABEL_MAX)):
+            text = str(k.get(key, ""))
+            if len(text) > limit:
+                k[key] = text[: limit - 1] + "…"
+    return report
+
+
 def write_run(args: argparse.Namespace, out: Path, part: str, started: str, t0: float, df: pd.DataFrame,
               seeds: dict[str, Any], summary: dict[str, Any], report: dict[str, Any], exit_code: int = 0) -> Path:
     run = {
@@ -159,7 +176,7 @@ def write_run(args: argparse.Namespace, out: Path, part: str, started: str, t0: 
         "summary": summary,
         "results_path": str(out),
         "finished_at": datetime.now(UTC).isoformat(),
-        "report": report,
+        "report": fit_report(report),
     }
     path = out / "run.json"
     path.write_text(json.dumps(run, ensure_ascii=False, indent=2, default=float), encoding="utf-8")

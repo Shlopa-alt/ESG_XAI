@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import { App } from "./App";
+import { getLang, startTranslator } from "./i18n";
 import "./styles.css";
 
 // Данные платформы меняются редко: 30 с данные считаются свежими (переход между страницами не
@@ -17,6 +18,9 @@ const queryClient = new QueryClient({
 
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("Не найден #root");
+
+// английская версия — слой перевода поверх русского интерфейса (src/i18n)
+if (getLang() === "en") startTranslator(rootEl);
 
 createRoot(rootEl).render(
   <StrictMode>

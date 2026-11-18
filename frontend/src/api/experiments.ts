@@ -23,6 +23,8 @@ export interface Experiment {
   report_path: string;
   report?: Record<string, unknown>;
   config?: Record<string, unknown>; // config.analysis — выбор метода и сети, причина
+  progress?: CheckProgress | null; // ход проверки: сколько расчётов готово, что идёт, сколько осталось
+  draft?: DraftConclusion | null; // вывод последнего отчёта ИИ-помощника, пока его не одобрил рецензент
 }
 
 export interface ExperimentDetail extends Experiment {
@@ -73,6 +75,22 @@ export const STATUS_LABEL: Record<ExpStatus, string> = {
   done: "завершена",
   failed: "сбой",
 };
+
+export interface CheckProgress {
+  total: number;
+  done: number;
+  failed: number;
+  active: Array<{ run_id: number; status: "queued" | "running"; title: string; elapsed_min: number; estimate_min: number }>;
+  left_min: number;
+}
+
+export interface DraftConclusion {
+  version: number;
+  status: string;
+  verdict: "" | Outcome;
+  summary: string;
+  verdict_reason: string;
+}
 
 export const OUTCOME_LABEL: Record<Outcome, string> = {
   confirmed: "идея подтвердилась",

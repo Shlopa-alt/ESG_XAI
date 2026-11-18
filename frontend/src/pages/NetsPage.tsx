@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ManualMode } from "../components/ManualMode";
 
-import { checkLink, getLinks, launchAnalysis, recommend, type LinkCheck, type LinksOut, type NetResult, type ScanOut } from "../api/analysis";
+import { getLinks, launchAnalysis, recommend, type LinkCheck, type LinkMethod, type LinksOut, type NetResult, type ScanOut } from "../api/analysis";
 import { useMe } from "../auth/useAuth";
+import { HowSearchWorks, LINK_METHODS, MethodPicker, methodTitle } from "../components/LinkSearch";
+import { NetPicker } from "../components/NetPicker";
 import type { ParamValue } from "../components/ParamsEditor";
 import { ideaDraft } from "../components/ScanLinks";
 import { NetsTabs } from "../components/SectionTabs";
@@ -30,6 +33,14 @@ const STATUS: Record<string, string> = {
 const r2 = (v: number | null) => (v === null ? "—" : v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const pairOf = (a: string, b: string) => [a, b].sort().join("\u0000");
 type ScanLinkRow = ScanOut["links"][number];
+
+/** Сила связи на отложенной части — тем числом, которым её нашёл способ поиска. */
+function strengthOf(l: ScanLinkRow): string {
+  if (l.kind === "немонотонная") return `немонотонная, ξ ${r2(l.xi_confirm)}`;
+  if (l.kind === "линейная") return `r ${r2(l.rho_confirm)}`;
+  if (l.kind === "частная") return `частная ρ ${r2(l.rho_confirm)}`;
+  return `ρ ${r2(l.rho_confirm)}`;
+}
 
 function busy(d: LinksOut | undefined): boolean {
   if (!d) return false;
@@ -103,57 +114,46 @@ function LinkRow({ l, check, scan, canLaunch, columns }: {
   canLaunch: boolean;
   columns: Column[];
 }) {
-  const qc = useQueryClient();
-  const [target, setTarget] = useState(l.b);
-  const go = useMutation({
-    mutationFn: () => checkLink({ scan_run: scan.run_id, a: l.a, b: l.b, target, node: "" }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["links"] });
-      void qc.invalidateQueries({ queryKey: ["experiments"] });
-      void qc.invalidateQueries({ queryKey: ["runs"] });
-    },
-  });
+  const [open, setOpen] = useState(false);
   const byNet = new Map((check?.nets ?? []).map((n) => [n.net, n]));
-  const strength = l.kind === "немонотонная" ? `немонотонная, ξ ${r2(l.xi_confirm)}` : `ρ ${r2(l.rho_confirm)}`;
-  const selectId = `t-${l.a}-${l.b}`;
+  const pickerId = `pick-${pairOf(l.a, l.b).replace(/\W+/g, "-")}`;
+  const toggle = (label: string) => (
+    <button type="button" className="btn-ghost" aria-expanded={open} aria-controls={pickerId} onClick={() => setOpen(!open)}>
+      {open ? "Свернуть выбор" : label}
+    </button>
+  );
   return (
-    <tr>
-      <th scope="row">
-        <span className="net-pair">«{l.a}»</span> <span className="net-pair">— «{l.b}»</span>
-        <div className="muted net-sub">{strength}</div>
-      </th>
-      {columns.map((n) => (
-        <NetCell key={n.key} n={byNet.get(n.key)} label={n.short} />
-      ))}
-      <td data-label="Проверка" className="net-action">
-        {check ? (
-          <>
-            <div className="muted net-sub">предсказывали «{check.target}»</div>
-            <Verdict c={check} />
-          </>
-        ) : canLaunch ? (
-          <>
-            <label className="net-sub muted" htmlFor={selectId}>
-              Что предсказываем<span className="sr-only"> в связи «{l.a}» — «{l.b}»</span>
-            </label>
-            <select id={selectId} value={target} onChange={(e) => setTarget(e.target.value)}>
-              <option value={l.b}>{l.b}</option>
-              <option value={l.a}>{l.a}</option>
-            </select>
-            <button type="button" className="btn-ghost" disabled={go.isPending} onClick={() => go.mutate()}>
-              {go.isPending ? "Ставлю расчёты…" : "Проверить сетями"}
-            </button>
-            {go.isError && (
-              <p className="error" role="alert">
-                {go.error.message}
-              </p>
-            )}
-          </>
-        ) : (
-          <span className="muted">не проверялась</span>
-        )}
-      </td>
-    </tr>
+    <>
+      <tr>
+        <th scope="row">
+          <span className="net-pair">«{l.a}»</span> <span className="net-pair">— «{l.b}»</span>
+          <div className="muted net-sub">{strengthOf(l)}</div>
+        </th>
+        {columns.map((n) => (
+          <NetCell key={n.key} n={byNet.get(n.key)} label={n.short} />
+        ))}
+        <td data-label="Проверка" className="net-action">
+          {check ? (
+            <>
+              <div className="muted net-sub">предсказывали «{check.target}»</div>
+              <Verdict c={check} />
+              {canLaunch && <div>{toggle("Добавить сеть")}</div>}
+            </>
+          ) : canLaunch ? (
+            toggle("Выбрать сети и проверить")
+          ) : (
+            <span className="muted">не проверялась</span>
+          )}
+        </td>
+      </tr>
+      {open && (
+        <tr className="net-picker-row">
+          <td colSpan={columns.length + 2} id={pickerId}>
+            <NetPicker scanRun={scan.run_id} a={l.a} b={l.b} fixedTarget={check?.target} onDone={() => setOpen(false)} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -171,9 +171,17 @@ export function Nets() {
     return [...seen.values()];
   }, [templates.data]);
   const snapshot = Number(search.get("snapshot")) || "";
+  const asked = search.get("method");
+  const method: LinkMethod = LINK_METHODS.some((m) => m.key === asked) ? (asked as LinkMethod) : "rank";
+  const setParam = (key: string, value: string) => {
+    const next = new URLSearchParams(search);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setSearch(next, { replace: true });
+  };
   const links = useQuery({
-    queryKey: ["links", snapshot],
-    queryFn: () => getLinks(snapshot as number),
+    queryKey: ["links", snapshot, method],
+    queryFn: () => getLinks(snapshot as number, method),
     enabled: snapshot !== "",
     retry: false,
     refetchInterval: (q) => (busy(q.state.data) ? 10_000 : false),
@@ -193,11 +201,21 @@ export function Nets() {
       return launchAnalysis({
         snapshot_id: snapshot as number,
         template: scanRec.template,
-        params: scanRec.params as Record<string, ParamValue>,
+        params: { ...(scanRec.params as Record<string, ParamValue>), method },
         node: "",
         hypothesis: "",
         expected: "",
-        choice: { key: scanRec.key, title: scanRec.title, why: scanRec.why, primary: false, net: "", as_authors: false, evidence: "", article: "", task: "scan" },
+        choice: {
+          key: scanRec.key,
+          title: `${scanRec.title} · ${methodTitle(method).toLowerCase()}`,
+          why: scanRec.why,
+          primary: false,
+          net: "",
+          as_authors: false,
+          evidence: "",
+          article: "",
+          task: "scan",
+        },
       });
     },
     onSuccess: () => {
@@ -234,8 +252,9 @@ export function Nets() {
         <span className="eyebrow">НЕЙРОСЕТИ</span>
         <h1 className="page-title">Нейросети</h1>
         <p className="lead">
-          Найдите связи в данных и проверьте каждую разными нейросетями. Связь, которая держится у нескольких сетей на
-          данных, которых не было в обучении, — кандидат в идею, а через неё — в изменение методики.
+          Три шага: выберите данные, найдите в них связи одним из способов и проверьте нужные связи нейросетями, которые
+          выберете сами. Связь, которая держится у нескольких сетей на данных, которых не было в обучении, — кандидат в
+          идею, а через неё — в изменение методики.
         </p>
       </section>
       <NetsTabs />
@@ -250,7 +269,7 @@ export function Nets() {
           <select
             id="nets-snap"
             value={snapshot}
-            onChange={(e) => setSearch(e.target.value ? { snapshot: e.target.value } : {}, { replace: true })}
+            onChange={(e) => setParam("snapshot", e.target.value)}
           >
             <option value="">— выберите —</option>
             {snapshots.map((s) => (
@@ -268,11 +287,13 @@ export function Nets() {
         )}
         {reco.data && (
           <p className="muted">
-            {reco.data.rows !== null && `${reco.data.rows} строк, `}
-            {plural(reco.data.numeric.length, "числовой показатель", "числовых показателя", "числовых показателей")}.
+            {reco.data.rows !== null && `${plural(reco.data.rows, "строка", "строки", "строк")}, `}
+            {/* показатели — без идентификаторов (code, ISIN) и кодов отрасли: их в поиске связей нет */}
+            {plural((reco.data.measures ?? reco.data.numeric).length, "числовой показатель", "числовых показателя", "числовых показателей")}.
             {group && ` Строки повторяются по годам: каждая «${group}» — одно наблюдение, данные по ней усредняются.`}
           </p>
         )}
+        {snapshot !== "" && <ManualMode snapshot={snapshot} />}
         {(reco.isError || links.isError) && (
           <p className="error" role="alert">
             {(reco.error ?? links.error)?.message}
@@ -287,10 +308,13 @@ export function Nets() {
           </h2>
           <p className="muted">
             Платформа переберёт все пары показателей и оставит только связи, которые подтвердились на части данных, где их
-            не искали.
+            не искали. Способов несколько — они видят разные связи; можно искать каждым и сравнить.
           </p>
+          <MethodPicker value={method} onChange={(m) => setParam("method", m === "rank" ? "" : m)} scans={d.scans} />
+          <HowSearchWorks />
           {scan === null && (
             <div>
+              <p className="muted">Способом «{methodTitle(method)}» на этих данных ещё не искали.</p>
               {findButton("Найти связи", true)}
               {!canLaunch && <p className="muted">Запускать поиск могут исследователи.</p>}
             </div>
@@ -312,7 +336,8 @@ export function Nets() {
           {scanDone && scan && (
             <>
               <p>
-                Подтверждено <strong>{scan.confirmed ?? 0}</strong> из {scan.pairs ?? "—"} пар показателей
+                Способ «{methodTitle(scan.method)}»: подтверждено <strong>{scan.confirmed ?? 0}</strong> из{" "}
+                {scan.pairs ?? "—"} пар показателей
                 {scan.unit === "group" && scan.group ? ` (наблюдение — «${scan.group}»)` : ""}.{" "}
                 <Link to={`/run/${scan.run_id}`}>Подробнее о поиске № {scan.run_id}</Link>
               </p>
@@ -340,8 +365,9 @@ export function Nets() {
             3. Проверить сетями
           </h2>
           <p className="muted">
-            Каждая сеть предсказывает один показатель связи по остальным — на данных, которых не было в обучении. Связь
-            держится у сети (✓), если R² выше, чем на перемешанной цели, где связи нет по построению, и выше 0,05.
+            Нажмите «Выбрать сети и проверить» у связи: выберите, что предсказываем, и какими сетями — у каждой написано,
+            что это за сеть и сколько она считается. Связь держится у сети (✓), если R² на данных, которых не было в
+            обучении, выше, чем на перемешанной цели, где связи нет по построению, и выше 0,05.
           </p>
           {scan.links.length === 0 ? (
             <p>Ни одна связь не подтвердилась — проверять сетями нечего. Это тоже результат.</p>

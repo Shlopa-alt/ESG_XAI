@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ManualMode } from "../components/ManualMode";
 
 import { getCatalog, launchAnalysis, recommend, type Recommendation, type RecommendOut } from "../api/analysis";
 import { listHypotheses } from "../api/hypotheses";
@@ -221,7 +222,7 @@ export function Analysis() {
     <>
       <section className="page-head">
         <span className="eyebrow">НЕЙРОСЕТИ</span>
-        <h1 className="page-title">Один показатель</h1>
+        <h1 className="page-title">Предсказать один показатель</h1>
         <p className="lead">
           Выберите набор данных и показатель — платформа подберёт сеть или метод, объяснит выбор и запустит расчёт.
           Расчёт попадёт в «Проверки» со всем, что нужно, чтобы его повторить.
@@ -296,6 +297,7 @@ export function Analysis() {
             Версий данных-таблиц пока нет — загрузите файл в разделе <Link to="/data">«Данные»</Link>.
           </p>
         )}
+        {snapshot !== "" && <ManualMode snapshot={snapshot} />}
       </section>
 
       {snapshot !== "" && (

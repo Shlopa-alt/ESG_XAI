@@ -8,7 +8,8 @@
 Лимиты (deploy/.env) проверяет start_run — не только интерфейс:
 * расчёт, который по оценке не уложится в лимит времени метода, не ставится — с советом, как
   уложиться (меньше испытаний подбора; разбиения по CR-01 — не меньше 30);
-* у человека не больше RUN_ACTIVE_PER_USER расчётов в очереди и в работе;
+* у человека не больше RUN_ACTIVE_PER_USER проверок, расчёты которых в очереди или идут (набор
+  сетей одной проверки — одна проверка);
 * за сутки — не больше RUN_CPU_MINUTES_PER_DAY оценённых минут (администратора квота не держит);
 * видеокарта — как раньше, GPU_RUNS_PER_USER; выбирается, только если её исполнитель включён.
 """
@@ -23,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import DatasetSnapshot, Run, User
+from app.models import DatasetSnapshot, Experiment, Run, User
 from app.services.data_files import EXCEL, to_container
 from app.services.run_templates import Template
 
@@ -281,18 +282,21 @@ def _today(db: Session, user: User) -> float:
     return total
 
 
-def usage(db: Session, settings: Settings, user: User) -> dict[str, Any]:
-    active = len(
-        list(
-            db.scalars(
-                select(Run.id).where(
-                    Run.created_by == user.id, Run.status.in_(("queued", "running"))
-                )
-            )
-        )
-    )
+def usage(
+    db: Session, settings: Settings, user: User, experiment_id: int | None = None
+) -> dict[str, Any]:
+    """Сколько проверок человека сейчас считается. Лимит — на проверки, а не на расчёты: набор
+    сетей в одной проверке — это одна проверка; расчёт в ту же проверку лимит не тратит."""
+    rows = db.execute(
+        select(Experiment.id, Experiment.code)
+        .join(Run, Run.experiment_id == Experiment.id)
+        .where(Run.created_by == user.id, Run.status.in_(("queued", "running")))
+        .distinct()
+    ).all()
+    checks = sorted(code for eid, code in rows if eid != experiment_id)
     return {
-        "active": active,
+        "active": len(checks),
+        "active_checks": checks,
         "active_limit": settings.run_active_per_user,
         "minutes_today": _round(_today(db, user)),
         "minutes_limit": settings.run_cpu_minutes_per_day,
@@ -338,7 +342,9 @@ def queue(db: Session, resource: str) -> dict[str, Any]:
     return {"ahead": len(ahead), "wait_minutes": _round(minutes / EXECUTOR_SLOTS)}
 
 
-def check_limits(db: Session, settings: Settings, user: User, est: Estimate) -> None:
+def check_limits(
+    db: Session, settings: Settings, user: User, est: Estimate, experiment_id: int | None = None
+) -> None:
     """Лимиты на сервере. Нарушен — LimitError с причиной и советом."""
     if not est.within_limit:
         tip = f" {est.suggestion['text']}" if est.suggestion else ""
@@ -347,11 +353,12 @@ def check_limits(db: Session, settings: Settings, user: User, est: Estimate) -> 
             f"{est.limit_min} мин.{tip}",
             status=422,
         )
-    u = usage(db, settings, user)
+    u = usage(db, settings, user, experiment_id)
     if u["active"] >= settings.run_active_per_user:
         raise LimitError(
-            f"У вас уже {u['active']} расчёта в очереди и в работе (можно "
-            f"{settings.run_active_per_user}) — дождитесь их или остановите один."
+            f"У вас уже считаются проверки {', '.join(u['active_checks'])} (одновременно можно "
+            f"{settings.run_active_per_user}) — дождитесь, пока одна закончится, или остановите её "
+            "расчёты: расчёты проверки — внизу её страницы, кнопка «Остановить» — на странице расчёта."
         )
     if not u["unlimited"] and u["minutes_today"] + est.minutes > settings.run_cpu_minutes_per_day:
         left = max(0.0, settings.run_cpu_minutes_per_day - u["minutes_today"])

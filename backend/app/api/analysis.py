@@ -94,11 +94,15 @@ class LinkCheckIn(BaseModel):
     b: str = Field(min_length=1, max_length=512)
     target: str = Field(min_length=1, max_length=512)  # a или b — что предсказываем
     node: str = ""
+    # какие сети считать (net_id: mlp, transformer, gbm или ключ метода из статьи); пусто — весь
+    # набор. Проверка этой связи уже есть — сети, которых в ней не было, добавляются к ней
+    nets: list[str] = Field(default_factory=list, max_length=20)
 
 
 class LinkCheckOut(BaseModel):
     experiment: str
     run_ids: list[int]
+    added: bool = False  # сети добавлены к уже идущей проверке этой связи
 
 
 def _node(db: Session, number: str) -> MethodologySection | None:
@@ -406,6 +410,103 @@ def _link_check(exp: Experiment) -> dict[str, Any] | None:
     return lc if isinstance(lc, dict) else None
 
 
+def net_id(rec: dict[str, Any]) -> str:
+    """Как сеть набора называется в выборе: net каталога (mlp, transformer, gbm — быстрая проверка:
+    бустинг и линейная) или ключ метода из статьи (у него net каталога может совпасть с встроенной)."""
+    return str(rec["key"]) if str(rec["key"]).startswith(lib.PREFIX) else str(rec["net"])
+
+
+def _check_net_ids(exp: Experiment) -> set[str]:
+    """Сети, которые уже считались (или считаются) в проверке связи."""
+    runs = (exp.config or {}).get("analysis_runs")
+    return {net_id(c) for c in runs if isinstance(c, dict)} if isinstance(runs, list) else set()
+
+
+def _link_set(
+    db: Session, settings: Settings, user: User, scan: Run, a: str, b: str, target: str, node_number: str,
+) -> tuple[DatasetSnapshot, Dataset, Table, int | None, MethodologySection | None, list[dict[str, Any]]]:
+    """Связь из поиска → данные и все сети набора для неё (и те, что сейчас не запустить)."""
+    pair = {a, b}
+    if not any({x.get("a"), x.get("b")} == pair for x in _scan_links(scan)):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Эта связь не подтвердилась в поиске — проверять сетями нечего")
+    if target not in pair:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Предсказываем один из двух показателей связи")
+    if scan.dataset_snapshot_id is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "У поиска связей нет версии данных")
+    snap, ds = _snapshot(db, scan.dataset_snapshot_id)
+    params = (scan.config or {}).get("params")
+    sheet = str(params.get("sheet") or "") if isinstance(params, dict) else ""
+    table = snapshot_table(db, settings, snap, user, sheet)  # NDA — только с допуском
+    node = _node(db, node_number)
+    rows = resources.rows_of(settings, snap, table.sheet)
+    try:
+        # второй показатель связи — во входах всегда: проверяем именно эту связь
+        out = analysis.recommend(table, rows, target, node, library=_library(db),
+                                 keep=b if target == a else a)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    # набор: перцептрон, трансформер, бустинг с линейной — и включённые методы из статей
+    recs = [r for r in out["recommendations"] if r["key"] in NET_SET or r["key"].startswith(lib.PREFIX)]
+    return snap, ds, table, rows, node, recs
+
+
+def _existing_check(db: Session, snap: DatasetSnapshot, scan: Run, pair: set[str], target: str) -> Experiment | None:
+    for old in db.scalars(select(Experiment).where(Experiment.dataset_snapshot_id == snap.id)):
+        lc = _link_check(old)
+        if (lc is not None and lc.get("scan_run") == scan.id and {lc.get("a"), lc.get("b")} == pair
+                and lc.get("target") == target):
+            return old
+    return None
+
+
+# что ставить галочкой по умолчанию: перцептрон лаборатории и быстрая проверка без нейросети;
+# трансформер — по желанию: считается в разы дольше
+RECOMMENDED = ("mlp", "gbm")
+
+
+class LinkNetsIn(BaseModel):
+    scan_run: int
+    a: str = Field(min_length=1, max_length=512)
+    b: str = Field(min_length=1, max_length=512)
+    target: str = Field(min_length=1, max_length=512)
+    node: str = ""
+
+
+@router.post("/link-nets")
+def link_nets(
+    body: LinkNetsIn,
+    db: Annotated[Session, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    user: Annotated[User, Depends(current_user)],
+) -> dict[str, Any]:
+    """Из чего выбирать перед проверкой связи: какие сети есть, сколько каждая считается,
+    что уже считалось в этой проверке. Ничего не запускает."""
+    scan = _scan(db, body.scan_run)
+    snap, _, table, rows, _, recs = _link_set(db, settings, user, scan, body.a, body.b, body.target, body.node)
+    existing = _existing_check(db, snap, scan, {body.a, body.b}, body.target)
+    done = _check_net_ids(existing) if existing else set()
+    nets = []
+    for r in recs:
+        nid = net_id(r)
+        minutes, note = None, ""
+        if r["runnable"]:
+            params_fit, note = _fit_net(db, settings, table, rows, r)
+            t = lib.template(db, r["template"])
+            if params_fit is not None and t is not None:
+                checked = check_params(t, params_fit, table.columns, table.numeric, table.sheets, table.sheet)
+                minutes = resources.estimate(db, settings, t, checked, rows).minutes
+        nets.append({
+            "id": nid, "net": r["net"], "title": r["title"], "minutes": minutes, "note": note,
+            "runnable": bool(r["runnable"]) and minutes is not None,
+            "warnings": [*r["warnings"], *([note] if r["runnable"] and minutes is None and note else [])],
+            "recommended": nid in RECOMMENDED, "done": nid in done,
+        })
+    return {"nets": nets, "existing": existing.code if existing else None,
+            "existing_status": existing.status if existing else None}
+
+
 @router.post("/link-check", response_model=LinkCheckOut, status_code=status.HTTP_201_CREATED)
 def link_check(
     body: LinkCheckIn,
@@ -413,42 +514,34 @@ def link_check(
     settings: Annotated[Settings, Depends(get_settings)],
     user: Annotated[User, Researcher],
 ) -> LinkCheckOut:
-    """Одна проверка EXP-NNN и по расчёту на каждую сеть набора — одним действием: не встал
-    хоть один расчёт — нет ни проверки, ни расчётов. Связь должна быть подтверждена поиском."""
+    """Одна проверка EXP-NNN и по расчёту на каждую выбранную сеть — одним действием: не встал
+    хоть один расчёт — нет ни проверки, ни расчётов. Связь должна быть подтверждена поиском.
+    Проверка этой связи уже есть — выбранные сети, которых в ней ещё не было, добавляются к ней."""
     scan = _scan(db, body.scan_run)
     pair = {body.a, body.b}
-    if not any({x.get("a"), x.get("b")} == pair for x in _scan_links(scan)):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "Эта связь не подтвердилась в поиске — проверять сетями нечего")
-    if body.target not in pair:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "Предсказываем один из двух показателей связи")
+    snap, ds, table, rows, node, all_recs = _link_set(db, settings, user, scan, body.a, body.b,
+                                                      body.target, body.node)
     other = body.b if body.target == body.a else body.a
-    if scan.dataset_snapshot_id is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "У поиска связей нет версии данных")
-    snap, ds = _snapshot(db, scan.dataset_snapshot_id)
-    for old in db.scalars(select(Experiment).where(Experiment.dataset_snapshot_id == snap.id)):
-        lc = _link_check(old)
-        same = (lc is not None and lc.get("scan_run") == scan.id and {lc.get("a"), lc.get("b")} == pair
-                and lc.get("target") == body.target)
-        if same:
-            raise HTTPException(status.HTTP_409_CONFLICT, f"Эту связь уже проверяют сетями: {old.code}")
-    params = (scan.config or {}).get("params")
-    sheet = str(params.get("sheet") or "") if isinstance(params, dict) else ""
-    table = snapshot_table(db, settings, snap, user, sheet)  # NDA — только с допуском
-    node = _node(db, body.node)
-    rows = resources.rows_of(settings, snap, table.sheet)
-    try:
-        out = analysis.recommend(table, rows, body.target, node, library=_library(db))
-    except ValueError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
-    # набор: перцептрон, трансформер, бустинг с линейной — и включённые методы из статей
-    recs = [r for r in out["recommendations"]
-            if (r["key"] in NET_SET or r["key"].startswith(lib.PREFIX)) and r["runnable"]]
+    existing = _existing_check(db, snap, scan, pair, body.target)
+    recs = [r for r in all_recs if r["runnable"]]
+    if body.nets:
+        unknown = sorted(set(body.nets) - {net_id(r) for r in all_recs})
+        if unknown:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                f"Таких сетей нет в наборе: {', '.join(unknown)}")
+        recs = [r for r in recs if net_id(r) in body.nets]
+    if existing is not None:
+        if existing.status == "done":
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                f"Проверка {existing.code} уже завершена — новые сети к ней не добавить")
+        before = _check_net_ids(existing)
+        recs = [r for r in recs if net_id(r) not in before]
+        if not recs:
+            raise HTTPException(status.HTTP_409_CONFLICT, f"Эту связь уже проверяют сетями: {existing.code}")
     if not recs:
-        why = "; ".join(w for r in out["recommendations"] for w in r["warnings"])
+        why = "; ".join(w for r in all_recs if not body.nets or net_id(r) in body.nets for w in r["warnings"])
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"Ни одну сеть набора не запустить: {why or 'мало данных'}")
+                            f"Ни одну выбранную сеть не запустить: {why or 'мало данных'}")
     planned, skipped = [], []
     for r in recs:
         params_fit, note = _fit_net(db, settings, table, rows, r)
@@ -459,37 +552,44 @@ def link_check(
     if not planned:
         why = "; ".join(f"{x['title']} — {x['reason']}" for x in skipped)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"Ни одна сеть набора не укладывается в лимит: {why}")
+                            f"Ни одна выбранная сеть не укладывается в лимит: {why}")
     nets = ", ".join(r["title"] for r, _, _ in planned)
     holds = f"{HOLDS_MIN_R2:.2f}".replace(".", ",")
     try:
-        exp = Experiment(
-            code=next_code(db, Experiment.code, "EXP", 3),
-            title=f"Связь «{body.a}» — «{body.b}»: проверка сетями · {ds.code}"[:512],
-            hypothesis=(f"Предсказывают ли остальные показатели «{body.target}» на данных, которых не было "
-                        "в обучении, лучше перемешанной цели — у каждой сети набора? Связь "
-                        f"«{other}» — «{body.target}» подтвердилась поиском связей (расчёт № {scan.id}); "
-                        "здесь — держится ли она у разных моделей."),
-            author_id=user.id,
-            method=f"Набор сетей: {nets}"[:512],
-            data_summary=f"{ds.code} · версия {snap.version}"[:512],
-            methodology_node_id=node.id if node else None,
-            setup=[
-                f"Связь найдена и подтверждена на отложенной части: расчёт «Поиск связей» № {scan.id}.",
-                f"Каждая сеть предсказывает «{body.target}» по остальным показателям по протоколу CR-01: "
-                "разбиения, плацебо на перемешанной цели, сравнение с линейной моделью.",
-                f"Связь держится у сети, если R² на отложенных данных выше перемешанной цели и выше {holds}.",
-                *[note for _, _, note in planned if note],
-            ],
-            results=[],
-            limitations=["Связь — не причина: предсказуемость не говорит, что из чего следует.",
-                         *[f"{x['title']} не запускалась: {x['reason']}." for x in skipped]],
-            reproducibility=[],
-            status="running",
-            dataset_snapshot_id=snap.id,
-        )
-        db.add(exp)
-        db.flush()
+        if existing is None:
+            exp = Experiment(
+                code=next_code(db, Experiment.code, "EXP", 3),
+                title=f"Связь «{body.a}» — «{body.b}»: проверка сетями · {ds.code}"[:512],
+                hypothesis=(f"Предсказывают ли остальные показатели «{body.target}» на данных, которых не было "
+                            "в обучении, лучше перемешанной цели — у каждой выбранной сети? Связь "
+                            f"«{other}» — «{body.target}» подтвердилась поиском связей (расчёт № {scan.id}); "
+                            "здесь — держится ли она у разных моделей."),
+                author_id=user.id,
+                method=f"Сети: {nets}"[:512],
+                data_summary=f"{ds.code} · версия {snap.version}"[:512],
+                methodology_node_id=node.id if node else None,
+                setup=[
+                    f"Связь найдена и подтверждена на отложенной части: расчёт «Поиск связей» № {scan.id}.",
+                    f"Каждая сеть предсказывает «{body.target}» по остальным показателям по протоколу CR-01: "
+                    "разбиения, плацебо на перемешанной цели, сравнение с линейной моделью.",
+                    f"Связь держится у сети, если R² на отложенных данных выше перемешанной цели и выше {holds}.",
+                    *[note for _, _, note in planned if note],
+                ],
+                results=[],
+                limitations=["Связь — не причина: предсказуемость не говорит, что из чего следует.",
+                             *[f"{x['title']} не запускалась: {x['reason']}." for x in skipped]],
+                reproducibility=[],
+                status="running",
+                dataset_snapshot_id=snap.id,
+            )
+            db.add(exp)
+            db.flush()
+        else:  # добавить сети к той же проверке: сравнение сетей — в одной таблице
+            exp = existing
+            exp.method = f"{exp.method}, {nets}"[:512]
+            exp.setup = [*exp.setup, f"Добавлены сети: {nets}.", *[note for _, _, note in planned if note]]
+            exp.limitations = [*exp.limitations, *[f"{x['title']} не запускалась: {x['reason']}." for x in skipped]]
+            exp.status = "running"
         runs, choices = [], []
         for r, params_fit, _ in planned:
             run = start_run(db, settings, user, r["template"], snap.id, params_fit, exp.code)
@@ -499,17 +599,22 @@ def link_check(
             choices.append({"template": r["template"], "snapshot_id": snap.id, "node": body.node,
                             "hypothesis": "", **_checked_choice(choice, r["template"], params_fit),
                             "run_id": run.id})
+        cfg = dict(exp.config or {})
+        old_lc = _link_check(exp) or {}
+        prev = cfg.get("analysis_runs")
+        old_runs: list[Any] = prev if isinstance(prev, list) else []
         exp.config = {
+            **cfg,
             "link_check": {"scan_run": scan.id, "a": body.a, "b": body.b, "target": body.target,
-                           "skipped": skipped},
-            "analysis": choices[0],
-            "analysis_runs": choices,
+                           "skipped": [*(old_lc.get("skipped") or []), *skipped]},
+            "analysis": cfg.get("analysis") or choices[0],
+            "analysis_runs": [*old_runs, *choices],
         }
     except HTTPException:
         db.rollback()  # набор без одной из сетей — не тот набор: ни проверки, ни расчётов
         raise
     db.commit()
-    return LinkCheckOut(experiment=exp.code, run_ids=[r.id for r in runs])
+    return LinkCheckOut(experiment=exp.code, run_ids=[r.id for r in runs], added=existing is not None)
 
 
 NET_ORDER = ("mlp", "transformer", "gbm", "linear")
@@ -569,17 +674,28 @@ def _net_results(run: Run) -> list[dict[str, Any]]:
     return out
 
 
+def scan_method(run: Run) -> str:
+    """Способ поиска связей расчёта; у расчётов до выбора способа — rank."""
+    params = (run.config or {}).get("params")
+    return str(params.get("method") or "rank") if isinstance(params, dict) else "rank"
+
+
 @router.get("/links")
 def links(
     snapshot_id: int,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(current_user)],
+    method: str = "",
 ) -> dict[str, Any]:
-    """Последний поиск связей по версии данных и проверки его связей сетями — вкладка «Нейросети»."""
+    """Последний поиск связей по версии данных (method — этим способом; пусто — любым) и проверки
+    его связей сетями — вкладка «Нейросети». scans — последний поиск каждым способом."""
     snap, ds = _snapshot(db, snapshot_id)
     _visible(ds, user)
-    scan = db.scalar(select(Run).where(Run.template == "correlation-scan", Run.dataset_snapshot_id == snap.id)
-                     .order_by(Run.id.desc()).limit(1))
+    latest: dict[str, Run] = {}
+    for r in db.scalars(select(Run).where(Run.template == "correlation-scan", Run.dataset_snapshot_id == snap.id)
+                        .order_by(Run.id.desc())):
+        latest.setdefault(scan_method(r), r)
+    scan = latest.get(method) if method else max(latest.values(), key=lambda r: r.id, default=None)
     checks = []
     if scan is not None:
         exps = db.scalars(select(Experiment).where(Experiment.dataset_snapshot_id == snap.id)
@@ -607,9 +723,17 @@ def links(
             **{k: s.get(k) for k in ("unit", "rows_find", "rows_confirm", "pairs", "found", "confirmed",
                                      "panel_hint", "not_confirmed_total", "links_total")},
             "links": _scan_links(scan),
+            "method": scan_method(scan),
         }
+
+    def brief(r: Run) -> dict[str, Any]:
+        s = r.summary if isinstance(r.summary, dict) else {}
+        return {"method": scan_method(r), "run_id": r.id, "status": r.status,
+                "confirmed": s.get("confirmed"), "pairs": s.get("pairs")}
+
     return {
         "snapshot": {"id": snap.id, "dataset": ds.code, "title": ds.title, "version": snap.version},
         "scan": scan_out,
         "checks": checks,
+        "scans": [brief(r) for r in sorted(latest.values(), key=lambda r: r.id)],
     }

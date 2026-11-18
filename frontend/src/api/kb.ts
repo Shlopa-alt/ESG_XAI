@@ -100,3 +100,24 @@ export const kbPdfUrl = (docId: string, page?: number) =>
   `/api/kb/pdf?doc_id=${encodeURIComponent(docId)}${page ? `#page=${page}` : ""}`;
 export const kbArticle = (docId: string, offset: number) =>
   get<KbArticle>("article", { doc_id: docId, text: "1", offset: String(offset), limit: "20" });
+
+/** Общий граф: в какой теме о понятии пишут больше всего (backend/app/services/kb_topics.py). */
+export interface ConceptTopics {
+  ready: boolean; // false — собирается в фоне, спросить позже
+  building: boolean;
+  error: string;
+  topics: Array<{ path: string; title: string; articles: number; concepts: number }>;
+  main: Record<string, string>; // id понятия → тема
+}
+
+export async function conceptTopics(ids: string[]): Promise<ConceptTopics> {
+  const res = await fetch("/api/kb/concept-topics", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  const body = (await res.json().catch(() => null)) as (ConceptTopics & { detail?: string }) | null;
+  if (!res.ok || body === null) throw new Error(body?.detail ?? `Банк статей: ошибка ${res.status}`);
+  return body;
+}
