@@ -66,6 +66,8 @@ class Component:
     run: Callable[[dict[str, Frame], Params], Frame] = field(repr=False)
     input_labels: tuple[str, ...] = ()
     optional: tuple[str, ...] = ()  # входы, которые можно не подключать (например, «Новые данные»)
+    loads: bool = False  # узел импорта: данные ему даёт движок (inputs["data"])
+    dep_params: tuple[str, ...] = ()  # параметры с id узлов, от которых он зависит без связи
 
     def schema(self) -> dict[str, Any]:
         labels = self.input_labels or tuple("Вход" for _ in self.inputs)
@@ -73,7 +75,9 @@ class Component:
                 "description": self.description,
                 "inputs": [{"name": n, "label": lbl, **({"optional": True} if n in self.optional else {})}
                            for n, lbl in zip(self.inputs, labels, strict=True)],
-                "params": [p.schema() for p in self.params]}
+                "params": [p.schema() for p in self.params],
+                **({"loads": True} if self.loads else {}),
+                **({"dep_params": list(self.dep_params)} if self.dep_params else {})}
 
 
 AGG = (("sum", "сумма"), ("mean", "среднее"), ("median", "медиана"), ("min", "минимум"),
@@ -208,7 +212,7 @@ def calculator(inp: dict[str, Frame], p: Params) -> Frame:
         if not name:
             raise NodeError("Калькулятор: у поля нет имени")
         try:
-            df[name] = column(str(f.get("expr") or ""), df)  # следующие поля видят предыдущие
+            df[name] = column(str(f.get("expr") or ""), df, p.get("__vars__"))  # видны и предыдущие поля
         except ExprError as exc:
             raise NodeError(f"Калькулятор, поле «{name}»: {exc}") from exc
     return df
@@ -402,7 +406,7 @@ def filter_rows(inp: dict[str, Frame], p: Params) -> Frame:
     conds: list[Params] = p.get("conditions") or []
     if expr:
         try:
-            m = mask(expr, df)
+            m = mask(expr, df, p.get("__vars__"))
         except ExprError as exc:
             raise NodeError(f"Фильтр строк: {exc}") from exc
     elif conds:
@@ -441,7 +445,7 @@ TRANSFORM = "Трансформация"
 BASE: list[Component] = [
     Component("import.dataset", "Набор данных", "Импорт", "Версия набора данных платформы", (),
               (Param("snapshot_id", "Версия набора", "snapshot"),
-               Param("sheet", "Лист", "text", required=False)), import_dataset),
+               Param("sheet", "Лист", "text", required=False)), import_dataset, loads=True),
     Component("export.file", "Файл", "Экспорт", "Сохранить таблицу файлом среди результатов расчёта",
               ("in",), (Param("name", "Имя файла", "text", default="результат"),
                         Param("format", "Формат", "select", default="csv",
@@ -546,10 +550,11 @@ BASE: list[Component] = [
 ]
 
 # этап 2 — в своих модулях; им нужны Param и Component отсюда, поэтому импорт после них
-from studio import mining, preprocess, research  # noqa: E402
+from studio import control, mining, preprocess, python_node, research  # noqa: E402
 
-COMPONENTS: dict[str, Component] = {c.type: c for c in [*BASE, *preprocess.COMPONENTS,
-                                                         *research.COMPONENTS, *mining.COMPONENTS]}
+COMPONENTS: dict[str, Component] = {c.type: c for c in [
+    *BASE, *preprocess.COMPONENTS, *research.COMPONENTS, *mining.COMPONENTS, *control.COMPONENTS,
+    *python_node.COMPONENTS]}
 
 
 def catalog() -> list[dict[str, Any]]:

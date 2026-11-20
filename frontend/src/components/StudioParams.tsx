@@ -105,6 +105,14 @@ function ColumnsText({
   );
 }
 
+/** Что ещё нужно полям: другие узлы сценария (Узел-ссылка) и сценарии (Подмодель, Цикл). */
+export interface ParamContext {
+  nodes: { id: string; label: string }[];
+  scenarios: { code: string; title: string }[];
+}
+
+const NO_CONTEXT: ParamContext = { nodes: [], scenarios: [] };
+
 /** Одно поле параметра по его виду; columns — столбцы, пришедшие на вход from_port (если известны). */
 function Field({
   p,
@@ -112,16 +120,56 @@ function Field({
   onChange,
   columns,
   disabled,
+  ctx = NO_CONTEXT,
 }: {
   p: ParamSchema;
   value: unknown;
   onChange: (v: unknown) => void;
   columns: (port: string) => string[];
   disabled: boolean;
+  ctx?: ParamContext;
 }) {
   const id = useId();
   const label = `${p.label}${p.required ? " *" : ""}`;
   const known = columns(p.from_port ?? "in");
+  if (p.kind === "node" || p.kind === "scenario") {
+    const opts = p.kind === "node" ? ctx.nodes.map((n) => ({ value: n.id, label: n.label })) : ctx.scenarios.map((x) => ({ value: x.code, label: `${x.code} · ${x.title}` }));
+    return (
+      <label className="field" htmlFor={id}>
+        {label}
+        <select id={id} value={value == null ? "" : String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value || null)}>
+          <option value="">— выберите —</option>
+          {opts.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+  if (p.kind === "nodes") {
+    const cur = asList(value);
+    return (
+      <fieldset className="field checks" disabled={disabled}>
+        <legend>{label}</legend>
+        {ctx.nodes.map((n) => (
+          <label key={n.id} className="check">
+            <input type="checkbox" checked={cur.includes(n.id)} onChange={(e) => onChange(e.target.checked ? [...cur, n.id] : cur.filter((x) => x !== n.id))} /> {n.label}
+          </label>
+        ))}
+      </fieldset>
+    );
+  }
+  if (p.kind === "code") {
+    return (
+      <label className="field" htmlFor={id}>
+        {label}
+        <textarea id={id} className="mono code-input" rows={12} spellCheck={false} wrap="off" value={value == null ? "" : String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value)} />
+        <span className="muted small">df, df2 — входы, vars — переменные, pd и np уже есть; результат положите в out.</span>
+      </label>
+    );
+  }
   if (p.kind === "bool") {
     return (
       <label className="check">
@@ -197,6 +245,7 @@ function Field({
                 p={f}
                 value={row[f.name]}
                 columns={columns}
+                ctx={ctx}
                 disabled={disabled}
                 onChange={(v) => onChange(rows.map((r, j) => (j === i ? { ...r, [f.name]: v } : r)))}
               />
@@ -234,12 +283,14 @@ export function StudioParams({
   onChange,
   columns,
   disabled = false,
+  context = NO_CONTEXT,
 }: {
   comp: ComponentSchema;
   values: Values;
   onChange: (v: Values) => void;
   columns: (port: string) => string[];
   disabled?: boolean;
+  context?: ParamContext;
 }) {
   return (
     <div className="studio-params">
@@ -247,7 +298,7 @@ export function StudioParams({
         p.kind === "snapshot" ? (
           <SnapshotPicker key={p.name} values={values} onChange={onChange} disabled={disabled} />
         ) : (
-          <Field key={p.name} p={p} value={values[p.name] ?? p.default} columns={columns} disabled={disabled} onChange={(v) => onChange({ ...values, [p.name]: v })} />
+          <Field key={p.name} p={p} value={values[p.name] ?? p.default} columns={columns} ctx={context} disabled={disabled} onChange={(v) => onChange({ ...values, [p.name]: v })} />
         ),
       )}
     </div>

@@ -81,6 +81,9 @@ def main(argv: list[str] | None = None) -> int:
                 view["report"] = r.report
             if a.until == r.node:  # предпросмотр: выборка для «Диаграммы» — только у выбранного узла
                 view["sample"] = stats.sample(r.frame)
+                cube = stats.cube(r.frame)
+                if cube is not None:
+                    view["cube"] = cube
             (out / "nodes" / f"{r.node}.json").write_text(json.dumps(view, ensure_ascii=False),
                                                           encoding="utf-8")
             if nodes[r.node]["type"] == "export.file" and not a.until:

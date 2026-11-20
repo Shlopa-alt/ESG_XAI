@@ -1,6 +1,6 @@
 import { useId, useMemo, useState } from "react";
 
-import type { ColumnStats, ModelReport, NodeView } from "../api/studio";
+import type { ColumnStats, CubeView, ModelReport, NodeView } from "../api/studio";
 
 const W = 640;
 const H = 300;
@@ -344,6 +344,169 @@ export function StudioReport({ report }: { report: ModelReport }) {
           {n}
         </p>
       ))}
+    </div>
+  );
+}
+
+type Agg = "sum" | "mean" | "count" | "min" | "max";
+interface Acc {
+  sum: number;
+  cnt: number;
+  min: number;
+  max: number;
+}
+
+const empty = (): Acc => ({ sum: 0, cnt: 0, min: Infinity, max: -Infinity });
+// ключ ячейки «строка × столбец»: JSON — без коллизий, какие бы ни были значения
+const cellKey = (r: string, k: string) => JSON.stringify([r, k]);
+function add(a: Acc, sum: number, cnt: number, min: number, max: number) {
+  a.sum += sum;
+  a.cnt += cnt;
+  if (cnt > 0) {
+    a.min = Math.min(a.min, min);
+    a.max = Math.max(a.max, max);
+  }
+}
+function value(a: Acc | undefined, agg: Agg): string {
+  if (!a || a.cnt === 0) return "";
+  const v = agg === "sum" ? a.sum : agg === "mean" ? a.sum / a.cnt : agg === "count" ? a.cnt : agg === "min" ? a.min : a.max;
+  return fmt(v);
+}
+
+/** Визуализатор «Куб»: сводная по готовым ячейкам — строки, столбцы, мера и итог; с итогами. */
+export function StudioCube({ cube }: { cube: CubeView }) {
+  const id = useId();
+  const [rowDim, setRowDim] = useState(cube.dims[0] ?? "");
+  const [colDim, setColDim] = useState(cube.dims[1] ?? "");
+  const [measure, setMeasure] = useState(cube.measures[0] ?? "");
+  const [agg, setAgg] = useState<Agg>(cube.measures.length ? "sum" : "count");
+  const d = cube.dims.length;
+  const ri = cube.dims.indexOf(rowDim);
+  const ci = colDim ? cube.dims.indexOf(colDim) : -1;
+  const mi = cube.measures.indexOf(measure);
+  const pivot = useMemo(() => {
+    const cells = new Map<string, Acc>();
+    const rowT = new Map<string, Acc>();
+    const colT = new Map<string, Acc>();
+    const all = empty();
+    const rows = new Set<string>();
+    const cols = new Set<string>();
+    for (const c of cube.cells) {
+      const r = String(c[ri] ?? "(пусто)");
+      const k = ci >= 0 ? String(c[ci] ?? "(пусто)") : "";
+      const n = Number(c[d]);
+      // «строк» — число строк; иначе мера: сумма, число значений, минимум, максимум
+      const vals = mi < 0 ? [n, n, n, n] : [0, 1, 2, 3].map((j) => Number(c[d + 1 + 4 * mi + j] ?? 0));
+      const [sum = 0, cnt = 0, mn = 0, mx = 0] = vals;
+      rows.add(r);
+      cols.add(k);
+      for (const [map, key] of [[cells, cellKey(r, k)], [rowT, r], [colT, k]] as const) {
+        if (!map.has(key)) map.set(key, empty());
+        add(map.get(key) as Acc, sum, cnt, mn, mx);
+      }
+      add(all, sum, cnt, mn, mx);
+    }
+    const sort = (a: string, b: string) => a.localeCompare(b, "ru", { numeric: true });
+    return { cells, rowT, colT, all, rows: [...rows].sort(sort), cols: [...cols].sort(sort) };
+  }, [cube, ri, ci, mi, d]);
+  const aggEff: Agg = mi < 0 && agg !== "count" ? "sum" : agg;
+  const showCols = ci >= 0;
+  return (
+    <div className="studio-cube">
+      <div className="chart-controls">
+        <label className="field inline" htmlFor={`${id}-r`}>
+          Строки
+          <select id={`${id}-r`} value={rowDim} onChange={(e) => setRowDim(e.target.value)}>
+            {cube.dims.map((x) => (
+              <option key={x} value={x}>
+                {x}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field inline" htmlFor={`${id}-c`}>
+          Столбцы
+          <select id={`${id}-c`} value={colDim} onChange={(e) => setColDim(e.target.value)}>
+            <option value="">— нет —</option>
+            {cube.dims
+              .filter((x) => x !== rowDim)
+              .map((x) => (
+                <option key={x} value={x}>
+                  {x}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label className="field inline" htmlFor={`${id}-m`}>
+          Мера
+          <select id={`${id}-m`} value={measure} onChange={(e) => setMeasure(e.target.value)}>
+            <option value="">число строк</option>
+            {cube.measures.map((x) => (
+              <option key={x} value={x}>
+                {x}
+              </option>
+            ))}
+          </select>
+        </label>
+        {mi >= 0 && (
+          <label className="field inline" htmlFor={`${id}-a`}>
+            Итог
+            <select id={`${id}-a`} value={agg} onChange={(e) => setAgg(e.target.value as Agg)}>
+              <option value="sum">сумма</option>
+              <option value="mean">среднее</option>
+              <option value="count">количество значений</option>
+              <option value="min">минимум</option>
+              <option value="max">максимум</option>
+            </select>
+          </label>
+        )}
+      </div>
+      <div className="table-wrap">
+        <table className="table studio-table">
+          <thead>
+            <tr>
+              <th scope="col">
+                {rowDim}
+                {showCols ? ` × ${colDim}` : ""}
+              </th>
+              {showCols &&
+                pivot.cols.map((k) => (
+                  <th key={k} scope="col" className="num">
+                    {k}
+                  </th>
+                ))}
+              <th scope="col" className="num">
+                Итого
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {pivot.rows.map((r) => (
+              <tr key={r}>
+                <th scope="row">{r}</th>
+                {showCols &&
+                  pivot.cols.map((k) => (
+                    <td key={k} className="num">
+                      {value(pivot.cells.get(cellKey(r, k)), aggEff)}
+                    </td>
+                  ))}
+                <td className="num total">{value(pivot.rowT.get(r), aggEff)}</td>
+              </tr>
+            ))}
+            <tr className="total">
+              <th scope="row">Итого</th>
+              {showCols &&
+                pivot.cols.map((k) => (
+                  <td key={k} className="num">
+                    {value(pivot.colT.get(k), aggEff)}
+                  </td>
+                ))}
+              <td className="num">{value(pivot.all, aggEff)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small">По всем строкам результата узла.</p>
     </div>
   );
 }

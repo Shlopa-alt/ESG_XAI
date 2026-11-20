@@ -130,3 +130,39 @@ def sample(df: pd.DataFrame, rows: int = SAMPLE_ROWS) -> dict[str, Any]:
     return {"columns": [{"name": str(c), "kind": kind(df[c])} for c in df.columns],
             "rows": [[_plain(v) for v in r] for r in part.itertuples(index=False, name=None)],
             "total": int(len(df))}
+
+
+CUBE_DIMS, CUBE_MEASURES, CUBE_CELLS, DIM_MAX = 6, 10, 20_000, 50
+
+
+def cube(df: pd.DataFrame) -> dict[str, Any] | None:
+    """Визуализатор «Куб»: ячейки по сочетаниям измерений (столбцы с 2–50 значениями) с суммой,
+    числом, минимумом и максимумом каждой меры. Из ячеек сайт точно собирает любую сводную:
+    по строкам и столбцам, сумма, среднее (сумма / число), количество, минимум, максимум."""
+    if df.empty:
+        return None
+    card = {c: int(df[c].nunique(dropna=True)) for c in df.columns}
+    # идентификатор (все значения разные) — ни измерение, ни мера: сумма кодов смысла не имеет
+    ident = {c for c in df.columns if card[c] == len(df) and len(df) > 2
+             and not pd.api.types.is_float_dtype(df[c])}
+    dims = sorted([c for c in df.columns if 2 <= card[c] <= DIM_MAX and c not in ident
+                   and not pd.api.types.is_float_dtype(df[c])], key=lambda c: card[c])[:CUBE_DIMS]
+    measures = [c for c in df.columns if c not in dims and c not in ident
+                and pd.api.types.is_numeric_dtype(df[c]) and not pd.api.types.is_bool_dtype(df[c])
+                ][:CUBE_MEASURES]
+    if not dims:
+        return None
+    while dims and df[dims].drop_duplicates().shape[0] > CUBE_CELLS:
+        dims.pop()  # самое многозначное измерение — прочь, пока ячеек не станет разумно
+    keys = df[dims].astype("string").fillna("(пусто)")
+    data = pd.concat([keys, df[measures].apply(pd.to_numeric, errors="coerce")], axis=1)
+    g = data.groupby(dims, sort=True, dropna=False)
+    agg = g.size().rename("__n").to_frame()
+    for m in measures:
+        agg[f"{m}|sum"] = g[m].sum(min_count=1)
+        agg[f"{m}|cnt"] = g[m].count()
+        agg[f"{m}|min"] = g[m].min()
+        agg[f"{m}|max"] = g[m].max()
+    agg = agg.reset_index()
+    return {"dims": [str(d) for d in dims], "measures": [str(m) for m in measures],
+            "cells": [[_plain(v) for v in r] for r in agg.itertuples(index=False, name=None)]}

@@ -6,9 +6,12 @@
 Значения параметров против данных проверяет движок при расчёте.
 """
 
+import copy
+import importlib.util
 import json
 from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from app.config import Settings
@@ -19,6 +22,9 @@ STUDIO_QUEUE = "studio"
 TASK = "runner.studio"
 PREVIEW_ROWS, RUN_ROWS = 100, 50  # строк «Таблицы» в предпросмотре и в полном расчёте
 LIMIT_MIN = 30
+MAX_DEPTH = 5  # подмодель в подмодели… не глубже
+NESTED = ("control.submodel", "control.loop")
+PYTHON = "code.python"
 
 
 class GraphError(ValueError):
@@ -70,6 +76,14 @@ def check_graph(settings: Settings, graph: dict[str, Any]) -> list[str]:
             raise GraphError(nid, "Параметры узла — не набор полей")
         types[nid] = str(n["type"])
     deps: dict[str, set[str]] = {nid: set() for nid in types}
+    for n in nodes:  # зависимости без связи: «Узел-ссылка», «Выполнение узла»
+        comp = comps[n["type"]]
+        for name in comp.get("dep_params") or []:
+            v = (n.get("params") or {}).get(name)
+            for ref in (v if isinstance(v, list) else [v] if v else []):
+                if str(ref) not in types:
+                    raise GraphError(n["id"], f"{comp['title']}: нет узла «{ref}»")
+                deps[n["id"]].add(str(ref))
     taken: set[tuple[str, str]] = set()
     for e in edges:
         src, dst = str(e.get("from")), str(e.get("to"))
@@ -99,11 +113,18 @@ def check_graph(settings: Settings, graph: dict[str, Any]) -> list[str]:
     return order
 
 
-def needed(graph: dict[str, Any], target: str) -> set[str]:
+def needed(graph: dict[str, Any], target: str, settings: Settings | None = None) -> set[str]:
     """Узлы, от которых зависит target, и он сам."""
     ups: dict[str, list[str]] = {}
     for e in graph.get("edges") or []:
         ups.setdefault(str(e.get("to")), []).append(str(e.get("from")))
+    if settings is not None:
+        comps = components(settings)
+        for n in graph.get("nodes") or []:
+            for name in comps.get(n.get("type"), {}).get("dep_params") or []:
+                v = (n.get("params") or {}).get(name)
+                refs = v if isinstance(v, list) else [v] if v else []
+                ups.setdefault(n["id"], []).extend(str(x) for x in refs)
     need: set[str] = set()
     stack = [target]
     while stack:
@@ -118,4 +139,60 @@ def import_nodes(settings: Settings, graph: dict[str, Any], only: set[str] | Non
                  ) -> list[dict[str, Any]]:
     comps = components(settings)
     return [n for n in graph.get("nodes") or []
-            if not comps[n["type"]]["inputs"] and (only is None or n["id"] in only)]
+            if comps[n["type"]].get("loads") and (only is None or n["id"] in only)]
+
+
+@lru_cache
+def _pycheck(path: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location("studio_pycheck", path)
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+def pycheck(settings: Settings) -> ModuleType:
+    """Проверка кода узла «Python» — тот же модуль, что у исполнителя (runner/studio/pycheck.py)."""
+    return _pycheck(str(Path(settings.repo_dir) / "runner" / "studio" / "pycheck.py"))
+
+
+def python_state(settings: Settings, graph: dict[str, Any], approved: list[str]) -> dict[str, Any]:
+    """Узлы «Python»: что не так в коде и одобрен ли он владельцем."""
+    chk = pycheck(settings)
+    out = {}
+    for n in graph.get("nodes") or []:
+        if n.get("type") == PYTHON:
+            code = str((n.get("params") or {}).get("code") or "")
+            out[n["id"]] = {"problems": chk.check(code), "approved": chk.sha256(code) in approved}
+    return out
+
+
+def nested_refs(graph: dict[str, Any]) -> list[dict[str, Any]]:
+    return [n for n in graph.get("nodes") or [] if n.get("type") in NESTED]
+
+
+def expand(graph: dict[str, Any], resolve: Any, chain: tuple[str, ...] = (), prefix: str = "",
+           out: list[dict[str, Any]] | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Вложить сценарии подмоделей и циклов в их узлы (__graph__). resolve(код, версия) →
+    (граф, версия, одобренный код). Возвращает граф и список всех узлов с префиксом пути
+    (для входных наборов, кода Python и записи версий подмоделей)."""
+    out = [] if out is None else out
+    g = copy.deepcopy(graph)
+    for n in g.get("nodes") or []:
+        out.append({"id": prefix + n["id"], "node": n, "chain": chain})
+        if n.get("type") not in NESTED:
+            continue
+        params = n.setdefault("params", {})
+        code = str(params.get("scenario") or "").upper()
+        if not code:
+            raise GraphError(prefix + n["id"], "Подмодель: не выбран сценарий")
+        if code in chain:
+            path = " → ".join([*chain, code])
+            raise GraphError(prefix + n["id"], f"Подмодель {code} вызывает сама себя: {path}")
+        if len(chain) >= MAX_DEPTH:
+            raise GraphError(prefix + n["id"], f"Подмодели вложены глубже {MAX_DEPTH}")
+        version = params.get("version")
+        sub, ver = resolve(code, int(version) if str(version or "").isdigit() else None)
+        inner, _ = expand(sub, resolve, (*chain, code), f"{prefix}{n['id']}/", out)
+        params["__graph__"] = inner
+        params["__version__"] = ver
+    return g, out

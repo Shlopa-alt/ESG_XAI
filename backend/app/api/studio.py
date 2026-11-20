@@ -42,6 +42,10 @@ class ScenarioSave(BaseModel):
     description: str | None = Field(default=None, max_length=4000)
 
 
+class ApproveIn(BaseModel):
+    node: str = Field(min_length=1, max_length=64)
+
+
 class RunIn(BaseModel):
     until: str = Field(default="", max_length=64)  # узел для предпросмотра; пусто — весь сценарий
 
@@ -132,13 +136,37 @@ def create_scenario(body: ScenarioIn, db: Annotated[Session, Depends(get_db)],
 
 @router.get("/scenarios/{code}")
 def get_scenario(code: str, db: Annotated[Session, Depends(get_db)],
+                 settings: Annotated[Settings, Depends(get_settings)],
                  user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
     s = _get(db, code)
     runs = db.scalars(select(StudioRun).where(StudioRun.scenario_id == s.id, StudioRun.until == "")
                       .order_by(StudioRun.id.desc()).limit(10))
     return {**_brief(db, s), "graph": s.graph,
             "editable": s.author_id == user.id or user.role == "owner",
+            "python": svc.python_state(settings, s.graph, s.approved_python or []),
             "runs": [_run_out(r, _hidden(db, r, user)) for r in runs]}
+
+
+@router.post("/scenarios/{code}/approve-python")
+def approve_python(code: str, body: ApproveIn, db: Annotated[Session, Depends(get_db)],
+                   settings: Annotated[Settings, Depends(get_settings)],
+                   user: Annotated[User, Depends(require_role("owner"))]) -> dict[str, Any]:
+    """Владелец прочитал код узла «Python» и разрешает его считать (по sha256: код поменяли —
+    одобрять снова)."""
+    s = _get(db, code)
+    node = next((n for n in s.graph.get("nodes") or [] if n.get("id") == body.node), None)
+    if node is None or node.get("type") != svc.PYTHON:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет узла Python {body.node}")
+    text = str((node.get("params") or {}).get("code") or "")
+    chk = svc.pycheck(settings)
+    problems = chk.check(text)
+    if problems:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"node": body.node,
+                             "message": "Код не прошёл проверку: " + "; ".join(problems[:3])})
+    s.approved_python = sorted({*(s.approved_python or []), chk.sha256(text)})
+    db.commit()
+    return {"python": svc.python_state(settings, s.graph, s.approved_python)}
 
 
 @router.put("/scenarios/{code}", dependencies=[Researcher])
@@ -163,7 +191,8 @@ def save_scenario(code: str, body: ScenarioSave, db: Annotated[Session, Depends(
         s.description = body.description.strip()
     s.updated_at = datetime.now(UTC)
     db.commit()
-    return {**_brief(db, s), "graph": s.graph, "editable": True}
+    return {**_brief(db, s), "graph": s.graph, "editable": True,
+            "python": svc.python_state(settings, s.graph, s.approved_python or [])}
 
 
 @router.post("/scenarios/{code}/copy", status_code=status.HTTP_201_CREATED,
@@ -202,14 +231,35 @@ def run_scenario(code: str, body: RunIn, db: Annotated[Session, Depends(get_db)]
                  user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
     """Расчёт сохранённой версии: весь сценарий или (until) только узел и то, от чего он зависит."""
     s = _get(db, code)
-    graph = s.graph
-    _check(settings, graph)
+    _check(settings, s.graph)
+
+    def resolve(sub_code: str, version: int | None) -> tuple[dict[str, Any], int]:
+        sub = db.scalar(select(Scenario).where(Scenario.code == sub_code))
+        if sub is None:
+            raise svc.GraphError("", f"Нет сценария {sub_code}")
+        g, v = sub.graph, sub.version
+        if version is not None:
+            row = db.scalar(select(ScenarioVersion).where(ScenarioVersion.scenario_id == sub.id,
+                                                          ScenarioVersion.version == version))
+            if row is None:
+                raise svc.GraphError("", f"У {sub_code} нет версии {version}")
+            g, v = row.graph, version
+        svc.check_graph(settings, g)
+        return g, v
+
+    try:
+        graph, all_nodes = svc.expand(s.graph, resolve)
+    except svc.GraphError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"node": exc.node, "message": str(exc)}) from exc
     ids = {n["id"] for n in graph.get("nodes") or []}
     if not ids:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "В сценарии нет узлов")
     if body.until and body.until not in ids:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Нет узла {body.until}")
-    only = svc.needed(graph, body.until) if body.until else None
+    top = svc.needed(graph, body.until, settings) if body.until else None
+    # вложенные узлы нужны, если нужен их узел-подмодель верхнего уровня
+    used = [e for e in all_nodes if top is None or e["id"].split("/", 1)[0] in top]
     busy = db.scalar(select(StudioRun).where(StudioRun.created_by == user.id,
                                              StudioRun.status.in_(ACTIVE), StudioRun.until == "")
                      .limit(1))
@@ -219,7 +269,34 @@ def run_scenario(code: str, body: RunIn, db: Annotated[Session, Depends(get_db)]
                             "дождитесь его или остановите")
     inputs: dict[str, Any] = {}
     job_inputs: dict[str, Any] = {}
-    for node in svc.import_nodes(settings, graph, only):
+    comps = svc.components(settings)
+    chk = svc.pycheck(settings)
+    approved: dict[str, list[str]] = {}
+    for e in used:
+        node = e["node"]
+        if node.get("type") == svc.PYTHON:
+            text = str((node.get("params") or {}).get("code") or "")
+            problems = chk.check(text)
+            if problems:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    {"node": e["id"],
+                                     "message": "Python: " + "; ".join(problems[:3])})
+            owner_code = e["chain"][-1] if e["chain"] else s.code
+            if owner_code not in approved:
+                holder = s if owner_code == s.code else db.scalar(
+                    select(Scenario).where(Scenario.code == owner_code))
+                approved[owner_code] = (holder.approved_python if holder else None) or []
+            if chk.sha256(text) not in approved[owner_code] and user.role != "owner":
+                raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                    {"node": e["id"],
+                                     "message": f"Код узла Python в {owner_code} не одобрен "
+                                                "владельцем платформы — попросите его одобрить"})
+        if node.get("type") in svc.NESTED:
+            p = node.get("params") or {}
+            inputs[f"{e['id']}#подмодель"] = {"scenario": str(p.get("scenario") or "").upper(),
+                                              "version": p.get("__version__")}
+    for e in [x for x in used if comps.get(x["node"].get("type"), {}).get("loads")]:
+        node = {**e["node"], "id": e["id"]}
         params = node.get("params") or {}
         sid = params.get("snapshot_id")
         snap = db.get(DatasetSnapshot, int(str(sid))) if str(sid or "").isdigit() else None

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ComponentSchema } from "./api/studio";
 import { App } from "./App";
-import { StudioChart, StudioQuality, StudioReport } from "./components/StudioCharts";
+import { StudioChart, StudioCube, StudioQuality, StudioReport } from "./components/StudioCharts";
 import { StudioParams } from "./components/StudioParams";
 
 // Заглушки — не реальные данные
@@ -145,5 +145,64 @@ describe("Студия: отчёт модели", () => {
     expect(screen.queryByRole("columnheader", { name: "Кросс-валидация" })).not.toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "1,5" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "ROC-кривая" })).toBeInTheDocument();
+  });
+});
+
+describe("Студия: куб и поля управления", () => {
+  it("«Куб» собирает сводную из ячеек: сумма, среднее, итоги", async () => {
+    // ячейки: отрасль, год, строк, выручка: сумма, число, мин, макс
+    const cube = {
+      dims: ["отрасль", "год"],
+      measures: ["выручка"],
+      cells: [
+        ["A", "2020", 1, 10, 1, 10, 10],
+        ["A", "2021", 1, 12, 1, 12, 12],
+        ["B", "2021", 2, 16, 2, 7, 9],
+      ],
+    };
+    wrap(<StudioCube cube={cube} />);
+    const total = screen.getAllByRole("row").at(-1) as HTMLElement;
+    expect(total).toHaveTextContent("Итого102838"); // 2020: 10, 2021: 12 + 16, всего 38
+    await userEvent.selectOptions(screen.getByLabelText("Итог"), "mean");
+    expect(screen.getAllByRole("row").at(-1)).toHaveTextContent("Итого109,3339,5"); // 28 / 3 и 38 / 4
+    await userEvent.selectOptions(screen.getByLabelText("Столбцы"), "");
+    await userEvent.selectOptions(screen.getByLabelText("Мера"), "");
+    expect(screen.getAllByRole("row").at(-1)).toHaveTextContent("Итого4");
+  });
+
+  it("поля «узел», «сценарий» и «код» берут варианты из сценария", async () => {
+    const comp: ComponentSchema = {
+      type: "control.submodel",
+      title: "Подмодель",
+      group: "Управление",
+      description: "",
+      inputs: [],
+      params: [
+        { name: "scenario", label: "Сценарий", kind: "scenario", required: true },
+        { name: "node", label: "Узел", kind: "node", required: true },
+        { name: "code", label: "Код", kind: "code", required: true },
+      ],
+    };
+    const seen = vi.fn();
+    function H() {
+      const [v, setV] = useState<Record<string, unknown>>({});
+      return (
+        <StudioParams
+          comp={comp}
+          values={v}
+          columns={() => []}
+          context={{ nodes: [{ id: "n1", label: "[узел]" }], scenarios: [{ code: "SC-07", title: "[подмодель]" }] }}
+          onChange={(x) => {
+            setV(x);
+            seen(x);
+          }}
+        />
+      );
+    }
+    wrap(<H />);
+    await userEvent.selectOptions(screen.getByLabelText("Сценарий *"), "SC-07");
+    await userEvent.selectOptions(screen.getByLabelText("Узел *"), "n1");
+    await userEvent.type(screen.getByLabelText(/^Код \*/), "out = df");
+    expect(seen).toHaveBeenLastCalledWith({ scenario: "SC-07", node: "n1", code: "out = df" });
   });
 });
