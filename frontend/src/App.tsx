@@ -18,6 +18,7 @@ import { Methodology } from "./pages/MethodologyPage";
 import { Qwen } from "./pages/QwenPage";
 import { ResetPassword } from "./pages/ResetPassword";
 import { Run, RunDetail } from "./pages/RunPage";
+import { Studio } from "./pages/StudioPage";
 import { ChangePassword, Users } from "./pages/UsersPage";
 import {
   Knowledge,
@@ -27,6 +28,8 @@ import {
 
 // Cytoscape (~400 КБ) нужен только графу — грузится, когда граф открыли
 const Graph = lazy(() => import("./pages/GraphPage").then((m) => ({ default: m.Graph })));
+// Редактор Студии (холст React Flow) — только когда его открыли
+const StudioEditor = lazy(() => import("./pages/StudioEditor").then((m) => ({ default: m.StudioEditor })));
 
 export function App() {
   const { data: user, isPending, isError } = useMe();
@@ -63,6 +66,8 @@ export function App() {
         <Route path="methodology" element={<Methodology />} />
         <Route path="password" element={<ChangePassword />} />
         <Route path="api-access" element={<ApiAccess />} />
+        <Route path="studio" element={<Studio />} />
+        <Route path="studio/:code" element={<Suspense fallback={<p className="muted">Загрузка Студии…</p>}><StudioEditor /></Suspense>} />
         {user.role === "owner" && <Route path="users" element={<Users />} />}
         {user.role === "owner" && <Route path="qwen" element={<Qwen />} />}
         <Route path="*" element={<Overview />} />

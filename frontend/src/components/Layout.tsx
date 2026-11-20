@@ -28,7 +28,10 @@ const NAV: NavItem[] = [
   { to: "/data", label: "Данные", also: ["/datasets", "/data-drafts"] },
 ];
 // Инструменты для работы с платформой извне и вручную (открытый API; дальше — Студия, Jupyter)
-const TOOLS_NAV: NavItem[] = [{ to: "/api-access", label: "Доступ к API" }];
+const TOOLS_NAV: NavItem[] = [
+  { to: "/studio", label: "Студия анализа" },
+  { to: "/api-access", label: "Доступ к API" },
+];
 
 const OWNER_NAV: NavItem[] = [
   { to: "/qwen", label: "Задачи Qwen" },
