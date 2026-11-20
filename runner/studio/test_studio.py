@@ -207,3 +207,10 @@ def test_run_scenario_cli(tmp_path: Path, df: pd.DataFrame) -> None:
     assert saved["компания"].tolist() == ["A", "B", "C"]
     view = json.loads((res / "nodes" / "f.json").read_text(encoding="utf-8"))
     assert view["table"]["total"] == 3 and view["statistics"]["rows"] == 3
+
+
+def test_catalog_file_is_current() -> None:
+    from studio.catalog import dump
+
+    saved = json.loads((Path(__file__).resolve().parent / "catalog.json").read_text(encoding="utf-8"))
+    assert saved == json.loads(dump()), "каталог изменился: python studio/catalog.py > studio/catalog.json"

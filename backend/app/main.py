@@ -22,6 +22,7 @@ from app.api import (
     qwen,
     reports,
     runs,
+    studio,
     tokens,
     users,
 )
@@ -100,6 +101,7 @@ api.include_router(articles.router)
 api.include_router(methods.router)
 api.include_router(methods.worker_router)
 api.include_router(tokens.router)
+api.include_router(studio.router)
 app.include_router(api)
 
 

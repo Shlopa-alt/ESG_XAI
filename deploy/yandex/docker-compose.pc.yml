@@ -36,5 +36,22 @@ services:
     depends_on:
       - mlflow
 
+  # Студия: сценарии из узлов — своя очередь studio, чтобы предпросмотр не ждал долгих расчётов сетей
+  runner-studio:
+    restart: unless-stopped
+    build: ../../runner
+    command: ["/opt/worker/bin/celery", "-A", "worker.tasks", "worker", "-Q", "studio", "-c", "2",
+              "-n", "studio@%h", "--loglevel", "INFO"]
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD:?задайте REDIS_PASSWORD в deploy/.env}@10.8.0.1:6379/0
+      PLATFORM_URL: ${PLATFORM_URL:?задайте PLATFORM_URL в deploy/.env}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?задайте RUNNER_TOKEN в deploy/.env}
+      ESG_DATA_HOST: ${ESG_DATA_HOST:?задайте ESG_DATA_HOST в deploy/.env}
+      ESG_DATA_DIR: /data/esg
+      RUNNER_QUEUE: studio
+    volumes:
+      - ../..:/repo:ro
+      - ${ESG_DATA_HOST}:/data/esg
+
 volumes:
   mlflowdata:

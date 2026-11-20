@@ -104,6 +104,26 @@ services:
       - backend
       - mlflow
 
+  # Студия: сценарии из узлов (runner/studio) — своя очередь studio
+  runner-studio:
+    restart: unless-stopped
+    build: ../runner
+    command: ["/opt/worker/bin/celery", "-A", "worker.tasks", "worker", "-Q", "studio", "-c", "2",
+              "-n", "studio@%h", "--loglevel", "INFO"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      PLATFORM_URL: http://backend:8000
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+      ESG_DATA_HOST: ${ESG_DATA_HOST:-}
+      ESG_DATA_DIR: /data/esg
+      RUNNER_QUEUE: studio
+    volumes:
+      - ..:/repo:ro
+      - ${ESG_DATA_HOST:-../.local/esg_data}:/data/esg
+    depends_on:
+      - redis
+      - backend
+
   frontend:
     restart: unless-stopped
     build: ../frontend

@@ -37,18 +37,25 @@ def enqueue(broker: str, run_id: int, job: dict[str, Any], queue: str) -> str:
     return task_id
 
 
+def enqueue_studio(broker: str, run_id: int, job: dict[str, Any]) -> str:
+    """Расчёт сценария Студии — в очередь studio: предпросмотр не ждёт долгих расчётов сетей."""
+    task_id = f"studio-{run_id}"
+    _celery(broker).send_task("runner.studio", kwargs={"job": job}, queue="studio", task_id=task_id)
+    return task_id
+
+
 def revoke(broker: str, task_id: str) -> None:
     """Задача ещё в очереди — исполнитель её не возьмёт."""
     _celery(broker).control.revoke(task_id)
 
 
-def request_stop(url: str, run_id: int) -> None:
-    redis.Redis.from_url(url).set(f"run:{run_id}:stop", 1, ex=7 * 86400)
+def request_stop(url: str, run_id: int, prefix: str = "run") -> None:
+    redis.Redis.from_url(url).set(f"{prefix}:{run_id}:stop", 1, ex=7 * 86400)
 
 
-def is_alive(url: str, run_id: int) -> bool:
+def is_alive(url: str, run_id: int, prefix: str = "run") -> bool:
     """Исполнитель ведёт запуск: его пульс run:{id}:alive обновляется раз в 10 с и живёт 2 мин."""
-    return bool(redis.Redis.from_url(url).exists(f"run:{run_id}:alive"))
+    return bool(redis.Redis.from_url(url).exists(f"{prefix}:{run_id}:alive"))
 
 
 def sse(event: dict[str, Any]) -> str:

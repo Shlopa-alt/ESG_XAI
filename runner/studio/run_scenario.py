@@ -24,7 +24,7 @@ sys.path[:0] = [str(HERE.parent), str(HERE.parent / "methods")]
 
 # после sys.path: common — из runner/methods, studio — из runner
 import pandas as pd  # noqa: E402, I001
-from common import event, load_table  # noqa: E402
+from common import LOCK, event, git_commit, load_table, sha256  # noqa: E402
 from studio import engine, stats  # noqa: E402
 
 
@@ -65,7 +65,10 @@ def main(argv: list[str] | None = None) -> int:
         return load_table(Path(src["path"]), src.get("sheet") or "")
 
     nodes = {n["id"]: n for n in scenario.get("nodes") or []}
-    summary: dict[str, Any] = {"nodes": {}, "files": []}
+    # для повтора расчёта (правило 3): код runner и окружение
+    summary: dict[str, Any] = {"nodes": {}, "files": [], "runner_commit": git_commit(),
+                               "env_lock_sha256": sha256(LOCK) if LOCK.is_file() else "",
+                               "python": sys.version.split()[0]}
 
     def done(r: engine.NodeResult) -> None:
         info: dict[str, Any] = {"ok": r.frame is not None, "error": r.error, "seconds": r.seconds,

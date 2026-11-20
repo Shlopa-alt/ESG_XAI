@@ -1,0 +1,1016 @@
+{
+ "format": 1,
+ "components": [
+  {
+   "type": "import.dataset",
+   "title": "Набор данных",
+   "group": "Импорт",
+   "description": "Версия набора данных платформы",
+   "inputs": [],
+   "params": [
+    {
+     "name": "snapshot_id",
+     "label": "Версия набора",
+     "kind": "snapshot",
+     "required": true
+    },
+    {
+     "name": "sheet",
+     "label": "Лист",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "export.file",
+   "title": "Файл",
+   "group": "Экспорт",
+   "description": "Сохранить таблицу файлом среди результатов расчёта",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "name",
+     "label": "Имя файла",
+     "kind": "text",
+     "required": true,
+     "default": "результат"
+    },
+    {
+     "name": "format",
+     "label": "Формат",
+     "kind": "select",
+     "required": true,
+     "default": "csv",
+     "options": [
+      {
+       "value": "csv",
+       "label": "CSV"
+      },
+      {
+       "value": "xlsx",
+       "label": "Excel"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.group",
+   "title": "Группировка",
+   "group": "Трансформация",
+   "description": "Итоги по группам: сумма, среднее, количество…",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "keys",
+     "label": "Поля группы",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "aggregations",
+     "label": "Вычисления",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "func",
+       "label": "Функция",
+       "kind": "select",
+       "required": true,
+       "options": [
+        {
+         "value": "sum",
+         "label": "сумма"
+        },
+        {
+         "value": "mean",
+         "label": "среднее"
+        },
+        {
+         "value": "median",
+         "label": "медиана"
+        },
+        {
+         "value": "min",
+         "label": "минимум"
+        },
+        {
+         "value": "max",
+         "label": "максимум"
+        },
+        {
+         "value": "count",
+         "label": "количество"
+        },
+        {
+         "value": "nunique",
+         "label": "различных"
+        },
+        {
+         "value": "std",
+         "label": "ст. отклонение"
+        },
+        {
+         "value": "var",
+         "label": "дисперсия"
+        },
+        {
+         "value": "first",
+         "label": "первое"
+        },
+        {
+         "value": "last",
+         "label": "последнее"
+        }
+       ]
+      },
+      {
+       "name": "as",
+       "label": "Имя результата",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.ungroup",
+   "title": "Разгруппировка",
+   "group": "Трансформация",
+   "description": "Итог по группе — в каждую строку исходной таблицы",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "keys",
+     "label": "Поля группы",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "aggregations",
+     "label": "Вычисления",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "func",
+       "label": "Функция",
+       "kind": "select",
+       "required": true,
+       "options": [
+        {
+         "value": "sum",
+         "label": "сумма"
+        },
+        {
+         "value": "mean",
+         "label": "среднее"
+        },
+        {
+         "value": "median",
+         "label": "медиана"
+        },
+        {
+         "value": "min",
+         "label": "минимум"
+        },
+        {
+         "value": "max",
+         "label": "максимум"
+        },
+        {
+         "value": "count",
+         "label": "количество"
+        },
+        {
+         "value": "nunique",
+         "label": "различных"
+        },
+        {
+         "value": "std",
+         "label": "ст. отклонение"
+        },
+        {
+         "value": "var",
+         "label": "дисперсия"
+        },
+        {
+         "value": "first",
+         "label": "первое"
+        },
+        {
+         "value": "last",
+         "label": "последнее"
+        }
+       ]
+      },
+      {
+       "name": "as",
+       "label": "Имя результата",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.datetime",
+   "title": "Дата и время",
+   "group": "Трансформация",
+   "description": "Год, квартал, месяц, день недели… из даты",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Столбец с датой",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "parts",
+     "label": "Что выделить",
+     "kind": "multiselect",
+     "required": true,
+     "default": [
+      "year",
+      "month"
+     ],
+     "options": [
+      {
+       "value": "year",
+       "label": "год"
+      },
+      {
+       "value": "quarter",
+       "label": "квартал"
+      },
+      {
+       "value": "month",
+       "label": "месяц"
+      },
+      {
+       "value": "week",
+       "label": "неделя"
+      },
+      {
+       "value": "day",
+       "label": "день"
+      },
+      {
+       "value": "weekday",
+       "label": "день недели"
+      },
+      {
+       "value": "date",
+       "label": "дата без времени"
+      },
+      {
+       "value": "year_month",
+       "label": "год-месяц"
+      },
+      {
+       "value": "year_quarter",
+       "label": "год-квартал"
+      }
+     ]
+    },
+    {
+     "name": "dayfirst",
+     "label": "День перед месяцем (31.12.2025)",
+     "kind": "bool",
+     "required": false,
+     "default": true
+    }
+   ]
+  },
+  {
+   "type": "transform.lookup",
+   "title": "Дополнение данных",
+   "group": "Трансформация",
+   "description": "Поля из справочника по ключу (первое совпадение)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Таблица"
+    },
+    {
+     "name": "ref",
+     "label": "Справочник"
+    }
+   ],
+   "params": [
+    {
+     "name": "key",
+     "label": "Ключ в таблице",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "ref_key",
+     "label": "Ключ в справочнике",
+     "kind": "column",
+     "required": false,
+     "from_port": "ref"
+    },
+    {
+     "name": "columns",
+     "label": "Какие поля добавить",
+     "kind": "columns",
+     "required": false,
+     "from_port": "ref"
+    }
+   ]
+  },
+  {
+   "type": "transform.replace",
+   "title": "Замена",
+   "group": "Трансформация",
+   "description": "Замена значений по списку или регулярному выражению",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Столбец",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "mode",
+     "label": "Как искать",
+     "kind": "select",
+     "required": true,
+     "default": "exact",
+     "options": [
+      {
+       "value": "exact",
+       "label": "точное совпадение"
+      },
+      {
+       "value": "regex",
+       "label": "регулярное выражение"
+      }
+     ]
+    },
+    {
+     "name": "rules",
+     "label": "Правила",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "find",
+       "label": "Что",
+       "kind": "text",
+       "required": true
+      },
+      {
+       "name": "to",
+       "label": "На что",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    },
+    {
+     "name": "others_mode",
+     "label": "Остальные значения",
+     "kind": "select",
+     "required": false,
+     "default": "keep",
+     "options": [
+      {
+       "value": "keep",
+       "label": "оставить"
+      },
+      {
+       "value": "value",
+       "label": "заменить на…"
+      }
+     ]
+    },
+    {
+     "name": "others",
+     "label": "…на что",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "as",
+     "label": "Записать в новый столбец",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "transform.calculator",
+   "title": "Калькулятор",
+   "group": "Трансформация",
+   "description": "Новые поля по формулам: выручка / сотрудники, ЕСЛИ(…), ГОД(дата)…",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "fields",
+     "label": "Поля",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "name",
+       "label": "Имя",
+       "kind": "text",
+       "required": true
+      },
+      {
+       "name": "expr",
+       "label": "Выражение",
+       "kind": "expr",
+       "required": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.crosstab",
+   "title": "Кросс-таблица",
+   "group": "Трансформация",
+   "description": "Сводная: значения поля — в столбцы, в ячейках — итог",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "rows",
+     "label": "Поля строк",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "columns_field",
+     "label": "Поле столбцов",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "value",
+     "label": "Поле значений",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "func",
+     "label": "Итог",
+     "kind": "select",
+     "required": true,
+     "default": "sum",
+     "options": [
+      {
+       "value": "sum",
+       "label": "сумма"
+      },
+      {
+       "value": "mean",
+       "label": "среднее"
+      },
+      {
+       "value": "median",
+       "label": "медиана"
+      },
+      {
+       "value": "min",
+       "label": "минимум"
+      },
+      {
+       "value": "max",
+       "label": "максимум"
+      },
+      {
+       "value": "count",
+       "label": "количество"
+      },
+      {
+       "value": "nunique",
+       "label": "различных"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.union",
+   "title": "Объединение",
+   "group": "Трансформация",
+   "description": "Строки второй таблицы — под первой",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Таблица 1"
+    },
+    {
+     "name": "in2",
+     "label": "Таблица 2"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Столбцы",
+     "kind": "select",
+     "required": true,
+     "default": "all",
+     "options": [
+      {
+       "value": "all",
+       "label": "все"
+      },
+      {
+       "value": "common",
+       "label": "только общие"
+      }
+     ]
+    },
+    {
+     "name": "source",
+     "label": "Столбец «откуда строка»",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "transform.fields",
+   "title": "Параметры полей",
+   "group": "Трансформация",
+   "description": "Тип, имя, удаление столбцов",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "fields",
+     "label": "Поля",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "type",
+       "label": "Тип",
+       "kind": "select",
+       "required": false,
+       "default": "keep",
+       "options": [
+        {
+         "value": "keep",
+         "label": "как есть"
+        },
+        {
+         "value": "number",
+         "label": "число"
+        },
+        {
+         "value": "integer",
+         "label": "целое"
+        },
+        {
+         "value": "string",
+         "label": "строка"
+        },
+        {
+         "value": "date",
+         "label": "дата"
+        },
+        {
+         "value": "bool",
+         "label": "да/нет"
+        }
+       ]
+      },
+      {
+       "name": "rename",
+       "label": "Новое имя",
+       "kind": "text",
+       "required": false
+      },
+      {
+       "name": "drop",
+       "label": "Удалить",
+       "kind": "bool",
+       "required": false
+      }
+     ]
+    },
+    {
+     "name": "only_listed",
+     "label": "Оставить только перечисленные",
+     "kind": "bool",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "transform.unpivot",
+   "title": "Свёртка столбцов",
+   "group": "Трансформация",
+   "description": "Столбцы-показатели → строки «показатель — значение»",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "keep",
+     "label": "Поля-идентификаторы",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "columns",
+     "label": "Свернуть столбцы",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "name_as",
+     "label": "Имя столбца показателя",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "value_as",
+     "label": "Имя столбца значения",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "transform.window",
+   "title": "Скользящее окно",
+   "group": "Трансформация",
+   "description": "Прошлые и будущие значения в строке (лаги) — по всей таблице или внутри групп",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Столбцы",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "group_by",
+     "label": "Внутри групп (например, компания)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "order_by",
+     "label": "Порядок (например, год)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "depth",
+     "label": "Глубина (сколько прошлых)",
+     "kind": "number",
+     "required": true,
+     "default": 1
+    },
+    {
+     "name": "horizon",
+     "label": "Горизонт (сколько будущих)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    }
+   ]
+  },
+  {
+   "type": "transform.merge",
+   "title": "Слияние",
+   "group": "Трансформация",
+   "description": "Две таблицы по ключевым полям (как JOIN)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Таблица 1"
+    },
+    {
+     "name": "in2",
+     "label": "Таблица 2"
+    }
+   ],
+   "params": [
+    {
+     "name": "keys",
+     "label": "Ключевые поля",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "left",
+       "label": "В первой",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "right",
+       "label": "Во второй",
+       "kind": "column",
+       "required": false,
+       "from_port": "in2"
+      }
+     ]
+    },
+    {
+     "name": "how",
+     "label": "Способ",
+     "kind": "select",
+     "required": true,
+     "default": "inner",
+     "options": [
+      {
+       "value": "inner",
+       "label": "внутреннее"
+      },
+      {
+       "value": "left",
+       "label": "левое"
+      },
+      {
+       "value": "right",
+       "label": "правое"
+      },
+      {
+       "value": "outer",
+       "label": "полное"
+      },
+      {
+       "value": "anti",
+       "label": "разность (строки первой без пары)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.join",
+   "title": "Соединение",
+   "group": "Трансформация",
+   "description": "Столбцы второй таблицы — справа, строка к строке",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Таблица 1"
+    },
+    {
+     "name": "in2",
+     "label": "Таблица 2"
+    }
+   ],
+   "params": [
+    {
+     "name": "allow_unequal",
+     "label": "Разрешить разное число строк",
+     "kind": "bool",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "transform.sort",
+   "title": "Сортировка",
+   "group": "Трансформация",
+   "description": "Порядок строк по столбцам",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "by",
+     "label": "По столбцам",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "desc",
+       "label": "По убыванию",
+       "kind": "bool",
+       "required": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.filter",
+   "title": "Фильтр строк",
+   "group": "Трансформация",
+   "description": "Оставить строки по условиям или выражению",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "conditions",
+     "label": "Условия",
+     "kind": "rows",
+     "required": false,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "op",
+       "label": "Условие",
+       "kind": "select",
+       "required": true,
+       "default": "=",
+       "options": [
+        {
+         "value": "=",
+         "label": "равно"
+        },
+        {
+         "value": "!=",
+         "label": "не равно"
+        },
+        {
+         "value": ">",
+         "label": "больше"
+        },
+        {
+         "value": ">=",
+         "label": "не меньше"
+        },
+        {
+         "value": "<",
+         "label": "меньше"
+        },
+        {
+         "value": "<=",
+         "label": "не больше"
+        },
+        {
+         "value": "contains",
+         "label": "содержит"
+        },
+        {
+         "value": "starts",
+         "label": "начинается с"
+        },
+        {
+         "value": "empty",
+         "label": "пусто"
+        },
+        {
+         "value": "not_empty",
+         "label": "не пусто"
+        },
+        {
+         "value": "in",
+         "label": "одно из (через ;)"
+        }
+       ]
+      },
+      {
+       "name": "value",
+       "label": "Значение",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    },
+    {
+     "name": "join",
+     "label": "Условия связать",
+     "kind": "select",
+     "required": false,
+     "default": "and",
+     "options": [
+      {
+       "value": "and",
+       "label": "все выполняются (И)"
+      },
+      {
+       "value": "or",
+       "label": "хотя бы одно (ИЛИ)"
+      }
+     ]
+    },
+    {
+     "name": "expr",
+     "label": "Или выражение",
+     "kind": "expr",
+     "required": false,
+     "hint": "Например: roe > 0.1 И ГОД(дата) >= 2020"
+    },
+    {
+     "name": "invert",
+     "label": "Наоборот — убрать такие строки",
+     "kind": "bool",
+     "required": false
+    }
+   ]
+  }
+ ]
+}
