@@ -292,6 +292,10 @@ function OwnEmail() {
         На неё придёт ссылка, если нажать «Забыли пароль?» на входе.
         {current ? "" : " Сейчас почта не указана."}
       </p>
+      <p className="muted" style={{ margin: 0 }}>
+        Текущий пароль нужен, чтобы почту не подменил тот, кто сядет за ваш компьютер с открытым сайтом: иначе он
+        сбросил бы пароль через свою почту.
+      </p>
       <label className="field">
         Почта
         <input type="email" autoComplete="email" value={email ?? current} onChange={(e) => setEmail(e.target.value)} />

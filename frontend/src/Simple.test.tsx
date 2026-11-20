@@ -66,7 +66,11 @@ describe("Меню", () => {
     stub("reader");
     renderAt("/");
     const nav = await screen.findByRole("navigation", { name: "Разделы платформы" });
-    const names = within(nav).getAllByRole("link").map((a) => a.textContent);
+    // название платформы вверху — тоже ссылка (на «Обзор»), но не раздел меню
+    const names = within(nav)
+      .getAllByRole("link")
+      .filter((a) => !a.classList.contains("brand"))
+      .map((a) => a.textContent);
     expect(names).toEqual(["Обзор", "Методика", "Банк статей", "Идеи для проверки", "Проверки", "Нейросети", "Данные"]);
   });
 

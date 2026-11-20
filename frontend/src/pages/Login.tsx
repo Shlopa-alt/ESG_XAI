@@ -4,6 +4,7 @@ import { type FormEvent, type ReactNode, useState } from "react";
 import { forgotPassword } from "../api/auth";
 import { useLogin } from "../auth/useAuth";
 import { LangSwitch } from "../components/LangSwitch";
+import { SiteFooter } from "../components/SiteFooter";
 import { ORG, WITH_LAB } from "../org";
 
 function Head() {
@@ -28,6 +29,7 @@ export function LoginCard({ onSubmit, children }: { onSubmit: (e: FormEvent) => 
         <Head />
         {children}
       </form>
+      <SiteFooter />
     </div>
   );
 }
