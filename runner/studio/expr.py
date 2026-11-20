@@ -35,7 +35,13 @@ def _num(v: Value) -> Value:
 def _dt(v: Value) -> pd.Series:
     if not isinstance(v, pd.Series):
         raise ExprError("Функции даты применяются к столбцу")
-    return pd.to_datetime(v, errors="coerce")
+    if pd.api.types.is_datetime64_any_dtype(v):
+        return v
+    text = v.astype("string").str.strip()
+    # ГГГГ-ММ-ДД — как есть; остальное по-русски: день перед месяцем (31.12.2021)
+    iso = text.str.match(r"^\d{4}-\d{2}-\d{2}").fillna(False)
+    out = pd.to_datetime(text.where(iso), errors="coerce", format="ISO8601")
+    return out.fillna(pd.to_datetime(text.where(~iso), errors="coerce", dayfirst=True, format="mixed"))
 
 
 def _where(cond: Value, a: Value, b: Value, index: pd.Index) -> pd.Series:

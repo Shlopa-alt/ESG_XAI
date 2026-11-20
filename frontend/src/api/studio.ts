@@ -52,9 +52,29 @@ export interface ScenarioBrief {
   updated_at: string;
 }
 
+export interface RowsView {
+  columns: { name: string; kind: string }[];
+  rows: unknown[][];
+  total: number;
+}
+
+export interface QualityColumn {
+  name: string;
+  kind: string;
+  missing: number;
+  missing_share: number;
+  unique: number;
+  zeros?: number;
+  negative?: number;
+  outliers?: number;
+  problems: string[];
+}
+
 export interface NodeView {
-  table?: { columns: { name: string; kind: string }[]; rows: unknown[][]; total: number };
+  table?: RowsView;
   statistics?: { rows: number; columns: ColumnStats[] };
+  quality?: { rows: number; duplicate_rows: number; issues: number; columns: QualityColumn[] };
+  sample?: RowsView; // выборка для «Диаграммы» — у узла, посчитанного предпросмотром
 }
 
 export interface ColumnStats {

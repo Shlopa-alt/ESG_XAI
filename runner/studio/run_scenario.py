@@ -75,7 +75,10 @@ def main(argv: list[str] | None = None) -> int:
                                 "skipped": r.skipped}
         if r.frame is not None:
             info.update(rows=int(len(r.frame)), cols=int(r.frame.shape[1]))
-            view = {"table": stats.table(r.frame, a.rows), "statistics": stats.statistics(r.frame)}
+            view = {"table": stats.table(r.frame, a.rows), "statistics": stats.statistics(r.frame),
+                    "quality": stats.quality(r.frame)}
+            if a.until == r.node:  # предпросмотр: выборка для «Диаграммы» — только у выбранного узла
+                view["sample"] = stats.sample(r.frame)
             (out / "nodes" / f"{r.node}.json").write_text(json.dumps(view, ensure_ascii=False),
                                                           encoding="utf-8")
             if nodes[r.node]["type"] == "export.file" and not a.until:

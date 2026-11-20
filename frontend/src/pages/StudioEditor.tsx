@@ -36,6 +36,7 @@ import {
   StudioError,
   type StudioRun,
 } from "../api/studio";
+import { StudioChart, StudioQuality } from "../components/StudioCharts";
 import { StudioParams } from "../components/StudioParams";
 
 interface StepData extends Record<string, unknown> {
@@ -117,7 +118,7 @@ const newId = () => `n${Math.random().toString(36).slice(2, 8)}`;
 
 /** «Таблица» и «Статистика» результата узла. */
 function Preview({ view }: { view: NodeView }) {
-  const [tab, setTab] = useState<"table" | "stats">("table");
+  const [tab, setTab] = useState<"table" | "stats" | "quality" | "chart">("table");
   const t = view.table;
   const st = view.statistics;
   return (
@@ -129,7 +130,15 @@ function Preview({ view }: { view: NodeView }) {
         <button type="button" role="tab" aria-selected={tab === "stats"} className={tab === "stats" ? "chip active" : "chip"} onClick={() => setTab("stats")}>
           Статистика
         </button>
+        <button type="button" role="tab" aria-selected={tab === "quality"} className={tab === "quality" ? "chip active" : "chip"} onClick={() => setTab("quality")}>
+          Качество данных{view.quality?.issues ? ` (${view.quality.issues})` : ""}
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "chart"} className={tab === "chart" ? "chip active" : "chip"} onClick={() => setTab("chart")}>
+          Диаграмма
+        </button>
       </div>
+      {tab === "quality" && <StudioQuality view={view} />}
+      {tab === "chart" && <StudioChart view={view} />}
       {tab === "table" && t && (
         <div className="table-wrap">
           <p className="muted small">
@@ -541,7 +550,7 @@ export function StudioEditor() {
       {sel && selView && (
         <section className="card">
           <h2 className="h2">Результат: {sel.data.title || sel.data.comp.title}</h2>
-          <Preview view={selView} />
+          <Preview key={sel.id} view={selView} />
         </section>
       )}
     </>

@@ -1184,4 +1184,15 @@ a.scheme-box:focus-visible, button.scheme-box:focus-visible { outline: 2px solid
   .studio-add { display: inline-block; width: auto; margin: 0 4px 4px 0; }
   .studio-canvas { height: 460px; }
 }
+.studio-preview .tabs { flex-wrap: wrap; }
+.chart-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px; }
+.chart { width: 100%; max-width: 760px; height: auto; display: block; }
+.chart-axes line { stroke: #8a9a91; stroke-width: 1; }
+.chart-axes .chart-grid { stroke: var(--border); }
+.chart-axes text { font: 11px "IBM Plex Sans", sans-serif; fill: var(--text-muted); }
+.chart-axes .chart-label { font-size: 12px; fill: var(--text); }
+.chart-bar { fill: var(--accent); opacity: 0.85; }
+.chart-bar:hover { opacity: 1; }
+.chart-dot { fill: var(--accent); fill-opacity: 0.55; }
+.chart-line { fill: none; stroke: var(--accent); stroke-width: 2; }
 

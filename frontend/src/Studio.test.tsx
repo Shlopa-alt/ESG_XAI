@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ComponentSchema } from "./api/studio";
 import { App } from "./App";
+import { StudioChart, StudioQuality } from "./components/StudioCharts";
 import { StudioParams } from "./components/StudioParams";
 
 // Заглушки — не реальные данные
@@ -98,5 +99,30 @@ describe("Студия: настройки узла", () => {
     await userEvent.type(screen.getByLabelText("Поля группы"), "a, b");
     expect(seen).toHaveBeenLastCalledWith({ keys: ["a", "b"] });
     expect(screen.getByLabelText("Поля группы")).toHaveValue("a, b");
+  });
+});
+
+describe("Студия: визуализаторы", () => {
+  const view = {
+    table: { columns: [{ name: "x", kind: "number" }, { name: "y", kind: "number" }, { name: "s", kind: "string" }], rows: [[1, 2, "a"], [2, 4, "a"], [3, 7, "b"]], total: 3 },
+    statistics: { rows: 3, columns: [{ name: "x", kind: "number", count: 3, missing: 0, unique: 3, histogram: [{ from: 1, to: 2, count: 2 }, { from: 2, to: 3, count: 1 }] }] },
+    quality: { rows: 3, duplicate_rows: 1, issues: 2, columns: [{ name: "s", kind: "string", missing: 0, missing_share: 0, unique: 2, problems: ["числа записаны текстом (100%)"] }] },
+  };
+
+  it("«Качество данных» перечисляет замечания", () => {
+    wrap(<StudioQuality view={view} />);
+    expect(screen.getByText(/Замечаний: 2/)).toHaveTextContent("повторяющихся строк: 1");
+    expect(screen.getByText("числа записаны текстом (100%)")).toBeInTheDocument();
+  });
+
+  it("«Диаграмма»: гистограмма по всем строкам, точки по выборке", async () => {
+    wrap(<StudioChart view={view} />);
+    expect(screen.getByRole("img", { name: "Гистограмма «x» по всем строкам" }).querySelectorAll("rect")).toHaveLength(2);
+    await userEvent.selectOptions(screen.getByLabelText("Вид"), "scatter");
+    await userEvent.selectOptions(screen.getByLabelText("Ось Y"), "y");
+    expect(screen.getByRole("img", { name: "Точки: «x» и «y»" }).querySelectorAll("circle")).toHaveLength(3);
+    await userEvent.selectOptions(screen.getByLabelText("Вид"), "bar");
+    await userEvent.selectOptions(screen.getByLabelText("Столбец"), "s");
+    expect(screen.getByRole("img", { name: "Частота значений «s»" }).querySelectorAll("rect")).toHaveLength(2);
   });
 });

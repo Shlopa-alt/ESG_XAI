@@ -436,7 +436,7 @@ AGG_FIELDS = (Param("column", "Столбец", "column"), Param("func", "Фун
               Param("as", "Имя результата", "text", required=False))
 TRANSFORM = "Трансформация"
 
-COMPONENTS: dict[str, Component] = {c.type: c for c in [
+BASE: list[Component] = [
     Component("import.dataset", "Набор данных", "Импорт", "Версия набора данных платформы", (),
               (Param("snapshot_id", "Версия набора", "snapshot"),
                Param("sheet", "Лист", "text", required=False)), import_dataset),
@@ -541,7 +541,13 @@ COMPONENTS: dict[str, Component] = {c.type: c for c in [
                               hint="Например: roe > 0.1 И ГОД(дата) >= 2020"),
                         Param("invert", "Наоборот — убрать такие строки", "bool", required=False)),
               filter_rows),
-]}
+]
+
+# этап 2 — в своих модулях; им нужны Param и Component отсюда, поэтому импорт после них
+from studio import preprocess, research  # noqa: E402
+
+COMPONENTS: dict[str, Component] = {c.type: c for c in [*BASE, *preprocess.COMPONENTS,
+                                                         *research.COMPONENTS]}
 
 
 def catalog() -> list[dict[str, Any]]:

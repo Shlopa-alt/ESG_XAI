@@ -1011,6 +1011,786 @@
      "required": false
     }
    ]
+  },
+  {
+   "type": "preprocess.fill",
+   "title": "Заполнение пропусков",
+   "group": "Предобработка",
+   "description": "Пустые значения — средним, медианой, соседним значением, константой; или удалить строки",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "rules",
+     "label": "Правила",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "method",
+       "label": "Чем заполнить",
+       "kind": "select",
+       "required": true,
+       "default": "median",
+       "options": [
+        {
+         "value": "mean",
+         "label": "среднее"
+        },
+        {
+         "value": "median",
+         "label": "медиана"
+        },
+        {
+         "value": "mode",
+         "label": "самое частое"
+        },
+        {
+         "value": "value",
+         "label": "значение"
+        },
+        {
+         "value": "previous",
+         "label": "предыдущее"
+        },
+        {
+         "value": "next",
+         "label": "следующее"
+        },
+        {
+         "value": "interpolate",
+         "label": "линейная интерполяция"
+        },
+        {
+         "value": "drop",
+         "label": "удалить строку"
+        }
+       ]
+      },
+      {
+       "name": "value",
+       "label": "Значение (для «значение»)",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    },
+    {
+     "name": "group_by",
+     "label": "Внутри групп (например, компания)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "order_by",
+     "label": "Порядок для «предыдущее/следующее»",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    }
+   ]
+  },
+  {
+   "type": "preprocess.binning",
+   "title": "Квантование",
+   "group": "Предобработка",
+   "description": "Число — в интервалы: равной ширины, равной наполненности или по своим границам",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Столбец",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "method",
+     "label": "Интервалы",
+     "kind": "select",
+     "required": true,
+     "default": "quantile",
+     "options": [
+      {
+       "value": "quantile",
+       "label": "равной наполненности"
+      },
+      {
+       "value": "width",
+       "label": "равной ширины"
+      },
+      {
+       "value": "edges",
+       "label": "свои границы"
+      }
+     ]
+    },
+    {
+     "name": "bins",
+     "label": "Сколько интервалов",
+     "kind": "number",
+     "required": false,
+     "default": 5
+    },
+    {
+     "name": "edges",
+     "label": "Границы через «;»",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "labels",
+     "label": "Подпись",
+     "kind": "select",
+     "required": false,
+     "default": "interval",
+     "options": [
+      {
+       "value": "interval",
+       "label": "интервал (a, b]"
+      },
+      {
+       "value": "number",
+       "label": "номер 1, 2, …"
+      }
+     ]
+    },
+    {
+     "name": "as",
+     "label": "Имя нового столбца",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "preprocess.classes",
+   "title": "Конечные классы",
+   "group": "Предобработка",
+   "description": "Признак — в несколько классов по связи с целевым (да/нет); номер класса и WoE",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Признак",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "target",
+     "label": "Целевой (два значения)",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "event",
+     "label": "Значение-«событие»",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "max_classes",
+     "label": "Классов не больше",
+     "kind": "number",
+     "required": false,
+     "default": 5
+    },
+    {
+     "name": "min_share",
+     "label": "Доля строк в классе не меньше",
+     "kind": "number",
+     "required": false,
+     "default": 0.05
+    },
+    {
+     "name": "as",
+     "label": "Имя столбца класса",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "preprocess.split",
+   "title": "Разбиение на множества",
+   "group": "Предобработка",
+   "description": "Обучающее, тестовое и валидационное — столбцом «множество» (seed — повторяемо)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "test_share",
+     "label": "Доля тестового",
+     "kind": "number",
+     "required": true,
+     "default": 0.2
+    },
+    {
+     "name": "valid_share",
+     "label": "Доля валидационного",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "group",
+     "label": "Группа целиком в одно множество (например, компания)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "stratify",
+     "label": "Сохранить доли по столбцу (стратификация)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "as",
+     "label": "Имя столбца",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "preprocess.outliers",
+   "title": "Редактирование выбросов",
+   "group": "Предобработка",
+   "description": "Выбросы по IQR, z-оценке или квантилям: обрезать, сделать пустыми, удалить или отметить",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Столбцы",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "method",
+     "label": "Как найти",
+     "kind": "select",
+     "required": true,
+     "default": "iqr",
+     "options": [
+      {
+       "value": "iqr",
+       "label": "межквартильный размах (k·IQR)"
+      },
+      {
+       "value": "zscore",
+       "label": "z-оценка (k·σ)"
+      },
+      {
+       "value": "quantile",
+       "label": "квантили (k и 1−k)"
+      }
+     ]
+    },
+    {
+     "name": "k",
+     "label": "k (пусто — 1,5 / 3 / 0,01)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "action",
+     "label": "Что сделать",
+     "kind": "select",
+     "required": true,
+     "default": "clip",
+     "options": [
+      {
+       "value": "clip",
+       "label": "обрезать до границы"
+      },
+      {
+       "value": "missing",
+       "label": "сделать пустыми"
+      },
+      {
+       "value": "drop",
+       "label": "удалить строки"
+      },
+      {
+       "value": "flag",
+       "label": "отметить столбцом"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "preprocess.smooth",
+   "title": "Сглаживание",
+   "group": "Предобработка",
+   "description": "Скользящее среднее или медиана, экспоненциальное сглаживание — по ряду или внутри групп",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Столбцы",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "method",
+     "label": "Способ",
+     "kind": "select",
+     "required": true,
+     "default": "mean",
+     "options": [
+      {
+       "value": "mean",
+       "label": "скользящее среднее"
+      },
+      {
+       "value": "median",
+       "label": "скользящая медиана"
+      },
+      {
+       "value": "exp",
+       "label": "экспоненциальное"
+      }
+     ]
+    },
+    {
+     "name": "window",
+     "label": "Окно",
+     "kind": "number",
+     "required": false,
+     "default": 3
+    },
+    {
+     "name": "alpha",
+     "label": "Коэффициент (для экспоненциального)",
+     "kind": "number",
+     "required": false,
+     "default": 0.3
+    },
+    {
+     "name": "center",
+     "label": "Окно по центру",
+     "kind": "bool",
+     "required": false
+    },
+    {
+     "name": "group_by",
+     "label": "Внутри групп",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "order_by",
+     "label": "Порядок (например, год)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "replace",
+     "label": "Заменить исходные столбцы (иначе — новые рядом)",
+     "kind": "bool",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "preprocess.sample",
+   "title": "Сэмплинг",
+   "group": "Предобработка",
+   "description": "Случайная выборка строк: долей или числом, по слоям, с возвращением (бутстреп)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "method",
+     "label": "Размер",
+     "kind": "select",
+     "required": true,
+     "default": "share",
+     "options": [
+      {
+       "value": "share",
+       "label": "долей"
+      },
+      {
+       "value": "count",
+       "label": "числом строк"
+      }
+     ]
+    },
+    {
+     "name": "size",
+     "label": "Доля или число",
+     "kind": "number",
+     "required": true,
+     "default": 0.1
+    },
+    {
+     "name": "stratify",
+     "label": "По слоям (столбец)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "replace",
+     "label": "С возвращением",
+     "kind": "bool",
+     "required": false
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    }
+   ]
+  },
+  {
+   "type": "preprocess.normalize",
+   "title": "Нормализация",
+   "group": "Предобработка",
+   "description": "Непрерывные: z, 0…1, медиана/IQR, логарифм; дискретные: столбцы 0/1, номер, частота",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "rules",
+     "label": "Правила",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "method",
+       "label": "Способ",
+       "kind": "select",
+       "required": true,
+       "default": "zscore",
+       "options": [
+        {
+         "value": "zscore",
+         "label": "стандартизация (z)"
+        },
+        {
+         "value": "minmax",
+         "label": "в диапазон 0…1"
+        },
+        {
+         "value": "robust",
+         "label": "по медиане и IQR"
+        },
+        {
+         "value": "log",
+         "label": "логарифм ln(1+x)"
+        },
+        {
+         "value": "onehot",
+         "label": "дискретный: столбцы 0/1"
+        },
+        {
+         "value": "ordinal",
+         "label": "дискретный: номер значения"
+        },
+        {
+         "value": "frequency",
+         "label": "дискретный: частота значения"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "replace",
+     "label": "Заменить исходные столбцы (иначе — новые рядом)",
+     "kind": "bool",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "research.correlation",
+   "title": "Корреляционный анализ",
+   "group": "Исследование",
+   "description": "Связь числовых показателей: r, p-значение, сила — парами, с целевым или матрицей",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Показатели (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "method",
+     "label": "Коэффициент",
+     "kind": "select",
+     "required": true,
+     "default": "pearson",
+     "options": [
+      {
+       "value": "pearson",
+       "label": "Пирсон (линейная)"
+      },
+      {
+       "value": "spearman",
+       "label": "Спирмен (ранговая)"
+      },
+      {
+       "value": "kendall",
+       "label": "Кендалл (ранговая)"
+      }
+     ]
+    },
+    {
+     "name": "target",
+     "label": "Только с целевым",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "output",
+     "label": "Вид",
+     "kind": "select",
+     "required": false,
+     "default": "pairs",
+     "options": [
+      {
+       "value": "pairs",
+       "label": "парами"
+      },
+      {
+       "value": "matrix",
+       "label": "матрицей"
+      }
+     ]
+    },
+    {
+     "name": "alpha",
+     "label": "Уровень значимости",
+     "kind": "number",
+     "required": false,
+     "default": 0.05
+    }
+   ]
+  },
+  {
+   "type": "research.factor",
+   "title": "Факторный анализ",
+   "group": "Исследование",
+   "description": "Главные компоненты с вращением варимакс: нагрузки и доля дисперсии, или факторы в строки",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Показатели (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "factors",
+     "label": "Факторов (пусто — по Кайзеру)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "rotation",
+     "label": "Вращение",
+     "kind": "select",
+     "required": false,
+     "default": "varimax",
+     "options": [
+      {
+       "value": "varimax",
+       "label": "варимакс"
+      },
+      {
+       "value": "none",
+       "label": "без вращения"
+      }
+     ]
+    },
+    {
+     "name": "output",
+     "label": "Результат",
+     "kind": "select",
+     "required": false,
+     "default": "loadings",
+     "options": [
+      {
+       "value": "loadings",
+       "label": "нагрузки показателей"
+      },
+      {
+       "value": "scores",
+       "label": "строки + факторы"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "research.autocorr",
+   "title": "Автокорреляция",
+   "group": "Исследование",
+   "description": "Связь ряда с самим собой со сдвигом: автокорреляция, частная, граница значимости",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Ряд",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "order_by",
+     "label": "Порядок (например, дата)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "lags",
+     "label": "Лагов",
+     "kind": "number",
+     "required": false,
+     "default": 10
+    }
+   ]
+  },
+  {
+   "type": "research.duplicates",
+   "title": "Дубликаты и противоречия",
+   "group": "Исследование",
+   "description": "Повторы строк и противоречия: одинаковые входы при разных выходах",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "inputs",
+     "label": "Входные поля",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "outputs",
+     "label": "Выходные поля",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "output",
+     "label": "Результат",
+     "kind": "select",
+     "required": false,
+     "default": "all",
+     "options": [
+      {
+       "value": "all",
+       "label": "все строки со статусом"
+      },
+      {
+       "value": "problems",
+       "label": "только проблемные"
+      },
+      {
+       "value": "clean",
+       "label": "очищенная таблица"
+      }
+     ]
+    }
+   ]
   }
  ]
 }
