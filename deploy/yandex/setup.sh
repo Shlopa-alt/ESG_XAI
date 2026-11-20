@@ -156,6 +156,8 @@ EOF
   chmod 600 "$DEPLOY/.env"
 fi
 envget() { grep -m1 "^$1=" "$DEPLOY/.env" | cut -d= -f2-; }
+# адрес сайта для ссылки «Забыли пароль?» в письмах (SMTP_* в .env задаются вручную)
+grep -q '^PUBLIC_URL=' "$DEPLOY/.env" || { echo; echo "PUBLIC_URL=https://$SITE"; } >> "$DEPLOY/.env"
 
 cat > "$OUT/pc-env.txt" <<EOF
 # Добавьте в deploy/.env на компьютере (значения, которые там уже есть, замените этими)

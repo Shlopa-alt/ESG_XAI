@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 
 import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
@@ -15,6 +15,7 @@ import { Import } from "./pages/ImportPage";
 import { Login } from "./pages/Login";
 import { Methodology } from "./pages/MethodologyPage";
 import { Qwen } from "./pages/QwenPage";
+import { ResetPassword } from "./pages/ResetPassword";
 import { Run, RunDetail } from "./pages/RunPage";
 import { ChangePassword, Users } from "./pages/UsersPage";
 import {
@@ -28,9 +29,12 @@ const Graph = lazy(() => import("./pages/GraphPage").then((m) => ({ default: m.G
 
 export function App() {
   const { data: user, isPending, isError } = useMe();
+  const { pathname } = useLocation();
 
   if (isPending) return <p className="empty" style={{ padding: 24 }}>Загрузка…</p>;
   if (isError) return <p className="error" role="alert" style={{ padding: 24 }}>Сервер недоступен</p>;
+  // ссылка из письма «Забыли пароль?» открывается и без входа
+  if (pathname === "/reset-password") return <ResetPassword />;
   if (!user) return <Login />;
   if (user.must_change_password) return <ChangePassword forced />;
 

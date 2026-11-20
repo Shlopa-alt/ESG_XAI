@@ -9,6 +9,7 @@ from app.api.auth import UserOut
 from app.api.deps import require_role
 from app.db import get_db
 from app.models import User
+from app.services.password_reset import clean_email
 from app.services.passwords import hash_password, temporary_password
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -22,6 +23,7 @@ class UserPatch(BaseModel):
     nda_access: bool | None = None
     is_active: bool | None = None
     full_name: str | None = None
+    email: str | None = None  # почта для «Забыли пароль?»; пусто — убрать
 
 
 class UserCreate(BaseModel):
@@ -34,6 +36,13 @@ class UserCreate(BaseModel):
 
 class UserWithPassword(UserOut):
     temporary_password: str
+
+
+def _email(value: str) -> str:
+    try:
+        return clean_email(value)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
 
 def _get(db: Session, login: str) -> User:
@@ -67,7 +76,7 @@ def create_user(body: UserCreate, db: Annotated[Session, Depends(get_db)]) -> Us
     if db.scalar(select(User).where(User.login == login)):
         raise HTTPException(status.HTTP_409_CONFLICT, f"Логин {login} уже занят")
     password = temporary_password()
-    user = User(login=login, full_name=body.full_name, email=body.email, role=body.role,
+    user = User(login=login, full_name=body.full_name, email=_email(body.email), role=body.role,
                 nda_access=body.nda_access, password_hash=hash_password(password),
                 must_change_password=True, is_active=True)
     db.add(user)
@@ -102,5 +111,7 @@ def patch_user(login: str, body: UserPatch, db: Annotated[Session, Depends(get_d
         user.is_active = body.is_active
     if body.full_name is not None:
         user.full_name = body.full_name
+    if body.email is not None:
+        user.email = _email(body.email)
     db.commit()
     return user

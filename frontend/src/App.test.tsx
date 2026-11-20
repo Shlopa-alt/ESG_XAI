@@ -64,6 +64,44 @@ describe("App", () => {
     expect(screen.getByRole("img", { name: "Профиль: Иван Иванов" })).toHaveTextContent("ИИ");
   });
 
+  it("«Забыли пароль?» отправляет логин и показывает ответ сервера", async () => {
+    const sent = "Если такой пользователь есть и у него указана почта, письмо со ссылкой уже отправлено.";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json({ detail: "Требуется вход" }, 401))
+      .mockResolvedValueOnce(json({ detail: sent }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderApp();
+    await userEvent.type(await screen.findByLabelText("Логин"), "ivanov");
+    await userEvent.click(screen.getByRole("button", { name: "Забыли пароль?" }));
+    expect(screen.getByLabelText("Логин или почта")).toHaveValue("ivanov");
+    await userEvent.click(screen.getByRole("button", { name: "Прислать ссылку" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(sent);
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe("/api/auth/forgot");
+    expect(JSON.parse(init.body as string)).toEqual({ login: "ivanov" });
+    await userEvent.click(screen.getByRole("button", { name: "Вернуться ко входу" }));
+    expect(screen.getByRole("button", { name: "Войти" })).toBeInTheDocument();
+  });
+
+  it("по ссылке из письма задаёт новый пароль и входит", async () => {
+    window.location.hash = "#tok-123";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json({ detail: "Требуется вход" }, 401))
+      .mockResolvedValue(json(USER));
+    vi.stubGlobal("fetch", fetchMock);
+    renderApp("/reset-password");
+    await userEvent.type(await screen.findByLabelText("Новый пароль"), "new-pass-456");
+    await userEvent.type(screen.getByLabelText("Новый пароль ещё раз"), "new-pass-456");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить и войти" }));
+    expect(await screen.findByRole("navigation", { name: "Разделы платформы" })).toBeInTheDocument();
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe("/api/auth/reset");
+    expect(JSON.parse(init.body as string)).toEqual({ token: "tok-123", new_password: "new-pass-456" });
+    window.location.hash = "";
+  });
+
   it("открывает пустую страницу раздела", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(USER)));
     renderApp("/methodology");
