@@ -5,6 +5,7 @@ import type { User } from "../api/auth";
 import { useLogout } from "../auth/useAuth";
 import { ORG, WITH_LAB } from "../org";
 import { LangSwitch } from "./LangSwitch";
+import { SiteFooter } from "./SiteFooter";
 import { ROLE_LABEL } from "./Ux";
 
 interface NavItem {
@@ -80,7 +81,7 @@ export function Layout({ user }: { user: User }) {
   return (
     <div className={menuOpen ? "shell menu-open" : "shell"}>
       <nav className="sidebar" id="main-menu" aria-label="Разделы платформы">
-        <div className="brand">
+        <Link to="/" className="brand" title="На обзор">
           <svg
             width="32"
             height="32"
@@ -100,7 +101,7 @@ export function Layout({ user }: { user: User }) {
             <span className="brand-sub">{ORG}</span>
             <span className="brand-sub">{WITH_LAB}</span>
           </div>
-        </div>
+        </Link>
         <div className="nav">
           {links(NAV)}
           {user.role === "owner" && (
@@ -158,6 +159,7 @@ export function Layout({ user }: { user: User }) {
         <main className="content">
           <Outlet />
         </main>
+        <SiteFooter />
       </div>
     </div>
   );

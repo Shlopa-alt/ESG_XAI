@@ -1,0 +1,32 @@
+ESG Open Research — платформа открытых исследований
+
+Copyright © 2026 Федеральное государственное бюджетное образовательное учреждение высшего
+образования «Университет «Дубна»». Все права защищены.
+
+Разработано НИЦ ИИ Университета «Дубна» совместно с Лабораторией технологий ИНС для управления
+бизнесом в формате ESG.
+
+Исключительное право на программу (исходный код, интерфейс, документацию и макеты из этого
+репозитория) принадлежит правообладателю, указанному выше. Без его письменного разрешения
+запрещается воспроизводить, изменять, распространять, сдавать в аренду и иным образом
+использовать программу и её части, кроме случаев, прямо разрешённых частью четвёртой
+Гражданского кодекса Российской Федерации.
+
+Сторонние компоненты (библиотеки из frontend/package.json, backend/pyproject.toml,
+runner/*/requirements*, cli/) распространяются на условиях своих лицензий; эта лицензия на них
+не распространяется.
+
+Статьи, факты базы знаний и таблицы-наблюдения из статей — производные данные: условия их
+использования определяет источник (статья), а не эта лицензия.
+
+Вопросы об использовании — в НИЦ ИИ Университета «Дубна».
+
+---
+
+Copyright © 2026 Federal State Budgetary Educational Institution of Higher Education
+"Dubna State University". All rights reserved.
+
+Developed by the AI research center НИЦ ИИ of Dubna State University together with the
+Laboratory of Neural Network Technologies for ESG Business Management. No part of this software
+may be copied, modified or distributed without prior written permission of the copyright holder.
+Third-party components are subject to their own licenses.

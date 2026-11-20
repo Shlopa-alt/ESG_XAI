@@ -102,6 +102,14 @@ describe("App", () => {
     window.location.hash = "";
   });
 
+  it("название платформы ведёт на «Обзор», внизу — знак авторского права", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(USER)));
+    renderApp("/methodology");
+    const nav = await screen.findByRole("navigation", { name: "Разделы платформы" });
+    expect(within(nav).getByRole("link", { name: /ESG Open Research/ })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("contentinfo")).toHaveTextContent("© 2026 Университет «Дубна». Все права защищены.");
+  });
+
   it("открывает пустую страницу раздела", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(USER)));
     renderApp("/methodology");

@@ -976,6 +976,12 @@ export const EN: {
   "Почта сохранена.": "Email saved.",
   "Сейчас почта не указана.": "No email is set now.",
   "Сохранить почту": "Save email",
+  "Текущий пароль нужен, чтобы почту не подменил тот, кто сядет за ваш компьютер с открытым сайтом: иначе он сбросил бы пароль через свою почту.":
+    "Your current password is required so that someone at your unlocked computer cannot swap in their own email and reset your password.",
+  "© 2026 Университет «Дубна». Все права защищены.": "© 2026 Dubna State University. All rights reserved.",
+  "Разработано НИЦ ИИ совместно с Лабораторией технологий ИНС для управления бизнесом в формате ESG. Статьи и данные из них используются на условиях их источников.":
+    "Developed by the AI Research Center of Dubna State University together with the Laboratory of Neural Network Technologies for ESG Business Management. Articles and data from them are used under the terms of their sources.",
+  "На обзор": "To overview",
   "нет — сброс только здесь": "none — reset only here",
   "ФИО": "Full name",
   "Файл": "File",
