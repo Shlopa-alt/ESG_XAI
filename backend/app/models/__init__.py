@@ -1,3 +1,4 @@
+from app.models.api_token import ApiToken
 from app.models.data_draft import DataDraft
 from app.models.hypothesis import Hypothesis, HypothesisRef
 from app.models.kb_import import KbImport
@@ -18,6 +19,7 @@ from app.models.run import Run
 from app.models.user import User
 
 __all__ = [
+    "ApiToken",
     "ChangeRequest",
     "CrBasis",
     "DataDraft",

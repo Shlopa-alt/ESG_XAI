@@ -57,13 +57,20 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
 def record(request: Request, status_code: int) -> None:
     from app.models import User  # здесь — чтобы не было циклического импорта
+    from app.services import api_tokens
 
     settings = get_settings()
     token = request.cookies.get(settings.session_cookie_name)
     session = read_session_token(settings, token) if token else None
+    plain = api_tokens.bearer(request)
     with SessionLocal() as db:
-        user = db.get(User, session[0]) if session else None
-        login = user.login if user else ""
+        if plain is not None:
+            # запрос открытого API: кто — владелец токена, в журнале с пометкой «(API)»
+            tok = api_tokens.find(db, plain)
+            user = db.get(User, tok.user_id) if tok else None
+        else:
+            user = db.get(User, session[0]) if session else None
+        login = (user.login + (" (API)" if plain else "")) if user else ""
         if request.url.path == "/api/auth/login" and not login:
             login = "(вход)"
         db.add(AuditLog(user_id=user.id if user else None, login=login, method=request.method,

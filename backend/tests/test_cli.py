@@ -34,7 +34,7 @@ class Through(C.Api):  # type: ignore[misc,name-defined]
         self.client, self.url = client, "http://test"
 
     def request(self, method: str, path: str, body: Any = None) -> tuple[int, bytes, dict[str, str]]:
-        r = self.client.request(method, path, json=body)
+        r = self.client.request(method, path, json=body, headers=self.headers())
         return r.status_code, r.content, {k.lower(): v for k, v in r.headers.items()}
 
 
@@ -108,3 +108,23 @@ def test_params_and_no_address(tmp_path: Path, capsys: pytest.CaptureFixture[str
         C.parse_params(["без-равно"], None)
     code, _, err = _cli(C.Api(tmp_path / "empty"), "datasets", capsys=capsys)
     assert code == 1 and "esg login --url" in err
+
+
+def test_token_login_without_password(make_client, db_session: Session, tmp_path: Path,  # type: ignore[no-untyped-def]
+                                      settings: Settings, capsys: pytest.CaptureFixture[str],
+                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    """Скрипт без пароля: токен API в ESG_TOKEN; «только чтение» не запускает расчёты."""
+    from app.main import app
+
+    site = make_client("tok", "researcher")
+    token = site.post("/api/tokens", json={"name": "скрипт", "scope": "read"}).json()["token"]
+    monkeypatch.setenv("ESG_TOKEN", token)
+    api = Through(TestClient(app), tmp_path / "home")  # без cookie сессии — только токен
+    code, out, _ = _cli(api, "whoami", capsys=capsys)
+    assert code == 0 and "tok (researcher)" in out and "токен API" in out
+    code, _, err = _cli(api, "launch", "correlation-scan", "--snapshot", "1", "--experiment", "EXP-001",
+                        capsys=capsys)
+    assert code == 1 and "только для чтения" in err
+    monkeypatch.setenv("ESG_TOKEN", "esg_forged")
+    code, _, err = _cli(Through(TestClient(app), tmp_path / "home"), "datasets", capsys=capsys)
+    assert code == 1 and "Токен API не принят" in err

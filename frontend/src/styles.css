@@ -1148,3 +1148,7 @@ a.scheme-box:focus-visible, button.scheme-box:focus-visible { outline: 2px solid
 /* --- переключатель языка RU / EN --- */
 .lang-switch { min-width: 44px; font-weight: 600; letter-spacing: 0.04em; }
 .login-lang { display: flex; justify-content: flex-end; margin-bottom: -8px; }
+
+/* Доступ к API */
+.steps { margin: 0 0 12px; padding-left: 20px; line-height: 1.6; }
+.token-value { overflow-wrap: anywhere; font-size: 15px; padding: 8px 12px; background: var(--bg, #f3f5f4); border-radius: 8px; }

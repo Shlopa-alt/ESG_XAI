@@ -2,8 +2,11 @@
 
 Только стандартная библиотека Python 3.11+. Вход — тем же логином и паролем, что на сайте; пароль
 вводится в терминале и нигде не хранится, хранится только cookie сессии (~/.esg/cookies.txt).
+Или личным токеном открытого API (сайт → «Доступ к API»): переменная ESG_TOKEN либо
+esg login --token — токен хранится в ~/.esg/token, доступном только вам.
 
     esg login --url https://<адрес платформы>       войти
+    esg login --token --url https://<адрес>         войти токеном API (для скриптов и серверов)
     esg datasets                                     наборы данных
     esg dataset DS-09                                версии набора (номер версии — для download)
     esg download 12 -o data/                         файл версии данных (sha256 сверяется)
@@ -43,7 +46,7 @@ class CliError(Exception):
 
 
 class Api:
-    """Платформа: JSON и файлы по сессии (cookie), как у сайта."""
+    """Платформа: JSON и файлы по сессии (cookie), как у сайта, или по токену API."""
 
     def __init__(self, home: Path = HOME) -> None:
         self.home = home
@@ -54,6 +57,23 @@ class Api:
         if (home / "cookies.txt").is_file():
             self.jar.load(ignore_discard=True)
         self.opener = build_opener(HTTPCookieProcessor(self.jar))
+        self.token_path = home / "token"
+        saved = self.token_path.read_text(encoding="utf-8").strip() if self.token_path.is_file() else ""
+        self.token = str(os.environ.get("ESG_TOKEN") or saved).strip()
+
+    def headers(self) -> dict[str, str]:
+        h = {"Content-Type": "application/json", "User-Agent": f"esg-cli/{VERSION}"}
+        if self.token:
+            h["Authorization"] = f"Bearer {self.token}"
+        return h
+
+    def save_token(self, token: str) -> None:
+        self.home.mkdir(parents=True, exist_ok=True)
+        # файл сразу только для владельца — токен не бывает доступен другим даже на миг
+        fd = os.open(self.token_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(token)
+        self.token = token
 
     def save(self, url: str | None = None) -> None:
         self.home.mkdir(parents=True, exist_ok=True)
@@ -70,8 +90,7 @@ class Api:
         if not self.url:
             raise CliError("Адрес платформы не задан: esg login --url https://…")
         data = json.dumps(body).encode("utf-8") if body is not None else None
-        req = Request(self.url + path, data=data, method=method,
-                      headers={"Content-Type": "application/json", "User-Agent": f"esg-cli/{VERSION}"})
+        req = Request(self.url + path, data=data, method=method, headers=self.headers())
         try:
             with self.opener.open(req, timeout=300) as r:
                 return r.status, r.read(), {k.lower(): v for k, v in r.headers.items()}
@@ -80,11 +99,16 @@ class Api:
         except URLError as exc:
             raise CliError(f"Платформа недоступна: {exc.reason}") from exc
 
+    def need_login(self) -> str:
+        if self.token:
+            return "Токен API не принят (отозван или истёк): новый — на сайте, «Доступ к API»"
+        return "Нужно войти: esg login"
+
     def json(self, method: str, path: str, body: Any = None) -> Any:
         code, raw, _ = self.request(method, path, body)
         out = json.loads(raw) if raw else None
         if code == 401:
-            raise CliError("Нужно войти: esg login")
+            raise CliError(self.need_login())
         if code >= 400:
             detail = out.get("detail") if isinstance(out, dict) else None
             raise CliError(f"Платформа ответила {code}: {detail if isinstance(detail, str) else raw[:300]!r}")
@@ -93,7 +117,7 @@ class Api:
     def file(self, path: str) -> tuple[bytes, dict[str, str]]:
         code, raw, headers = self.request("GET", path)
         if code == 401:
-            raise CliError("Нужно войти: esg login")
+            raise CliError(self.need_login())
         if code >= 400:
             try:
                 detail = json.loads(raw).get("detail")
@@ -137,6 +161,12 @@ def cmd_login(api: Api, a: argparse.Namespace) -> str:
     if not url:
         raise CliError("Укажите адрес платформы: esg login --url https://…")
     api.url = url.rstrip("/")
+    if a.token:
+        api.token = getpass.getpass("Токен API (esg_…): ").strip()
+        user = api.json("GET", "/api/auth/me")
+        api.save_token(api.token)
+        api.save(url)
+        return f"Токен принят: {user.get('login')} ({user.get('role')}) на {api.url}"
     login = a.login or input("Логин: ").strip()
     password = getpass.getpass("Пароль: ")
     user = api.json("POST", "/api/auth/login", {"login": login, "password": password})
@@ -145,6 +175,10 @@ def cmd_login(api: Api, a: argparse.Namespace) -> str:
 
 
 def cmd_logout(api: Api, a: argparse.Namespace) -> str:
+    if api.token_path.is_file():
+        api.token_path.unlink()  # токен на сайте не отзывается — только забывается здесь
+        api.token = ""
+        return "Токен забыт на этом компьютере (отозвать его — на сайте, «Доступ к API»)"
     api.request("POST", "/api/auth/logout")
     api.jar.clear()
     api.save()
@@ -153,7 +187,8 @@ def cmd_logout(api: Api, a: argparse.Namespace) -> str:
 
 def cmd_whoami(api: Api, a: argparse.Namespace) -> str:
     u = api.json("GET", "/api/auth/me")
-    return f"{u.get('login')} ({u.get('role')}) на {api.url}"
+    how = " — токен API" if api.token else ""
+    return f"{u.get('login')} ({u.get('role')}) на {api.url}{how}"
 
 
 def cmd_datasets(api: Api, a: argparse.Namespace) -> str:
@@ -265,6 +300,7 @@ def parser() -> argparse.ArgumentParser:
     p = sub.add_parser("login", help="войти")
     p.add_argument("--url")
     p.add_argument("--login")
+    p.add_argument("--token", action="store_true", help="войти личным токеном API вместо пароля")
     p.set_defaults(fn=cmd_login)
     sub.add_parser("logout", help="выйти").set_defaults(fn=cmd_logout)
     sub.add_parser("whoami", help="кто вошёл").set_defaults(fn=cmd_whoami)

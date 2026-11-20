@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.auth import UserOut
 from app.api.deps import require_role
+from app.api.tokens import revoke_all
 from app.db import get_db
 from app.models import User
 from app.services.password_reset import clean_email
@@ -88,11 +89,12 @@ def create_user(body: UserCreate, db: Annotated[Session, Depends(get_db)]) -> Us
 @router.post("/{login}/reset-password", response_model=UserWithPassword,
              dependencies=[OwnerOnly])
 def reset_password(login: str, db: Annotated[Session, Depends(get_db)]) -> UserWithPassword:
-    """Новый временный пароль; все сессии пользователя перестают действовать."""
+    """Новый временный пароль; все сессии и токены API пользователя перестают действовать."""
     user = _get(db, login)
     password = temporary_password()
     user.password_hash = hash_password(password)
     user.must_change_password = True
+    revoke_all(db, user.id)
     db.commit()
     return UserWithPassword(**UserOut.model_validate(user).model_dump(),
                             temporary_password=password)
