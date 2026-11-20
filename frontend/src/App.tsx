@@ -10,6 +10,7 @@ import { Nets } from "./pages/NetsPage";
 import { Article } from "./pages/ArticlePage";
 import { DataDraftPage, DataDrafts } from "./pages/DataDraftsPage";
 import { DatasetPage } from "./pages/DatasetPage";
+import { DbConnections } from "./pages/DbConnectionsPage";
 import { Experiment, Experiments } from "./pages/ExperimentPages";
 import { Hypotheses } from "./pages/HypothesesPage";
 import { Import } from "./pages/ImportPage";
@@ -70,6 +71,7 @@ export function App() {
         <Route path="studio/:code" element={<Suspense fallback={<p className="muted">Загрузка Студии…</p>}><StudioEditor /></Suspense>} />
         {user.role === "owner" && <Route path="users" element={<Users />} />}
         {user.role === "owner" && <Route path="qwen" element={<Qwen />} />}
+        {user.role === "owner" && <Route path="db-connections" element={<DbConnections />} />}
         <Route path="*" element={<Overview />} />
       </Route>
     </Routes>

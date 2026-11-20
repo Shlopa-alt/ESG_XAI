@@ -13,7 +13,7 @@ from typing import Any
 
 import pandas as pd
 
-from studio.components import Component, NodeError, Param
+from studio.base import Component, NodeError, Param
 from studio.expr import ExprError, column, evaluate
 
 Frame = pd.DataFrame

@@ -1014,6 +1014,79 @@
    ]
   },
   {
+   "type": "import.database",
+   "title": "База данных",
+   "group": "Импорт",
+   "description": "Таблица из внешней базы (PostgreSQL, MySQL, MS SQL, ClickHouse) по запросу SELECT",
+   "inputs": [],
+   "params": [
+    {
+     "name": "connection",
+     "label": "Подключение",
+     "kind": "connection",
+     "required": true
+    },
+    {
+     "name": "query",
+     "label": "Запрос (SELECT … или WITH …)",
+     "kind": "sql",
+     "required": true,
+     "default": "SELECT * FROM таблица LIMIT 1000"
+    },
+    {
+     "name": "max_rows",
+     "label": "Строк не больше",
+     "kind": "number",
+     "required": false,
+     "default": 1000000
+    }
+   ],
+   "loads": true
+  },
+  {
+   "type": "export.database",
+   "title": "База данных",
+   "group": "Экспорт",
+   "description": "Записать таблицу во внешнюю базу: дописать или заменить (если владелец разрешил запись)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "connection",
+     "label": "Подключение",
+     "kind": "connection",
+     "required": true
+    },
+    {
+     "name": "table",
+     "label": "Таблица (схема.таблица)",
+     "kind": "text",
+     "required": true
+    },
+    {
+     "name": "mode",
+     "label": "Как записать",
+     "kind": "select",
+     "required": true,
+     "default": "append",
+     "options": [
+      {
+       "value": "append",
+       "label": "дописать строки"
+      },
+      {
+       "value": "replace",
+       "label": "заменить таблицу"
+      }
+     ]
+    }
+   ]
+  },
+  {
    "type": "preprocess.fill",
    "title": "Заполнение пропусков",
    "group": "Предобработка",

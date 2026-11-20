@@ -55,6 +55,23 @@ estimate = api.post(f"{BASE}/runs/estimate", json={
 Командная строка `esg` (`cli/README.md`): `esg login --token --url https://<адрес>` или
 переменная `ESG_TOKEN` — дальше все команды (`esg datasets`, `esg launch …`) идут по токену.
 
+## Сценарии Студии как веб-сервисы
+
+Сценарий Студии, опубликованный автором («Опубликовать как веб-сервис»), считается по вызову:
+данные вызова — во «Входы подмодели» сценария, ответ — таблица его «Выхода подмодели».
+
+```python
+r = api.post(f"{BASE}/studio/services/SC-07/run",
+             json={"inputs": {"in": [{"компания": "A", "roe": 0.12}]}, "wait": 30}).json()
+if r["status"] == "done":
+    rows = r["output"]["rows"]          # столбцы — r["output"]["columns"]
+else:                                   # не успел за wait секунд — спросить позже
+    r = api.get(f"{BASE}/studio/services/runs/{r['run_id']}").json()
+```
+
+Нужен токен «чтение и запуск»; одновременно — до 3 вызовов на человека, данные — до 5 МБ, ответ —
+до 100 000 строк. Подробно — `docs/STUDIO.md`.
+
 ## Ответы и ошибки
 
 JSON; ошибка — код HTTP и `{"detail": "текст по-русски"}`:

@@ -228,9 +228,9 @@ def flatten(data: Any, prefix: str = "") -> dict[str, float]:
 
 
 def run_script(argv: list[str], cwd: Path, ev: Events, tracker: Tracker, limit_s: int,
-               log_file: Path) -> tuple[int, str]:
+               log_file: Path, extra_env: dict[str, str] | None = None) -> tuple[int, str]:
     """Скрипт до конца, остановки или лимита: (код выхода, причина остановки или "")."""
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1",
+    env = {**os.environ, **(extra_env or {}), "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1",
            # общие модули библиотеки (common, protocol) видны и методу, лежащему вне runner/ (method.py)
            "PYTHONPATH": os.pathsep.join(p for p in (str(cwd), os.environ.get("PYTHONPATH", "")) if p)}
     proc = subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -382,6 +382,20 @@ def execute(job: dict[str, Any]) -> str:
 STUDIO = "/api/studio/worker"
 
 
+def studio_connections(run_id: int) -> dict[str, Any]:
+    """Реквизиты подключений к базам этого расчёта — от платформы, только пока расчёт идёт."""
+    req = Request(f"{PLATFORM_URL}{STUDIO}/{run_id}/connections", headers={"X-Runner-Token": RUNNER_TOKEN})
+    try:
+        with urlopen(req, timeout=60) as r:
+            data = json.loads(r.read())
+    except HTTPError as exc:
+        raise Failure(f"Платформа не выдала подключения к базам ({exc.code}): "
+                      f"{platform_error(exc.read()[:2000].decode('utf-8', 'replace'))}") from exc
+    except URLError as exc:
+        raise Failure(f"Платформа недоступна: {exc.reason}") from exc
+    return data if isinstance(data, dict) else {}
+
+
 @app.task(name="runner.studio")
 def studio(job: dict[str, Any]) -> str:
     """Расчёт сценария Студии (runner/studio/run_scenario.py): входы сверяются по sha256, как срезы
@@ -415,6 +429,10 @@ def studio(job: dict[str, Any]) -> str:
                 raise Failure(f"Узел {node}: файл данных изменился (sha256 {actual[:12]}… ≠ "
                               f"{src['sha256'][:12]}…) — нужна новая версия набора")
             inputs[node] = {"path": str(path), "sheet": src.get("sheet") or ""}
+        # пароли — только в окружение процесса расчёта, не в файлы результатов
+        extra_env = {}
+        if job.get("connections"):
+            extra_env["STUDIO_CONNECTIONS"] = json.dumps(studio_connections(run_id), ensure_ascii=False)
         (results / "scenario.json").write_text(json.dumps(job["graph"], ensure_ascii=False), encoding="utf-8")
         (results / "inputs.json").write_text(json.dumps(inputs, ensure_ascii=False), encoding="utf-8")
         argv = [RUN_PYTHON, "-u", "-B", "studio/run_scenario.py", str(results),
@@ -422,8 +440,13 @@ def studio(job: dict[str, Any]) -> str:
                 "--rows", str(int(job.get("rows") or 50))]
         if preview:
             argv += ["--until", str(job["until"])]
+        if job.get("inject") is not None:  # веб-сервис: данные вызова — во «Входы подмодели»
+            (results / "inject.json").write_text(json.dumps(job["inject"], ensure_ascii=False), encoding="utf-8")
+            argv += ["--inject", str(results / "inject.json")]
+        if job.get("output"):
+            argv.append("--output")
         code, reason = run_script(argv, REPO / "runner", ev, Tracker(ev), int(job["limit_min"]) * 60,
-                                  results / "worker.log")
+                                  results / "worker.log", extra_env)
         if reason == "stopped":
             raise Failure("Остановлен по запросу", "stopped")
         if reason == "limit":
@@ -439,6 +462,8 @@ def studio(job: dict[str, Any]) -> str:
         err = summary.get("error") or {}
         message = (err.get("message") or "") if err else (
             f"С ошибкой узлов: {len(failed)}" if failed else "")
+        if (results / "output.json").is_file():
+            views["__output__"] = json.loads((results / "output.json").read_text(encoding="utf-8"))
         body = {"status": "done" if code == 0 else "failed", "message": message,
                 "summary": summary, "views": views, "files": summary.get("files") or [],
                 "results_path": "" if preview else to_host(str(results)),

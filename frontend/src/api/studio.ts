@@ -17,7 +17,9 @@ export interface ParamSchema {
     | "node"
     | "nodes"
     | "scenario"
-    | "code";
+    | "code"
+    | "connection"
+    | "sql";
   required: boolean;
   default?: unknown;
   options?: { value: string; label: string }[];
@@ -65,6 +67,7 @@ export interface ScenarioBrief {
   author: string;
   nodes: number;
   updated_at: string;
+  published_version?: number | null; // опубликованная как веб-сервис версия
 }
 
 export interface RowsView {
@@ -209,4 +212,38 @@ export const approvePython = (code: string, node: string) =>
     method: "POST",
     body: JSON.stringify({ node }),
   });
+export interface DbConnection {
+  code: string;
+  title: string;
+  kind: "postgresql" | "mysql" | "mssql" | "clickhouse";
+  host: string;
+  port: number | null;
+  database: string;
+  username: string;
+  has_password: boolean;
+  allow_write: boolean;
+}
+
+export type DbConnectionIn = Omit<DbConnection, "code" | "has_password"> & { password: string | null };
+
+export const DB_KINDS: { value: DbConnection["kind"]; label: string; port: number }[] = [
+  { value: "postgresql", label: "PostgreSQL", port: 5432 },
+  { value: "mysql", label: "MySQL / MariaDB", port: 3306 },
+  { value: "mssql", label: "MS SQL Server", port: 1433 },
+  { value: "clickhouse", label: "ClickHouse", port: 8123 },
+];
+
+export const listConnections = () => call<DbConnection[]>("/connections");
+export const createConnection = (c: DbConnectionIn) =>
+  call<DbConnection>("/connections", { method: "POST", body: JSON.stringify(c) });
+export const updateConnection = (code: string, c: DbConnectionIn) =>
+  call<DbConnection>(`/connections/${encodeURIComponent(code)}`, { method: "PUT", body: JSON.stringify(c) });
+export async function deleteConnection(code: string): Promise<void> {
+  const res = await fetch(`/api/studio/connections/${encodeURIComponent(code)}`, { method: "DELETE", credentials: "same-origin" });
+  if (!res.ok) throw new StudioError(res.statusText, res.status);
+}
+export const publishScenario = (code: string) =>
+  call<ScenarioBrief>(`/scenarios/${encodeURIComponent(code)}/publish`, { method: "POST", body: "{}" });
+export const unpublishScenario = (code: string) =>
+  call<ScenarioBrief>(`/scenarios/${encodeURIComponent(code)}/publish`, { method: "DELETE" });
 export const fileUrl = (id: number, name: string) => `/api/studio/runs/${id}/files/${encodeURIComponent(name)}`;

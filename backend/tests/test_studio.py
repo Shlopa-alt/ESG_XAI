@@ -207,3 +207,82 @@ def test_reference_cycle_is_not_saved(make_client) -> None:  # type: ignore[no-u
                                 {"id": "b", "type": "control.ref", "params": {"node": "a"}}], "edges": []}
     r = c.put("/api/studio/scenarios/SC-01", json={"version": 1, "graph": g})
     assert r.status_code == 422 and "цикл" in r.json()["detail"]["message"]
+
+
+CONN = {"title": "[учётная база]", "kind": "postgresql", "host": "[хост]", "port": 5432, "database": "[база]",
+        "username": "[читатель]", "password": "[пароль-заглушка]"}
+
+
+def test_connections_keep_password_secret(make_client, db_session: Session, settings: Settings) -> None:  # type: ignore[no-untyped-def]
+    from app.models import DbConnection
+    from app.services import secrets as sec
+
+    boss = make_client("boss", "owner")
+    researcher = make_client("ivanov", "researcher")
+    assert researcher.post("/api/studio/connections", json=CONN).status_code == 403
+    created = boss.post("/api/studio/connections", json=CONN)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["code"] == "DB-01" and body["has_password"] and "password" not in body
+    row = db_session.query(DbConnection).one()
+    assert "[пароль-заглушка]" not in row.password_enc and sec.decrypt(settings, row.password_enc) == "[пароль-заглушка]"
+    listed = researcher.get("/api/studio/connections").json()
+    assert listed[0]["code"] == "DB-01" and "[пароль-заглушка]" not in str(listed)
+    upd = boss.put("/api/studio/connections/DB-01", json={**CONN, "password": None, "allow_write": True}).json()
+    assert upd["allow_write"] and sec.decrypt(settings, db_session.query(DbConnection).one().password_enc) == "[пароль-заглушка]"
+    assert boss.delete("/api/studio/connections/DB-01").status_code == 204
+
+
+def test_database_nodes_and_runner_credentials(make_client, db_session: Session, queue: list) -> None:  # type: ignore[no-untyped-def,type-arg]
+    boss = make_client("boss", "owner")
+    boss.post("/api/studio/connections", json=CONN)
+    c = make_client("ivanov", "researcher")
+    c.post("/api/studio/scenarios", json={"title": "база"})
+    graph = {"format": 1, "nodes": [
+        {"id": "q", "type": "import.database", "params": {"connection": "DB-01", "query": "SELECT 1"}},
+        {"id": "w", "type": "export.database", "params": {"connection": "DB-01", "table": "t"}}],
+        "edges": [{"from": "q", "to": "w", "port": "in"}]}
+    _save(c, "SC-01", graph)
+    denied = c.post("/api/studio/scenarios/SC-01/run", json={})
+    assert denied.status_code == 403 and "запись не разрешена" in denied.json()["detail"]["message"]
+    r = c.post("/api/studio/scenarios/SC-01/run", json={"until": "q"})  # только чтение — можно
+    assert r.status_code == 201, r.text
+    run = r.json()
+    assert run["inputs"]["q"]["connection"] == "DB-01" and queue[-1]["connections"] == ["DB-01"]
+    assert "[пароль-заглушка]" not in str(queue[-1]) and "[пароль-заглушка]" not in str(run)
+    w = TestClient(app)
+    assert w.get(f"/api/studio/worker/{run['id']}/connections").status_code == 403  # без токена
+    creds = w.get(f"/api/studio/worker/{run['id']}/connections", headers=TOKEN).json()
+    assert creds["DB-01"]["password"] == "[пароль-заглушка]" and creds["DB-01"]["kind"] == "postgresql"
+    w.post(f"/api/studio/worker/{run['id']}", headers=TOKEN, json={"status": "done"})
+    assert w.get(f"/api/studio/worker/{run['id']}/connections", headers=TOKEN).status_code == 409  # расчёт закончен
+
+
+def test_publish_and_call_web_service(make_client, db_session: Session, queue: list) -> None:  # type: ignore[no-untyped-def,type-arg]
+    c = make_client("ivanov", "researcher")
+    c.post("/api/studio/scenarios", json={"title": "сервис"})
+    _save(c, "SC-01", {"format": 1, "nodes": [{"id": "i", "type": "control.input", "params": {"port": "in"}}],
+                       "edges": []})
+    no_out = c.post("/api/studio/scenarios/SC-01/publish", json={})
+    assert no_out.status_code == 422 and "Выход подмодели" in no_out.json()["detail"]
+    _save(c, "SC-01", {"format": 1, "nodes": [{"id": "i", "type": "control.input", "params": {"port": "in"}},
+                                              {"id": "o", "type": "control.output", "params": {}}],
+                       "edges": [{"from": "i", "to": "o", "port": "in"}]})
+    assert c.post("/api/services/x", json={}).status_code == 404
+    assert c.post("/api/studio/services/SC-01/run", json={}).status_code == 404  # не опубликован
+    pub = c.post("/api/studio/scenarios/SC-01/publish", json={}).json()
+    assert pub["published_version"] == 3
+    rows = [{"a": 1}, {"a": 2}]
+    call = c.post("/api/studio/services/SC-01/run", json={"inputs": {"in": rows}, "wait": 0})
+    assert call.status_code == 200, call.text
+    got = call.json()
+    assert got["status"] == "queued" and got["output"] is None
+    assert queue[-1]["inject"] == {"in": rows} and queue[-1]["output"] is True and queue[-1]["version"] == 3
+    out = {"columns": ["a"], "rows": [[1], [2]], "total": 2}
+    TestClient(app).post(f"/api/studio/worker/{got['run_id']}", headers=TOKEN,
+                         json={"status": "done", "views": {"__output__": out}})
+    assert c.get(f"/api/studio/services/runs/{got['run_id']}").json()["output"] == out
+    assert c.post("/api/studio/services/SC-01/run", json={"inputs": {"x": []}, "wait": 0}).status_code == 422
+    c.delete("/api/studio/scenarios/SC-01/publish")
+    assert c.post("/api/studio/services/SC-01/run", json={"wait": 0}).status_code == 404
+

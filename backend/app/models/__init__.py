@@ -16,7 +16,7 @@ from app.models.research import (
     Review,
 )
 from app.models.run import Run
-from app.models.studio import Scenario, ScenarioVersion, StudioRun
+from app.models.studio import DbConnection, Scenario, ScenarioVersion, StudioRun
 from app.models.user import User
 
 __all__ = [
@@ -24,6 +24,7 @@ __all__ = [
     "ChangeRequest",
     "CrBasis",
     "DataDraft",
+    "DbConnection",
     "Dataset",
     "DatasetSnapshot",
     "Experiment",

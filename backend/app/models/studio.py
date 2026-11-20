@@ -11,7 +11,7 @@ until: только узел и то, от чего он зависит. В ра
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -33,6 +33,10 @@ class Scenario(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # sha256 кода узлов «Python», которые одобрил владелец платформы (код поменяли — снова одобрять)
     approved_python: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # опубликованная как веб-сервис версия (POST /api/v1/studio/services/SC-NN/run); пусто — нет
+    published_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
 class ScenarioVersion(Base):
@@ -68,3 +72,29 @@ class StudioRun(Base):
     runner_commit: Mapped[str] = mapped_column(String(64), default="")
     env_lock_sha256: Mapped[str] = mapped_column(String(64), default="")
     python: Mapped[str] = mapped_column(String(32), default="")
+
+
+DB_KINDS = ("postgresql", "mysql", "mssql", "clickhouse")
+
+
+class DbConnection(Base):
+    """Подключение к внешней базе (DB-NN): заводит владелец платформы, пароль — шифротекстом
+    (app/services/secrets.py). Узлы «База данных» Студии выбирают его по коду; реквизиты
+    исполнитель получает только на время расчёта."""
+
+    __tablename__ = "db_connections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(256))
+    kind: Mapped[str] = mapped_column(String(16))
+    host: Mapped[str] = mapped_column(String(256), default="")
+    port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    database: Mapped[str] = mapped_column(String(256), default="")
+    username: Mapped[str] = mapped_column(String(256), default="")
+    password_enc: Mapped[str] = mapped_column(Text, default="")
+    allow_write: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
