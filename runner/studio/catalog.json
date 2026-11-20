@@ -20,7 +20,8 @@
      "kind": "text",
      "required": false
     }
-   ]
+   ],
+   "loads": true
   },
   {
    "type": "export.file",
@@ -2356,6 +2357,409 @@
      "kind": "number",
      "required": false,
      "default": 0
+    }
+   ]
+  },
+  {
+   "type": "control.condition",
+   "title": "Условие",
+   "group": "Управление",
+   "description": "Ветка идёт дальше, только если условие выполнено: $СТРОК > 0, $год >= 2020…",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "expr",
+     "label": "Условие",
+     "kind": "expr",
+     "required": true,
+     "hint": "Например: $СТРОК > 10 И $год >= 2020"
+    },
+    {
+     "name": "otherwise",
+     "label": "Если не выполнено",
+     "kind": "select",
+     "required": false,
+     "default": "empty",
+     "options": [
+      {
+       "value": "empty",
+       "label": "дальше — пустая таблица"
+      },
+      {
+       "value": "stop",
+       "label": "остановить ветку с ошибкой"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "control.ref",
+   "title": "Узел-ссылка",
+   "group": "Управление",
+   "description": "Результат другого узла — без линии через всю схему",
+   "inputs": [],
+   "params": [
+    {
+     "name": "node",
+     "label": "Узел",
+     "kind": "node",
+     "required": true
+    }
+   ],
+   "dep_params": [
+    "node"
+   ]
+  },
+  {
+   "type": "control.exec",
+   "title": "Выполнение узла",
+   "group": "Управление",
+   "description": "Таблица идёт дальше только после того, как посчитаны указанные узлы",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "after",
+     "label": "После узлов",
+     "kind": "nodes",
+     "required": true
+    }
+   ],
+   "dep_params": [
+    "after"
+   ]
+  },
+  {
+   "type": "control.input",
+   "title": "Вход подмодели",
+   "group": "Управление",
+   "description": "Сюда подмодель получает данные; свой вход — пробные данные для отладки",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Пробные данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "port",
+     "label": "Какой вход подмодели",
+     "kind": "select",
+     "required": false,
+     "default": "in",
+     "options": [
+      {
+       "value": "in",
+       "label": "первый"
+      },
+      {
+       "value": "in2",
+       "label": "второй"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "control.output",
+   "title": "Выход подмодели",
+   "group": "Управление",
+   "description": "Отсюда подмодель отдаёт результат",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": []
+  },
+  {
+   "type": "control.submodel",
+   "title": "Подмодель",
+   "group": "Управление",
+   "description": "Другой сценарий как один узел: данные — в его «Вход подмодели», результат — из «Выхода»",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход 1",
+     "optional": true
+    },
+    {
+     "name": "in2",
+     "label": "Вход 2",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "scenario",
+     "label": "Сценарий",
+     "kind": "scenario",
+     "required": true
+    },
+    {
+     "name": "version",
+     "label": "Версия (пусто — текущая на момент запуска)",
+     "kind": "number",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "control.loop",
+   "title": "Цикл",
+   "group": "Управление",
+   "description": "Подмодель — для каждого значения столбца (например, каждой отрасли), итог — одной таблицей",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Данные"
+    },
+    {
+     "name": "in2",
+     "label": "Вход 2 (общий)",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "scenario",
+     "label": "Сценарий-подмодель",
+     "kind": "scenario",
+     "required": true
+    },
+    {
+     "name": "version",
+     "label": "Версия (пусто — текущая)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "by",
+     "label": "Для каждого значения столбца",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "as",
+     "label": "Имя столбца значения",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "vars.from_table",
+   "title": "Таблица в переменные",
+   "group": "Переменные",
+   "description": "Значения строки таблицы — в переменные $столбец; таблица идёт дальше как есть",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "row",
+     "label": "Номер строки",
+     "kind": "number",
+     "required": false,
+     "default": 1
+    },
+    {
+     "name": "columns",
+     "label": "Столбцы (пусто — все)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    }
+   ]
+  },
+  {
+   "type": "vars.to_table",
+   "title": "Переменные в таблицу",
+   "group": "Переменные",
+   "description": "Все видимые переменные — таблицей «имя — значение»",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход",
+     "optional": true
+    }
+   ],
+   "params": []
+  },
+  {
+   "type": "vars.calc",
+   "title": "Калькулятор (переменные)",
+   "group": "Переменные",
+   "description": "Новые переменные по формулам из других: $год - 1",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "fields",
+     "label": "Переменные",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "name",
+       "label": "Имя",
+       "kind": "text",
+       "required": true
+      },
+      {
+       "name": "expr",
+       "label": "Выражение",
+       "kind": "expr",
+       "required": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "vars.replace",
+   "title": "Замена (переменные)",
+   "group": "Переменные",
+   "description": "Значение переменной по списку замен",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "variable",
+     "label": "Переменная",
+     "kind": "text",
+     "required": true
+    },
+    {
+     "name": "rules",
+     "label": "Правила",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "find",
+       "label": "Что",
+       "kind": "text",
+       "required": true
+      },
+      {
+       "name": "to",
+       "label": "На что",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    },
+    {
+     "name": "others_mode",
+     "label": "Остальные значения",
+     "kind": "select",
+     "required": false,
+     "default": "keep",
+     "options": [
+      {
+       "value": "keep",
+       "label": "оставить"
+      },
+      {
+       "value": "value",
+       "label": "заменить на…"
+      }
+     ]
+    },
+    {
+     "name": "others",
+     "label": "…на что",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "vars.join",
+   "title": "Соединение (переменные)",
+   "group": "Переменные",
+   "description": "Переменные двух ветвей вместе; таблица — с первого входа",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход 1"
+    },
+    {
+     "name": "in2",
+     "label": "Вход 2"
+    }
+   ],
+   "params": [
+    {
+     "name": "prefer",
+     "label": "При совпадении имён",
+     "kind": "select",
+     "required": false,
+     "default": "second",
+     "options": [
+      {
+       "value": "second",
+       "label": "важнее второй вход"
+      },
+      {
+       "value": "first",
+       "label": "важнее первый вход"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "code.python",
+   "title": "Python",
+   "group": "Программирование",
+   "description": "Свой код на pandas / numpy / scipy / sklearn: df, df2, vars → out. Код одобряет владелец платформы",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "df",
+     "optional": true
+    },
+    {
+     "name": "in2",
+     "label": "df2",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "code",
+     "label": "Код",
+     "kind": "code",
+     "required": true,
+     "default": "out = df.copy()\n# out['новое'] = out['a'] / out['b']\n"
     }
    ]
   }

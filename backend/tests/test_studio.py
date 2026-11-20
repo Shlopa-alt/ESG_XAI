@@ -146,3 +146,64 @@ def test_stop_and_orphans(make_client, db_session: Session, queue: list) -> None
     w.post(f"/api/studio/worker/{running}", headers=TOKEN, json={"status": "running"})
     assert w.post("/api/studio/worker/orphans", headers=TOKEN).json() == {"failed": 1}
     assert c.get(f"/api/studio/runs/{running}").json()["status"] == "failed"
+
+
+def _save(c: TestClient, code: str, graph: dict[str, Any]) -> None:
+    version = c.get(f"/api/studio/scenarios/{code}").json()["version"]
+    r = c.put(f"/api/studio/scenarios/{code}", json={"version": version, "graph": graph})
+    assert r.status_code == 200, r.text
+
+
+def test_submodel_is_embedded_with_its_inputs(make_client, db_session: Session, queue: list) -> None:  # type: ignore[no-untyped-def,type-arg]
+    c = make_client("ivanov", "researcher")
+    sid = _snap(db_session)
+    c.post("/api/studio/scenarios", json={"title": "подмодель"})
+    c.post("/api/studio/scenarios", json={"title": "главный"})
+    _save(c, "SC-01", {"format": 1, "nodes": [
+        {"id": "d", "type": "import.dataset", "params": {"snapshot_id": sid}},
+        {"id": "o", "type": "control.output", "params": {}}], "edges": [{"from": "d", "to": "o", "port": "in"}]})
+    _save(c, "SC-02", {"format": 1, "nodes": [
+        {"id": "sub", "type": "control.submodel", "params": {"scenario": "sc-01"}}], "edges": []})
+    r = c.post("/api/studio/scenarios/SC-02/run", json={})
+    assert r.status_code == 201, r.text
+    job = queue[-1]
+    inner = job["graph"]["nodes"][0]["params"]["__graph__"]
+    assert [n["id"] for n in inner["nodes"]] == ["d", "o"]
+    assert set(job["inputs"]) == {"sub/d"}
+    assert r.json()["inputs"]["sub#подмодель"] == {"scenario": "SC-01", "version": 2}
+    _save(c, "SC-01", {"format": 1, "nodes": [
+        {"id": "me", "type": "control.submodel", "params": {"scenario": "SC-01"}}], "edges": []})
+    loop = c.post("/api/studio/scenarios/SC-01/run", json={})
+    assert loop.status_code == 422 and "сама себя" in loop.json()["detail"]["message"]
+
+
+def test_python_code_needs_owner_approval(make_client, db_session: Session, queue: list) -> None:  # type: ignore[no-untyped-def,type-arg]
+    author = make_client("ivanov", "researcher")
+    boss = make_client("boss", "owner")
+    author.post("/api/studio/scenarios", json={"title": "код"})
+    good = {"format": 1, "nodes": [{"id": "py", "type": "code.python", "params": {"code": "out = df"}}], "edges": []}
+    _save(author, "SC-01", good)
+    state = author.get("/api/studio/scenarios/SC-01").json()["python"]
+    assert state == {"py": {"problems": [], "approved": False}}
+    denied = author.post("/api/studio/scenarios/SC-01/run", json={})
+    assert denied.status_code == 403 and "не одобрен" in denied.json()["detail"]["message"]
+    assert author.post("/api/studio/scenarios/SC-01/approve-python", json={"node": "py"}).status_code == 403
+    assert boss.post("/api/studio/scenarios/SC-01/approve-python", json={"node": "py"}).status_code == 200
+    assert author.post("/api/studio/scenarios/SC-01/run", json={}).status_code == 201
+    changed = {**good, "nodes": [{"id": "py", "type": "code.python", "params": {"code": "out = df.head()"}}]}
+    _save(author, "SC-01", changed)
+    assert author.post("/api/studio/scenarios/SC-01/run", json={"until": "py"}).status_code == 403  # код другой
+    bad = {**good, "nodes": [{"id": "py", "type": "code.python", "params": {"code": "import os\nout = df"}}]}
+    _save(author, "SC-01", bad)
+    r = author.post("/api/studio/scenarios/SC-01/run", json={"until": "py"})
+    assert r.status_code == 422 and "«os» не разрешена" in r.json()["detail"]["message"]
+    assert boss.post("/api/studio/scenarios/SC-01/approve-python", json={"node": "py"}).status_code == 422
+
+
+def test_reference_cycle_is_not_saved(make_client) -> None:  # type: ignore[no-untyped-def]
+    c = make_client("ivanov", "researcher")
+    c.post("/api/studio/scenarios", json={"title": "x"})
+    g = {"format": 1, "nodes": [{"id": "a", "type": "control.ref", "params": {"node": "b"}},
+                                {"id": "b", "type": "control.ref", "params": {"node": "a"}}], "edges": []}
+    r = c.put("/api/studio/scenarios/SC-01", json={"version": 1, "graph": g})
+    assert r.status_code == 422 and "цикл" in r.json()["detail"]["message"]

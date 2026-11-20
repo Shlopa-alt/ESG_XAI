@@ -26,18 +26,21 @@ import {
   getComponents,
   getRun,
   getScenario,
+  approvePython,
   type Graph,
   type NodeSummary,
   type NodeView,
   runScenario,
+  listScenarios,
   saveScenario,
   type Scenario,
   stopRun,
   StudioError,
   type StudioRun,
 } from "../api/studio";
-import { StudioChart, StudioQuality, StudioReport } from "../components/StudioCharts";
-import { StudioParams } from "../components/StudioParams";
+import { useMe } from "../auth/useAuth";
+import { StudioChart, StudioCube, StudioQuality, StudioReport } from "../components/StudioCharts";
+import { type ParamContext, StudioParams } from "../components/StudioParams";
 
 interface StepData extends Record<string, unknown> {
   comp: ComponentSchema;
@@ -86,20 +89,50 @@ function Step({ data, selected }: NodeProps<StepNode>) {
 
 const NODE_TYPES = { step: Step };
 
+/** Узлы без своих мест (сценарий собран через API) — по слоям слева направо: слой — длина пути от начала. */
+function layout(graph: Graph): Map<string, { x: number; y: number }> {
+  const spots = new Set(graph.nodes.map((n) => `${n.x ?? 0}:${n.y ?? 0}`));
+  if (graph.nodes.length < 2 || spots.size === graph.nodes.length) return new Map();
+  const ups = new Map<string, string[]>();
+  graph.edges.forEach((e) => ups.set(e.to, [...(ups.get(e.to) ?? []), e.from]));
+  const depth = new Map<string, number>();
+  const level = (id: string, seen: Set<string>): number => {
+    const known = depth.get(id);
+    if (known !== undefined) return known;
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const d = Math.max(-1, ...(ups.get(id) ?? []).map((u) => level(u, seen))) + 1;
+    depth.set(id, d);
+    return d;
+  };
+  const rows = new Map<number, number>();
+  const out = new Map<string, { x: number; y: number }>();
+  graph.nodes.forEach((n) => {
+    const d = level(n.id, new Set());
+    const row = rows.get(d) ?? 0;
+    rows.set(d, row + 1);
+    out.set(n.id, { x: d * 240, y: row * 120 });
+  });
+  return out;
+}
+
 function toFlow(graph: Graph, comps: Map<string, ComponentSchema>): { nodes: StepNode[]; edges: Edge[] } {
+  const auto = layout(graph);
   const nodes = graph.nodes
     .filter((n) => comps.has(n.type))
     .map<StepNode>((n) => ({
       id: n.id,
       type: "step",
-      position: { x: n.x ?? 0, y: n.y ?? 0 },
+      position: auto.get(n.id) ?? { x: n.x ?? 0, y: n.y ?? 0 },
       data: { comp: comps.get(n.type) as ComponentSchema, title: n.title ?? "", params: n.params ?? {}, busy: false },
     }));
   const edges = graph.edges.map<Edge>((e) => ({ id: `${e.from}->${e.to}:${e.port}`, source: e.from, target: e.to, targetHandle: e.port }));
   return { nodes, edges };
 }
 
-function toGraph(nodes: StepNode[], edges: Edge[]): Graph {
+type Variable = { name: string; value: string };
+
+function toGraph(nodes: StepNode[], edges: Edge[], variables: Variable[]): Graph {
   return {
     format: 1,
     nodes: nodes.map((n) => ({
@@ -111,6 +144,7 @@ function toGraph(nodes: StepNode[], edges: Edge[]): Graph {
       y: Math.round(n.position.y),
     })),
     edges: edges.map((e) => ({ from: e.source, to: e.target, port: e.targetHandle ?? "in" })),
+    variables: variables.filter((v) => v.name.trim() !== ""),
   };
 }
 
@@ -118,7 +152,7 @@ const newId = () => `n${Math.random().toString(36).slice(2, 8)}`;
 
 /** «Таблица» и «Статистика» результата узла. */
 function Preview({ view }: { view: NodeView }) {
-  const [tab, setTab] = useState<"report" | "table" | "stats" | "quality" | "chart">(view.report ? "report" : "table");
+  const [tab, setTab] = useState<"report" | "table" | "stats" | "quality" | "chart" | "cube">(view.report ? "report" : "table");
   const t = view.table;
   const st = view.statistics;
   return (
@@ -141,7 +175,13 @@ function Preview({ view }: { view: NodeView }) {
         <button type="button" role="tab" aria-selected={tab === "chart"} className={tab === "chart" ? "chip active" : "chip"} onClick={() => setTab("chart")}>
           Диаграмма
         </button>
+        {view.cube && (
+          <button type="button" role="tab" aria-selected={tab === "cube"} className={tab === "cube" ? "chip active" : "chip"} onClick={() => setTab("cube")}>
+            Куб
+          </button>
+        )}
       </div>
+      {tab === "cube" && view.cube && <StudioCube cube={view.cube} />}
       {tab === "report" && view.report && <StudioReport report={view.report} />}
       {tab === "quality" && <StudioQuality view={view} />}
       {tab === "chart" && <StudioChart view={view} />}
@@ -230,6 +270,9 @@ export function StudioEditor() {
   const [summaries, setSummaries] = useState<Record<string, NodeSummary>>({});
   const [runId, setRunId] = useState<number | null>(null);
   const [problem, setProblem] = useState<{ node: string; message: string } | null>(null);
+  const [variables, setVariables] = useState<Variable[]>([]);
+  const scenarios = useQuery({ queryKey: ["studio", "list"], queryFn: listScenarios });
+  const me = useMe();
   const editable = scenario.data?.editable ?? false;
 
   // сценарий и каталог пришли — на холст (только при первой загрузке или после чужого сохранения)
@@ -239,6 +282,7 @@ export function StudioEditor() {
     const flow = toFlow(s.graph, catalog);
     setNodes(flow.nodes);
     setEdges(flow.edges);
+    setVariables(s.graph.variables ?? []);
     setVersion(s.version);
     setDirty(false);
     const last = s.runs[0];
@@ -347,7 +391,7 @@ export function StudioEditor() {
 
   const save = useMutation({
     mutationFn: async () => {
-      const s = await saveScenario(code, version, toGraph(nodes, edges));
+      const s = await saveScenario(code, version, toGraph(nodes, edges, variables));
       qc.setQueryData<Scenario>(["studio", code], (old) => (old ? { ...old, ...s, runs: old.runs } : old));
       setVersion(s.version);
       setDirty(false);
@@ -368,6 +412,10 @@ export function StudioEditor() {
       if (e instanceof StudioError && e.node) setProblem({ node: e.node, message: e.message });
     },
   });
+  const approve = useMutation({
+    mutationFn: (node: string) => approvePython(code, node),
+    onSuccess: (r) => qc.setQueryData<Scenario>(["studio", code], (old) => (old ? { ...old, python: r.python } : old)),
+  });
   const stop = useMutation({ mutationFn: () => stopRun(runId as number), onSuccess: () => void run.refetch() });
   const copy = useMutation({ mutationFn: () => copyScenario(code) });
 
@@ -387,7 +435,16 @@ export function StudioEditor() {
   const selSummary = sel ? summaries[sel.id] : undefined;
   const selView = sel ? views[sel.id] : undefined;
   const groups = [...new Set(comps.data.components.map((c) => c.group))];
-  const error = save.error ?? start.error ?? stop.error ?? copy.error;
+  const error = save.error ?? start.error ?? stop.error ?? copy.error ?? approve.error;
+  const context: ParamContext = {
+    nodes: nodes.filter((n) => n.id !== selected).map((n) => ({ id: n.id, label: `${n.data.title || n.data.comp.title} (${n.id})` })),
+    scenarios: (Array.isArray(scenarios.data) ? scenarios.data : []).filter((x) => x.code !== code).map((x) => ({ code: x.code, title: x.title })),
+  };
+  const pyState = sel && sel.data.comp.type === "code.python" ? s.python?.[sel.id] : undefined;
+  const setVar = (i: number, patch: Partial<Variable>) => {
+    setVariables((vs) => vs.map((v, j) => (j === i ? { ...v, ...patch } : v)));
+    setDirty(true);
+  };
   const lastFull = s.runs[0];
 
   return (
@@ -483,6 +540,42 @@ export function StudioEditor() {
                 Выберите узел на схеме — здесь появятся его настройки и результат. Новый узел подключается к выбранному;
                 связи можно тянуть мышью от правого края узла к левому.
               </p>
+              <fieldset className="field rows" disabled={!editable}>
+                <legend>Переменные сценария</legend>
+                <p className="muted small">В формулах — $имя, например: год = $год. Подмодель и цикл могут их переопределить.</p>
+                {variables.map((v, i) => (
+                  <div className="param-row" key={i}>
+                    <label className="field">
+                      Имя
+                      <input value={v.name} onChange={(e) => setVar(i, { name: e.target.value })} />
+                    </label>
+                    <label className="field">
+                      Значение
+                      <input value={v.value} onChange={(e) => setVar(i, { value: e.target.value })} />
+                    </label>
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      onClick={() => {
+                        setVariables((vs) => vs.filter((_, j) => j !== i));
+                        setDirty(true);
+                      }}
+                    >
+                      Убрать
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => {
+                    setVariables((vs) => [...vs, { name: "", value: "" }]);
+                    setDirty(true);
+                  }}
+                >
+                  Добавить переменную
+                </button>
+              </fieldset>
               {lastFull && lastFull.files.length > 0 && (
                 <>
                   <h3 className="studio-group">Файлы последнего расчёта № {lastFull.id}</h3>
@@ -530,8 +623,27 @@ export function StudioEditor() {
                 values={sel.data.params}
                 columns={columnsOf(sel.id)}
                 disabled={!editable}
+                context={context}
                 onChange={(params) => updateNode(sel.id, { params })}
               />
+              {sel.data.comp.type === "code.python" && (
+                <div className="py-state" role="status">
+                  {dirty ? (
+                    <p className="muted small">Сохраните сценарий — код проверится и покажется, одобрен ли он.</p>
+                  ) : pyState && pyState.problems.length > 0 ? (
+                    <p className="error">Код не проходит проверку: {pyState.problems.join("; ")}</p>
+                  ) : pyState?.approved ? (
+                    <p className="muted">Код проверен и одобрен владельцем платформы.</p>
+                  ) : (
+                    <p className="muted">Код проверен, но не одобрен: считать его может только владелец платформы, остальным — после одобрения.</p>
+                  )}
+                  {me.data?.role === "owner" && !dirty && pyState && !pyState.approved && pyState.problems.length === 0 && (
+                    <button type="button" className="btn-ghost" onClick={() => approve.mutate(sel.id)} disabled={approve.isPending}>
+                      Одобрить код (я его прочитал)
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="actions">
                 {editable && (
                   <button type="button" className="btn-primary" onClick={() => start.mutate(sel.id)} disabled={running || start.isPending}>

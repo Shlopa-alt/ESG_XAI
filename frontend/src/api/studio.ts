@@ -3,7 +3,21 @@
 export interface ParamSchema {
   name: string;
   label: string;
-  kind: "snapshot" | "text" | "number" | "bool" | "select" | "multiselect" | "column" | "columns" | "expr" | "rows";
+  kind:
+    | "snapshot"
+    | "text"
+    | "number"
+    | "bool"
+    | "select"
+    | "multiselect"
+    | "column"
+    | "columns"
+    | "expr"
+    | "rows"
+    | "node"
+    | "nodes"
+    | "scenario"
+    | "code";
   required: boolean;
   default?: unknown;
   options?: { value: string; label: string }[];
@@ -40,6 +54,7 @@ export interface Graph {
   format: 1;
   nodes: GraphNode[];
   edges: GraphEdge[];
+  variables?: { name: string; value: string }[]; // переменные сценария: $имя в выражениях
 }
 
 export interface ScenarioBrief {
@@ -76,6 +91,13 @@ export interface NodeView {
   quality?: { rows: number; duplicate_rows: number; issues: number; columns: QualityColumn[] };
   sample?: RowsView; // выборка для «Диаграммы» — у узла, посчитанного предпросмотром
   report?: ModelReport; // «Отчёт» модели Data Mining
+  cube?: CubeView; // «Куб»: ячейки по сочетаниям измерений — у узла, посчитанного предпросмотром
+}
+
+export interface CubeView {
+  dims: string[];
+  measures: string[];
+  cells: unknown[][]; // [...измерения, строк, затем по мере: сумма, число, мин, макс]
 }
 
 export interface ModelReport {
@@ -129,10 +151,13 @@ export interface StudioRun {
   runner_commit: string;
 }
 
+export type PythonState = Record<string, { problems: string[]; approved: boolean }>;
+
 export interface Scenario extends ScenarioBrief {
   graph: Graph;
   editable: boolean;
   runs: StudioRun[];
+  python?: PythonState;
 }
 
 export class StudioError extends Error {
@@ -179,4 +204,9 @@ export const runScenario = (code: string, until = "") =>
   call<StudioRun>(`/scenarios/${encodeURIComponent(code)}/run`, { method: "POST", body: JSON.stringify({ until }) });
 export const getRun = (id: number) => call<StudioRun>(`/runs/${id}`);
 export const stopRun = (id: number) => call<StudioRun>(`/runs/${id}/stop`, { method: "POST" });
+export const approvePython = (code: string, node: string) =>
+  call<{ python: PythonState }>(`/scenarios/${encodeURIComponent(code)}/approve-python`, {
+    method: "POST",
+    body: JSON.stringify({ node }),
+  });
 export const fileUrl = (id: number, name: string) => `/api/studio/runs/${id}/files/${encodeURIComponent(name)}`;

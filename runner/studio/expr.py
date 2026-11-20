@@ -134,6 +134,9 @@ _WORDS = [(r"\bИЛИ\b", " or "), (r"\bИ\b", " and "), (r"\bНЕ\b", " not "),
           (r"<>", "!="), (r"(?<![<>!=])=(?!=)", "==")]
 
 
+VAR = re.compile(r"\$([A-Za-zА-Яа-яЁё_][\wА-Яа-яЁё]*)")
+
+
 def _prepare(text: str) -> tuple[str, dict[str, str]]:
     """Столбцы в `обратных кавычках` → имена-заглушки; русские И/ИЛИ/НЕ, «=» и «<>» → Python;
     «;» между аргументами → «,». Строки в кавычках не трогаем."""
@@ -144,6 +147,11 @@ def _prepare(text: str) -> tuple[str, dict[str, str]]:
         quoted[key] = m.group(1)
         return key
 
+    def var(m: re.Match[str]) -> str:  # $имя → заглушка; «$» в начале — признак переменной
+        key = f"__c{len(quoted)}"
+        quoted[key] = "$" + m.group(1)
+        return key
+
     parts = re.split(r'("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')', text)
     out = []
     for i, part in enumerate(parts):
@@ -151,6 +159,7 @@ def _prepare(text: str) -> tuple[str, dict[str, str]]:
             out.append(part)
             continue
         part = re.sub(r"`([^`]+)`", keep, part)
+        part = VAR.sub(var, part)
         part = part.replace(";", ",")
         for pat, rep in _WORDS:
             part = re.sub(pat, rep, part, flags=re.IGNORECASE)
@@ -158,8 +167,8 @@ def _prepare(text: str) -> tuple[str, dict[str, str]]:
     return "".join(out), quoted
 
 
-def evaluate(text: str, df: pd.DataFrame) -> Value:
-    """Значение выражения по таблице: столбец (pd.Series) или одно значение."""
+def evaluate(text: str, df: pd.DataFrame, variables: dict[str, Any] | None = None) -> Value:
+    """Значение выражения по таблице: столбец (pd.Series) или одно значение. $имя — переменная."""
     src, quoted = _prepare(text.strip())
     if not src.strip():
         raise ExprError("Пустое выражение")
@@ -169,8 +178,13 @@ def evaluate(text: str, df: pd.DataFrame) -> Value:
         raise ExprError(f"Не разобрать выражение «{text}»: проверьте скобки и кавычки") from exc
     columns = {str(c): c for c in df.columns}
 
-    def col(name: str) -> pd.Series:
+    def col(name: str) -> Value:
         real = quoted.get(name, name)
+        if real.startswith("$"):  # переменная сценария
+            vname = real[1:]
+            if variables is None or vname not in variables:
+                raise ExprError(f"Нет переменной ${vname}")
+            return variables[vname]
         if real not in columns:
             raise ExprError(f"Нет столбца «{real}»" + ("" if name in quoted else
                             " (имя с пробелами или знаками — в `обратных кавычках`)"))
@@ -269,17 +283,17 @@ def _compare(op: ast.cmpop, a: Value, b: Value) -> Value:
     return out.fillna(False) if isinstance(out, pd.Series) else out
 
 
-def column(text: str, df: pd.DataFrame) -> pd.Series:
+def column(text: str, df: pd.DataFrame, variables: dict[str, Any] | None = None) -> pd.Series:
     """Выражение как столбец той же длины, что таблица."""
-    v = evaluate(text, df)
+    v = evaluate(text, df, variables)
     if isinstance(v, pd.Series):
         return v
     return pd.Series([v] * len(df), index=df.index)
 
 
-def mask(text: str, df: pd.DataFrame) -> pd.Series:
+def mask(text: str, df: pd.DataFrame, variables: dict[str, Any] | None = None) -> pd.Series:
     """Условие как маска строк (пусто — ложь)."""
-    v = column(text, df)
+    v = column(text, df, variables)
     if v.dtype == object or str(v.dtype) not in ("bool", "boolean"):
         try:
             return v.fillna(False).astype(bool)
