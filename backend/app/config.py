@@ -65,6 +65,17 @@ class Settings(BaseSettings):
     # Qwen по требованию: обработчик очереди на машине с видеокартой (runner/qwen/worker.py)
     qwen_token: str = ""
 
+    # Сброс пароля по почте (режим password, «Забыли пароль?» на форме входа): письмо со ссылкой
+    # на сайт. Без SMTP_HOST и PUBLIC_URL восстановление по почте выключено — сбрасывает owner
+    public_url: str = ""  # адрес сайта для ссылки в письме, например https://esg.example.ru
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""  # пусто — SMTP_USER
+    reset_ttl_s: int = 3600
+
     # Ручной режим (ноутбук Jupyter, командная строка esg): код методов кладётся в архив из рабочей
     # копии репозитория, смонтированной только для чтения (deploy/docker-compose.yml: ..:/repo:ro)
     repo_dir: str = "/repo"

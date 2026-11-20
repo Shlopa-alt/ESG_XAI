@@ -9,8 +9,9 @@ import {
   patchUser,
   resetPassword,
   type Role,
+  setOwnEmail,
 } from "../api/auth";
-import { ME_KEY } from "../auth/useAuth";
+import { ME_KEY, useMe } from "../auth/useAuth";
 import { AuditLog } from "./AuditLog";
 
 const ROLES: Array<{ value: Role; label: string }> = [
@@ -35,21 +36,44 @@ function TempPassword({ user, onClose }: { user: NewUser; onClose: () => void })
   );
 }
 
+/** Почта пользователя для «Забыли пароль?»: сохраняется, когда поле теряет фокус. */
+function EmailCell({ login, email, onSave }: { login: string; email: string; onSave: (email: string) => void }) {
+  const [value, setValue] = useState(email);
+  const save = () => {
+    if (value.trim() !== email) onSave(value.trim());
+  };
+  return (
+    <input
+      type="email"
+      aria-label={`Почта ${login}`}
+      placeholder="нет — сброс только здесь"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+    />
+  );
+}
+
 export function Users() {
   const qc = useQueryClient();
   const users = useQuery({ queryKey: ["users"], queryFn: listUsers });
   const [shown, setShown] = useState<NewUser | null>(null);
   const [login, setLogin] = useState("");
   const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("reader");
   const [nda, setNda] = useState(false);
   const refresh = () => void qc.invalidateQueries({ queryKey: ["users"] });
   const create = useMutation({
-    mutationFn: () => createUser({ login: login.trim(), full_name: fullName.trim(), role, nda_access: nda }),
+    mutationFn: () => createUser({ login: login.trim(), full_name: fullName.trim(), email: email.trim(), role, nda_access: nda }),
     onSuccess: (u) => {
       setShown(u);
       setLogin("");
       setFullName("");
+      setEmail("");
       refresh();
     },
   });
@@ -72,6 +96,7 @@ export function Users() {
         <h1 className="page-title">Пользователи</h1>
         <p className="lead">
           Учётные записи платформы, роли и допуск к данным под NDA. Новому пользователю выдаётся временный пароль.
+          По почте пользователь сам восстановит забытый пароль кнопкой «Забыли пароль?» на входе.
         </p>
       </section>
       {shown && <TempPassword user={shown} onClose={() => setShown(null)} />}
@@ -89,6 +114,10 @@ export function Users() {
         <label className="field inline grow">
           ФИО
           <input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        </label>
+        <label className="field inline grow">
+          Почта
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label className="field inline">
           Роль
@@ -113,6 +142,7 @@ export function Users() {
             <tr>
               <th scope="col">Логин</th>
               <th scope="col">ФИО</th>
+              <th scope="col">Почта</th>
               <th scope="col">Роль</th>
               <th scope="col">NDA</th>
               <th scope="col">Статус</th>
@@ -124,6 +154,14 @@ export function Users() {
               <tr key={u.login}>
                 <td className="mono">{u.login}</td>
                 <td>{u.full_name}</td>
+                <td>
+                  <EmailCell
+                    key={u.email}
+                    login={u.login}
+                    email={u.email}
+                    onSave={(v) => patch.mutate({ login: u.login, patch: { email: v } })}
+                  />
+                </td>
                 <td>
                   <label className="sr-only" htmlFor={`role-${u.login}`}>
                     Роль {u.login}
@@ -223,6 +261,54 @@ export function ChangePassword({ forced = false }: { forced?: boolean }) {
           Сохранить
         </button>
       </form>
+      {!forced && <OwnEmail />}
     </div>
+  );
+}
+
+/** Своя почта для «Забыли пароль?» — меняется с текущим паролем. */
+function OwnEmail() {
+  const qc = useQueryClient();
+  const me = useMe();
+  const [email, setEmail] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+  const current = me.data?.email ?? "";
+  const m = useMutation({
+    mutationFn: () => setOwnEmail(password, (email ?? current).trim()),
+    onSuccess: (u) => {
+      qc.setQueryData(ME_KEY, u);
+      setEmail(null);
+      setPassword("");
+    },
+  });
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    m.mutate();
+  };
+  return (
+    <form className="card login-card" onSubmit={submit} style={{ marginTop: 16 }}>
+      <h2 className="h2" style={{ margin: 0 }}>Почта для восстановления пароля</h2>
+      <p className="muted" style={{ margin: 0 }}>
+        На неё придёт ссылка, если нажать «Забыли пароль?» на входе.
+        {current ? "" : " Сейчас почта не указана."}
+      </p>
+      <label className="field">
+        Почта
+        <input type="email" autoComplete="email" value={email ?? current} onChange={(e) => setEmail(e.target.value)} />
+      </label>
+      <label className="field">
+        Текущий пароль
+        <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+      </label>
+      {m.isError && (
+        <p className="error" role="alert">
+          {m.error.message}
+        </p>
+      )}
+      {m.isSuccess && <p role="status">Почта сохранена.</p>}
+      <button type="submit" className="btn-primary" disabled={m.isPending}>
+        Сохранить почту
+      </button>
+    </form>
   );
 }

@@ -62,16 +62,28 @@ export function changePassword(oldPassword: string, newPassword: string): Promis
   });
 }
 
+/** «Забыли пароль?»: письмо со ссылкой; ответ один и тот же, есть ли такой пользователь. */
+export const forgotPassword = (loginOrEmail: string) =>
+  request<{ detail: string }>("/auth/forgot", { method: "POST", body: JSON.stringify({ login: loginOrEmail }) });
+
+/** Новый пароль по ссылке из письма; после него вход выполнен. */
+export const resetByLink = (token: string, newPassword: string) =>
+  request<User>("/auth/reset", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) });
+
+/** Своя почта для восстановления пароля — с текущим паролем. */
+export const setOwnEmail = (password: string, email: string) =>
+  request<User>("/auth/email", { method: "POST", body: JSON.stringify({ password, email }) });
+
 export interface NewUser extends User {
   temporary_password: string;
 }
 
 export const listUsers = () => request<User[]>("/users");
-export const createUser = (u: { login: string; full_name: string; role: Role; nda_access: boolean }) =>
+export const createUser = (u: { login: string; full_name: string; email: string; role: Role; nda_access: boolean }) =>
   request<NewUser>("/users", { method: "POST", body: JSON.stringify(u) });
 export const resetPassword = (login: string) =>
   request<NewUser>(`/users/${encodeURIComponent(login)}/reset-password`, { method: "POST" });
-export const patchUser = (login: string, patch: Partial<Pick<User, "role" | "nda_access" | "is_active">>) =>
+export const patchUser = (login: string, patch: Partial<Pick<User, "role" | "nda_access" | "is_active" | "email">>) =>
   request<User>(`/users/${encodeURIComponent(login)}`, { method: "PATCH", body: JSON.stringify(patch) });
 
 export interface AuditRow {
