@@ -9,6 +9,8 @@ services:
   # Исполнитель и MLflow работают на компьютере (deploy/yandex/docker-compose.pc.yml)
   runner-cpu:
     profiles: ["compute-on-server"]
+  runner-studio:
+    profiles: ["compute-on-server"]
   mlflow:
     profiles: ["compute-on-server"]
 

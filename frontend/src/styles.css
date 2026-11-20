@@ -1152,3 +1152,52 @@ a.scheme-box:focus-visible, button.scheme-box:focus-visible { outline: 2px solid
 /* Доступ к API */
 .steps { margin: 0 0 12px; padding-left: 20px; line-height: 1.6; }
 .token-value { overflow-wrap: anywhere; font-size: 15px; padding: 8px 12px; background: var(--bg, #f3f5f4); border-radius: 8px; }
+
+/* Студия анализа: палитра — холст — настройки, под ними результат узла */
+.studio { display: grid; grid-template-columns: 190px minmax(0, 1fr) 320px; gap: 12px; align-items: stretch; }
+.studio-palette, .studio-side { padding: 14px; max-height: 640px; overflow-y: auto; }
+.studio-canvas { position: relative; height: 640px; padding: 0; overflow: hidden; }
+.studio-group { margin: 12px 0 6px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.studio-add { display: block; width: 100%; text-align: left; margin: 0 0 4px; padding: 6px 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface); font: inherit; font-size: 14px; cursor: pointer; }
+.studio-add:hover:not(:disabled) { border-color: var(--accent); }
+.studio-add:disabled { cursor: default; opacity: 0.6; }
+.studio-hint { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--text-muted); pointer-events: none; }
+.studio-node { min-width: 170px; max-width: 220px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); font-size: 13px; box-shadow: 0 1px 2px rgb(0 0 0 / 6%); }
+.studio-node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgb(31 113 79 / 25%); }
+.studio-node.failed { border-color: #b3261e; }
+.studio-node-kind { font: 500 11px "IBM Plex Mono", monospace; color: var(--accent); text-transform: uppercase; }
+.studio-node-title { font-weight: 600; margin: 2px 0 4px; overflow-wrap: anywhere; }
+.studio-node-state { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.studio-node.failed .studio-node-state { color: #b3261e; }
+.studio-params { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.studio-params .rows, .studio-params .checks { border: 1px solid var(--border); border-radius: 8px; padding: 8px; margin: 0; }
+.param-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-bottom: 1px dashed var(--border); }
+.studio-preview .tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.studio-table { font-size: 13px; width: auto; min-width: 50%; }
+.studio-table td, .studio-table th { white-space: nowrap; }
+.small { font-size: 12px; }
+@media (max-width: 1100px) {
+  .studio { grid-template-columns: 1fr; }
+  .studio-palette { max-height: none; }
+  .studio-add { display: inline-block; width: auto; margin: 0 4px 4px 0; }
+  .studio-canvas { height: 460px; }
+}
+.studio-preview .tabs { flex-wrap: wrap; }
+.chart-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px; }
+.chart { width: 100%; max-width: 760px; height: auto; display: block; }
+.chart-axes line { stroke: #8a9a91; stroke-width: 1; }
+.chart-axes .chart-grid { stroke: var(--border); }
+.chart-axes text { font: 11px "IBM Plex Sans", sans-serif; fill: var(--text-muted); }
+.chart-axes .chart-label { font-size: 12px; fill: var(--text); }
+.chart-bar { fill: var(--accent); opacity: 0.85; }
+.chart-bar:hover { opacity: 1; }
+.chart-dot { fill: var(--accent); fill-opacity: 0.55; }
+.chart-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+.studio-report { display: flex; flex-direction: column; gap: 10px; }
+.report-summary { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; }
+.report-summary dt { font-size: 12px; color: var(--text-muted); }
+.report-summary dd { margin: 0; font-weight: 600; }
+.chart.roc { max-width: 300px; }
+

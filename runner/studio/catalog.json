@@ -1,0 +1,2363 @@
+{
+ "format": 1,
+ "components": [
+  {
+   "type": "import.dataset",
+   "title": "Набор данных",
+   "group": "Импорт",
+   "description": "Версия набора данных платформы",
+   "inputs": [],
+   "params": [
+    {
+     "name": "snapshot_id",
+     "label": "Версия набора",
+     "kind": "snapshot",
+     "required": true
+    },
+    {
+     "name": "sheet",
+     "label": "Лист",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "export.file",
+   "title": "Файл",
+   "group": "Экспорт",
+   "description": "Сохранить таблицу файлом среди результатов расчёта",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "name",
+     "label": "Имя файла",
+     "kind": "text",
+     "required": true,
+     "default": "результат"
+    },
+    {
+     "name": "format",
+     "label": "Формат",
+     "kind": "select",
+     "required": true,
+     "default": "csv",
+     "options": [
+      {
+       "value": "csv",
+       "label": "CSV"
+      },
+      {
+       "value": "xlsx",
+       "label": "Excel"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.group",
+   "title": "Группировка",
+   "group": "Трансформация",
+   "description": "Итоги по группам: сумма, среднее, количество…",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "keys",
+     "label": "Поля группы",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "aggregations",
+     "label": "Вычисления",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "func",
+       "label": "Функция",
+       "kind": "select",
+       "required": true,
+       "options": [
+        {
+         "value": "sum",
+         "label": "сумма"
+        },
+        {
+         "value": "mean",
+         "label": "среднее"
+        },
+        {
+         "value": "median",
+         "label": "медиана"
+        },
+        {
+         "value": "min",
+         "label": "минимум"
+        },
+        {
+         "value": "max",
+         "label": "максимум"
+        },
+        {
+         "value": "count",
+         "label": "количество"
+        },
+        {
+         "value": "nunique",
+         "label": "различных"
+        },
+        {
+         "value": "std",
+         "label": "ст. отклонение"
+        },
+        {
+         "value": "var",
+         "label": "дисперсия"
+        },
+        {
+         "value": "first",
+         "label": "первое"
+        },
+        {
+         "value": "last",
+         "label": "последнее"
+        }
+       ]
+      },
+      {
+       "name": "as",
+       "label": "Имя результата",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.ungroup",
+   "title": "Разгруппировка",
+   "group": "Трансформация",
+   "description": "Итог по группе — в каждую строку исходной таблицы",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "keys",
+     "label": "Поля группы",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "aggregations",
+     "label": "Вычисления",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "func",
+       "label": "Функция",
+       "kind": "select",
+       "required": true,
+       "options": [
+        {
+         "value": "sum",
+         "label": "сумма"
+        },
+        {
+         "value": "mean",
+         "label": "среднее"
+        },
+        {
+         "value": "median",
+         "label": "медиана"
+        },
+        {
+         "value": "min",
+         "label": "минимум"
+        },
+        {
+         "value": "max",
+         "label": "максимум"
+        },
+        {
+         "value": "count",
+         "label": "количество"
+        },
+        {
+         "value": "nunique",
+         "label": "различных"
+        },
+        {
+         "value": "std",
+         "label": "ст. отклонение"
+        },
+        {
+         "value": "var",
+         "label": "дисперсия"
+        },
+        {
+         "value": "first",
+         "label": "первое"
+        },
+        {
+         "value": "last",
+         "label": "последнее"
+        }
+       ]
+      },
+      {
+       "name": "as",
+       "label": "Имя результата",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.datetime",
+   "title": "Дата и время",
+   "group": "Трансформация",
+   "description": "Год, квартал, месяц, день недели… из даты",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Столбец с датой",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "parts",
+     "label": "Что выделить",
+     "kind": "multiselect",
+     "required": true,
+     "default": [
+      "year",
+      "month"
+     ],
+     "options": [
+      {
+       "value": "year",
+       "label": "год"
+      },
+      {
+       "value": "quarter",
+       "label": "квартал"
+      },
+      {
+       "value": "month",
+       "label": "месяц"
+      },
+      {
+       "value": "week",
+       "label": "неделя"
+      },
+      {
+       "value": "day",
+       "label": "день"
+      },
+      {
+       "value": "weekday",
+       "label": "день недели"
+      },
+      {
+       "value": "date",
+       "label": "дата без времени"
+      },
+      {
+       "value": "year_month",
+       "label": "год-месяц"
+      },
+      {
+       "value": "year_quarter",
+       "label": "год-квартал"
+      }
+     ]
+    },
+    {
+     "name": "dayfirst",
+     "label": "День перед месяцем (31.12.2025)",
+     "kind": "bool",
+     "required": false,
+     "default": true
+    }
+   ]
+  },
+  {
+   "type": "transform.lookup",
+   "title": "Дополнение данных",
+   "group": "Трансформация",
+   "description": "Поля из справочника по ключу (первое совпадение)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Таблица"
+    },
+    {
+     "name": "ref",
+     "label": "Справочник"
+    }
+   ],
+   "params": [
+    {
+     "name": "key",
+     "label": "Ключ в таблице",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "ref_key",
+     "label": "Ключ в справочнике",
+     "kind": "column",
+     "required": false,
+     "from_port": "ref"
+    },
+    {
+     "name": "columns",
+     "label": "Какие поля добавить",
+     "kind": "columns",
+     "required": false,
+     "from_port": "ref"
+    }
+   ]
+  },
+  {
+   "type": "transform.replace",
+   "title": "Замена",
+   "group": "Трансформация",
+   "description": "Замена значений по списку или регулярному выражению",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Столбец",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "mode",
+     "label": "Как искать",
+     "kind": "select",
+     "required": true,
+     "default": "exact",
+     "options": [
+      {
+       "value": "exact",
+       "label": "точное совпадение"
+      },
+      {
+       "value": "regex",
+       "label": "регулярное выражение"
+      }
+     ]
+    },
+    {
+     "name": "rules",
+     "label": "Правила",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "find",
+       "label": "Что",
+       "kind": "text",
+       "required": true
+      },
+      {
+       "name": "to",
+       "label": "На что",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    },
+    {
+     "name": "others_mode",
+     "label": "Остальные значения",
+     "kind": "select",
+     "required": false,
+     "default": "keep",
+     "options": [
+      {
+       "value": "keep",
+       "label": "оставить"
+      },
+      {
+       "value": "value",
+       "label": "заменить на…"
+      }
+     ]
+    },
+    {
+     "name": "others",
+     "label": "…на что",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "as",
+     "label": "Записать в новый столбец",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "transform.calculator",
+   "title": "Калькулятор",
+   "group": "Трансформация",
+   "description": "Новые поля по формулам: выручка / сотрудники, ЕСЛИ(…), ГОД(дата)…",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "fields",
+     "label": "Поля",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "name",
+       "label": "Имя",
+       "kind": "text",
+       "required": true
+      },
+      {
+       "name": "expr",
+       "label": "Выражение",
+       "kind": "expr",
+       "required": true
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.crosstab",
+   "title": "Кросс-таблица",
+   "group": "Трансформация",
+   "description": "Сводная: значения поля — в столбцы, в ячейках — итог",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "rows",
+     "label": "Поля строк",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "columns_field",
+     "label": "Поле столбцов",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "value",
+     "label": "Поле значений",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "func",
+     "label": "Итог",
+     "kind": "select",
+     "required": true,
+     "default": "sum",
+     "options": [
+      {
+       "value": "sum",
+       "label": "сумма"
+      },
+      {
+       "value": "mean",
+       "label": "среднее"
+      },
+      {
+       "value": "median",
+       "label": "медиана"
+      },
+      {
+       "value": "min",
+       "label": "минимум"
+      },
+      {
+       "value": "max",
+       "label": "максимум"
+      },
+      {
+       "value": "count",
+       "label": "количество"
+      },
+      {
+       "value": "nunique",
+       "label": "различных"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.union",
+   "title": "Объединение",
+   "group": "Трансформация",
+   "description": "Строки второй таблицы — под первой",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Таблица 1"
+    },
+    {
+     "name": "in2",
+     "label": "Таблица 2"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Столбцы",
+     "kind": "select",
+     "required": true,
+     "default": "all",
+     "options": [
+      {
+       "value": "all",
+       "label": "все"
+      },
+      {
+       "value": "common",
+       "label": "только общие"
+      }
+     ]
+    },
+    {
+     "name": "source",
+     "label": "Столбец «откуда строка»",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "transform.fields",
+   "title": "Параметры полей",
+   "group": "Трансформация",
+   "description": "Тип, имя, удаление столбцов",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "fields",
+     "label": "Поля",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "type",
+       "label": "Тип",
+       "kind": "select",
+       "required": false,
+       "default": "keep",
+       "options": [
+        {
+         "value": "keep",
+         "label": "как есть"
+        },
+        {
+         "value": "number",
+         "label": "число"
+        },
+        {
+         "value": "integer",
+         "label": "целое"
+        },
+        {
+         "value": "string",
+         "label": "строка"
+        },
+        {
+         "value": "date",
+         "label": "дата"
+        },
+        {
+         "value": "bool",
+         "label": "да/нет"
+        }
+       ]
+      },
+      {
+       "name": "rename",
+       "label": "Новое имя",
+       "kind": "text",
+       "required": false
+      },
+      {
+       "name": "drop",
+       "label": "Удалить",
+       "kind": "bool",
+       "required": false
+      }
+     ]
+    },
+    {
+     "name": "only_listed",
+     "label": "Оставить только перечисленные",
+     "kind": "bool",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "transform.unpivot",
+   "title": "Свёртка столбцов",
+   "group": "Трансформация",
+   "description": "Столбцы-показатели → строки «показатель — значение»",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "keep",
+     "label": "Поля-идентификаторы",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "columns",
+     "label": "Свернуть столбцы",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "name_as",
+     "label": "Имя столбца показателя",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "value_as",
+     "label": "Имя столбца значения",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "transform.window",
+   "title": "Скользящее окно",
+   "group": "Трансформация",
+   "description": "Прошлые и будущие значения в строке (лаги) — по всей таблице или внутри групп",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Столбцы",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "group_by",
+     "label": "Внутри групп (например, компания)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "order_by",
+     "label": "Порядок (например, год)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "depth",
+     "label": "Глубина (сколько прошлых)",
+     "kind": "number",
+     "required": true,
+     "default": 1
+    },
+    {
+     "name": "horizon",
+     "label": "Горизонт (сколько будущих)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    }
+   ]
+  },
+  {
+   "type": "transform.merge",
+   "title": "Слияние",
+   "group": "Трансформация",
+   "description": "Две таблицы по ключевым полям (как JOIN)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Таблица 1"
+    },
+    {
+     "name": "in2",
+     "label": "Таблица 2"
+    }
+   ],
+   "params": [
+    {
+     "name": "keys",
+     "label": "Ключевые поля",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "left",
+       "label": "В первой",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "right",
+       "label": "Во второй",
+       "kind": "column",
+       "required": false,
+       "from_port": "in2"
+      }
+     ]
+    },
+    {
+     "name": "how",
+     "label": "Способ",
+     "kind": "select",
+     "required": true,
+     "default": "inner",
+     "options": [
+      {
+       "value": "inner",
+       "label": "внутреннее"
+      },
+      {
+       "value": "left",
+       "label": "левое"
+      },
+      {
+       "value": "right",
+       "label": "правое"
+      },
+      {
+       "value": "outer",
+       "label": "полное"
+      },
+      {
+       "value": "anti",
+       "label": "разность (строки первой без пары)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.join",
+   "title": "Соединение",
+   "group": "Трансформация",
+   "description": "Столбцы второй таблицы — справа, строка к строке",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Таблица 1"
+    },
+    {
+     "name": "in2",
+     "label": "Таблица 2"
+    }
+   ],
+   "params": [
+    {
+     "name": "allow_unequal",
+     "label": "Разрешить разное число строк",
+     "kind": "bool",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "transform.sort",
+   "title": "Сортировка",
+   "group": "Трансформация",
+   "description": "Порядок строк по столбцам",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "by",
+     "label": "По столбцам",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "desc",
+       "label": "По убыванию",
+       "kind": "bool",
+       "required": false
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "transform.filter",
+   "title": "Фильтр строк",
+   "group": "Трансформация",
+   "description": "Оставить строки по условиям или выражению",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "conditions",
+     "label": "Условия",
+     "kind": "rows",
+     "required": false,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "op",
+       "label": "Условие",
+       "kind": "select",
+       "required": true,
+       "default": "=",
+       "options": [
+        {
+         "value": "=",
+         "label": "равно"
+        },
+        {
+         "value": "!=",
+         "label": "не равно"
+        },
+        {
+         "value": ">",
+         "label": "больше"
+        },
+        {
+         "value": ">=",
+         "label": "не меньше"
+        },
+        {
+         "value": "<",
+         "label": "меньше"
+        },
+        {
+         "value": "<=",
+         "label": "не больше"
+        },
+        {
+         "value": "contains",
+         "label": "содержит"
+        },
+        {
+         "value": "starts",
+         "label": "начинается с"
+        },
+        {
+         "value": "empty",
+         "label": "пусто"
+        },
+        {
+         "value": "not_empty",
+         "label": "не пусто"
+        },
+        {
+         "value": "in",
+         "label": "одно из (через ;)"
+        }
+       ]
+      },
+      {
+       "name": "value",
+       "label": "Значение",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    },
+    {
+     "name": "join",
+     "label": "Условия связать",
+     "kind": "select",
+     "required": false,
+     "default": "and",
+     "options": [
+      {
+       "value": "and",
+       "label": "все выполняются (И)"
+      },
+      {
+       "value": "or",
+       "label": "хотя бы одно (ИЛИ)"
+      }
+     ]
+    },
+    {
+     "name": "expr",
+     "label": "Или выражение",
+     "kind": "expr",
+     "required": false,
+     "hint": "Например: roe > 0.1 И ГОД(дата) >= 2020"
+    },
+    {
+     "name": "invert",
+     "label": "Наоборот — убрать такие строки",
+     "kind": "bool",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "preprocess.fill",
+   "title": "Заполнение пропусков",
+   "group": "Предобработка",
+   "description": "Пустые значения — средним, медианой, соседним значением, константой; или удалить строки",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "rules",
+     "label": "Правила",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "method",
+       "label": "Чем заполнить",
+       "kind": "select",
+       "required": true,
+       "default": "median",
+       "options": [
+        {
+         "value": "mean",
+         "label": "среднее"
+        },
+        {
+         "value": "median",
+         "label": "медиана"
+        },
+        {
+         "value": "mode",
+         "label": "самое частое"
+        },
+        {
+         "value": "value",
+         "label": "значение"
+        },
+        {
+         "value": "previous",
+         "label": "предыдущее"
+        },
+        {
+         "value": "next",
+         "label": "следующее"
+        },
+        {
+         "value": "interpolate",
+         "label": "линейная интерполяция"
+        },
+        {
+         "value": "drop",
+         "label": "удалить строку"
+        }
+       ]
+      },
+      {
+       "name": "value",
+       "label": "Значение (для «значение»)",
+       "kind": "text",
+       "required": false
+      }
+     ]
+    },
+    {
+     "name": "group_by",
+     "label": "Внутри групп (например, компания)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "order_by",
+     "label": "Порядок для «предыдущее/следующее»",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    }
+   ]
+  },
+  {
+   "type": "preprocess.binning",
+   "title": "Квантование",
+   "group": "Предобработка",
+   "description": "Число — в интервалы: равной ширины, равной наполненности или по своим границам",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Столбец",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "method",
+     "label": "Интервалы",
+     "kind": "select",
+     "required": true,
+     "default": "quantile",
+     "options": [
+      {
+       "value": "quantile",
+       "label": "равной наполненности"
+      },
+      {
+       "value": "width",
+       "label": "равной ширины"
+      },
+      {
+       "value": "edges",
+       "label": "свои границы"
+      }
+     ]
+    },
+    {
+     "name": "bins",
+     "label": "Сколько интервалов",
+     "kind": "number",
+     "required": false,
+     "default": 5
+    },
+    {
+     "name": "edges",
+     "label": "Границы через «;»",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "labels",
+     "label": "Подпись",
+     "kind": "select",
+     "required": false,
+     "default": "interval",
+     "options": [
+      {
+       "value": "interval",
+       "label": "интервал (a, b]"
+      },
+      {
+       "value": "number",
+       "label": "номер 1, 2, …"
+      }
+     ]
+    },
+    {
+     "name": "as",
+     "label": "Имя нового столбца",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "preprocess.classes",
+   "title": "Конечные классы",
+   "group": "Предобработка",
+   "description": "Признак — в несколько классов по связи с целевым (да/нет); номер класса и WoE",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Признак",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "target",
+     "label": "Целевой (два значения)",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "event",
+     "label": "Значение-«событие»",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "max_classes",
+     "label": "Классов не больше",
+     "kind": "number",
+     "required": false,
+     "default": 5
+    },
+    {
+     "name": "min_share",
+     "label": "Доля строк в классе не меньше",
+     "kind": "number",
+     "required": false,
+     "default": 0.05
+    },
+    {
+     "name": "as",
+     "label": "Имя столбца класса",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "preprocess.split",
+   "title": "Разбиение на множества",
+   "group": "Предобработка",
+   "description": "Обучающее, тестовое и валидационное — столбцом «множество» (seed — повторяемо)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "test_share",
+     "label": "Доля тестового",
+     "kind": "number",
+     "required": true,
+     "default": 0.2
+    },
+    {
+     "name": "valid_share",
+     "label": "Доля валидационного",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "group",
+     "label": "Группа целиком в одно множество (например, компания)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "stratify",
+     "label": "Сохранить доли по столбцу (стратификация)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "as",
+     "label": "Имя столбца",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "preprocess.outliers",
+   "title": "Редактирование выбросов",
+   "group": "Предобработка",
+   "description": "Выбросы по IQR, z-оценке или квантилям: обрезать, сделать пустыми, удалить или отметить",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Столбцы",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "method",
+     "label": "Как найти",
+     "kind": "select",
+     "required": true,
+     "default": "iqr",
+     "options": [
+      {
+       "value": "iqr",
+       "label": "межквартильный размах (k·IQR)"
+      },
+      {
+       "value": "zscore",
+       "label": "z-оценка (k·σ)"
+      },
+      {
+       "value": "quantile",
+       "label": "квантили (k и 1−k)"
+      }
+     ]
+    },
+    {
+     "name": "k",
+     "label": "k (пусто — 1,5 / 3 / 0,01)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "action",
+     "label": "Что сделать",
+     "kind": "select",
+     "required": true,
+     "default": "clip",
+     "options": [
+      {
+       "value": "clip",
+       "label": "обрезать до границы"
+      },
+      {
+       "value": "missing",
+       "label": "сделать пустыми"
+      },
+      {
+       "value": "drop",
+       "label": "удалить строки"
+      },
+      {
+       "value": "flag",
+       "label": "отметить столбцом"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "preprocess.smooth",
+   "title": "Сглаживание",
+   "group": "Предобработка",
+   "description": "Скользящее среднее или медиана, экспоненциальное сглаживание — по ряду или внутри групп",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Столбцы",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "method",
+     "label": "Способ",
+     "kind": "select",
+     "required": true,
+     "default": "mean",
+     "options": [
+      {
+       "value": "mean",
+       "label": "скользящее среднее"
+      },
+      {
+       "value": "median",
+       "label": "скользящая медиана"
+      },
+      {
+       "value": "exp",
+       "label": "экспоненциальное"
+      }
+     ]
+    },
+    {
+     "name": "window",
+     "label": "Окно",
+     "kind": "number",
+     "required": false,
+     "default": 3
+    },
+    {
+     "name": "alpha",
+     "label": "Коэффициент (для экспоненциального)",
+     "kind": "number",
+     "required": false,
+     "default": 0.3
+    },
+    {
+     "name": "center",
+     "label": "Окно по центру",
+     "kind": "bool",
+     "required": false
+    },
+    {
+     "name": "group_by",
+     "label": "Внутри групп",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "order_by",
+     "label": "Порядок (например, год)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "replace",
+     "label": "Заменить исходные столбцы (иначе — новые рядом)",
+     "kind": "bool",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "preprocess.sample",
+   "title": "Сэмплинг",
+   "group": "Предобработка",
+   "description": "Случайная выборка строк: долей или числом, по слоям, с возвращением (бутстреп)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "method",
+     "label": "Размер",
+     "kind": "select",
+     "required": true,
+     "default": "share",
+     "options": [
+      {
+       "value": "share",
+       "label": "долей"
+      },
+      {
+       "value": "count",
+       "label": "числом строк"
+      }
+     ]
+    },
+    {
+     "name": "size",
+     "label": "Доля или число",
+     "kind": "number",
+     "required": true,
+     "default": 0.1
+    },
+    {
+     "name": "stratify",
+     "label": "По слоям (столбец)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "replace",
+     "label": "С возвращением",
+     "kind": "bool",
+     "required": false
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    }
+   ]
+  },
+  {
+   "type": "preprocess.normalize",
+   "title": "Нормализация",
+   "group": "Предобработка",
+   "description": "Непрерывные: z, 0…1, медиана/IQR, логарифм; дискретные: столбцы 0/1, номер, частота",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "rules",
+     "label": "Правила",
+     "kind": "rows",
+     "required": true,
+     "fields": [
+      {
+       "name": "column",
+       "label": "Столбец",
+       "kind": "column",
+       "required": true,
+       "from_port": "in"
+      },
+      {
+       "name": "method",
+       "label": "Способ",
+       "kind": "select",
+       "required": true,
+       "default": "zscore",
+       "options": [
+        {
+         "value": "zscore",
+         "label": "стандартизация (z)"
+        },
+        {
+         "value": "minmax",
+         "label": "в диапазон 0…1"
+        },
+        {
+         "value": "robust",
+         "label": "по медиане и IQR"
+        },
+        {
+         "value": "log",
+         "label": "логарифм ln(1+x)"
+        },
+        {
+         "value": "onehot",
+         "label": "дискретный: столбцы 0/1"
+        },
+        {
+         "value": "ordinal",
+         "label": "дискретный: номер значения"
+        },
+        {
+         "value": "frequency",
+         "label": "дискретный: частота значения"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "replace",
+     "label": "Заменить исходные столбцы (иначе — новые рядом)",
+     "kind": "bool",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "research.correlation",
+   "title": "Корреляционный анализ",
+   "group": "Исследование",
+   "description": "Связь числовых показателей: r, p-значение, сила — парами, с целевым или матрицей",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Показатели (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "method",
+     "label": "Коэффициент",
+     "kind": "select",
+     "required": true,
+     "default": "pearson",
+     "options": [
+      {
+       "value": "pearson",
+       "label": "Пирсон (линейная)"
+      },
+      {
+       "value": "spearman",
+       "label": "Спирмен (ранговая)"
+      },
+      {
+       "value": "kendall",
+       "label": "Кендалл (ранговая)"
+      }
+     ]
+    },
+    {
+     "name": "target",
+     "label": "Только с целевым",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "output",
+     "label": "Вид",
+     "kind": "select",
+     "required": false,
+     "default": "pairs",
+     "options": [
+      {
+       "value": "pairs",
+       "label": "парами"
+      },
+      {
+       "value": "matrix",
+       "label": "матрицей"
+      }
+     ]
+    },
+    {
+     "name": "alpha",
+     "label": "Уровень значимости",
+     "kind": "number",
+     "required": false,
+     "default": 0.05
+    }
+   ]
+  },
+  {
+   "type": "research.factor",
+   "title": "Факторный анализ",
+   "group": "Исследование",
+   "description": "Главные компоненты с вращением варимакс: нагрузки и доля дисперсии, или факторы в строки",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "columns",
+     "label": "Показатели (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "factors",
+     "label": "Факторов (пусто — по Кайзеру)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "rotation",
+     "label": "Вращение",
+     "kind": "select",
+     "required": false,
+     "default": "varimax",
+     "options": [
+      {
+       "value": "varimax",
+       "label": "варимакс"
+      },
+      {
+       "value": "none",
+       "label": "без вращения"
+      }
+     ]
+    },
+    {
+     "name": "output",
+     "label": "Результат",
+     "kind": "select",
+     "required": false,
+     "default": "loadings",
+     "options": [
+      {
+       "value": "loadings",
+       "label": "нагрузки показателей"
+      },
+      {
+       "value": "scores",
+       "label": "строки + факторы"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "research.autocorr",
+   "title": "Автокорреляция",
+   "group": "Исследование",
+   "description": "Связь ряда с самим собой со сдвигом: автокорреляция, частная, граница значимости",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Ряд",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "order_by",
+     "label": "Порядок (например, дата)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "lags",
+     "label": "Лагов",
+     "kind": "number",
+     "required": false,
+     "default": 10
+    }
+   ]
+  },
+  {
+   "type": "research.duplicates",
+   "title": "Дубликаты и противоречия",
+   "group": "Исследование",
+   "description": "Повторы строк и противоречия: одинаковые входы при разных выходах",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "inputs",
+     "label": "Входные поля",
+     "kind": "columns",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "outputs",
+     "label": "Выходные поля",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "output",
+     "label": "Результат",
+     "kind": "select",
+     "required": false,
+     "default": "all",
+     "options": [
+      {
+       "value": "all",
+       "label": "все строки со статусом"
+      },
+      {
+       "value": "problems",
+       "label": "только проблемные"
+      },
+      {
+       "value": "clean",
+       "label": "очищенная таблица"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "type": "mining.linreg",
+   "title": "Линейная регрессия",
+   "group": "Data Mining",
+   "description": "МНК: коэффициенты, p-значения, R², F; прогноз и остатки; применение к новым данным",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Обучение"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "target",
+     "label": "Целевой",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "set_column",
+     "label": "Столбец множеств (из «Разбиения»)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "cv",
+     "label": "Кросс-валидация: частей (0 — нет)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    }
+   ]
+  },
+  {
+   "type": "mining.logreg",
+   "title": "Логистическая регрессия",
+   "group": "Data Mining",
+   "description": "Вероятность события (да/нет): коэффициенты, отношения шансов, AUC, ROC, матрица ошибок",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Обучение"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "target",
+     "label": "Целевой",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "set_column",
+     "label": "Столбец множеств (из «Разбиения»)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "cv",
+     "label": "Кросс-валидация: частей (0 — нет)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "event",
+     "label": "Значение-«событие» (пусто — второе по алфавиту)",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "threshold",
+     "label": "Порог класса",
+     "kind": "number",
+     "required": false,
+     "default": 0.5
+    }
+   ]
+  },
+  {
+   "type": "mining.mlp_cls",
+   "title": "Нейросеть (классификация)",
+   "group": "Data Mining",
+   "description": "Многослойный перцептрон для да/нет: вероятность, AUC, ROC",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Обучение"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "target",
+     "label": "Целевой",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "set_column",
+     "label": "Столбец множеств (из «Разбиения»)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "cv",
+     "label": "Кросс-валидация: частей (0 — нет)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "event",
+     "label": "Значение-«событие» (пусто — второе по алфавиту)",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "threshold",
+     "label": "Порог класса",
+     "kind": "number",
+     "required": false,
+     "default": 0.5
+    },
+    {
+     "name": "hidden",
+     "label": "Скрытые слои (например, 16, 8)",
+     "kind": "text",
+     "required": false,
+     "default": "10"
+    },
+    {
+     "name": "max_iter",
+     "label": "Итераций обучения",
+     "kind": "number",
+     "required": false,
+     "default": 500
+    }
+   ]
+  },
+  {
+   "type": "mining.mlp_reg",
+   "title": "Нейросеть (регрессия)",
+   "group": "Data Mining",
+   "description": "Многослойный перцептрон для числового прогноза: R², RMSE, MAE",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Обучение"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "target",
+     "label": "Целевой",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "set_column",
+     "label": "Столбец множеств (из «Разбиения»)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "cv",
+     "label": "Кросс-валидация: частей (0 — нет)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "hidden",
+     "label": "Скрытые слои (например, 16, 8)",
+     "kind": "text",
+     "required": false,
+     "default": "10"
+    },
+    {
+     "name": "max_iter",
+     "label": "Итераций обучения",
+     "kind": "number",
+     "required": false,
+     "default": 500
+    }
+   ]
+  },
+  {
+   "type": "mining.kmeans",
+   "title": "Кластеризация",
+   "group": "Data Mining",
+   "description": "k-средних: кластер строки, профили кластеров, число кластеров — по силуэту",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Данные"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "k",
+     "label": "Кластеров (пусто — подобрать)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "as",
+     "label": "Имя столбца кластера",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "mining.em",
+   "title": "EM-кластеризация",
+   "group": "Data Mining",
+   "description": "Смесь нормальных распределений: кластер и уверенность, число кластеров — по BIC",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Данные"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "k",
+     "label": "Кластеров (пусто — подобрать)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "as",
+     "label": "Имя столбца кластера",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "mining.som",
+   "title": "Самоорганизующиеся сети",
+   "group": "Data Mining",
+   "description": "Карта Кохонена: похожие строки — в соседние ячейки сетки",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Данные"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "width",
+     "label": "Ширина карты",
+     "kind": "number",
+     "required": false,
+     "default": 5
+    },
+    {
+     "name": "height",
+     "label": "Высота карты",
+     "kind": "number",
+     "required": false,
+     "default": 5
+    },
+    {
+     "name": "epochs",
+     "label": "Эпох обучения",
+     "kind": "number",
+     "required": false,
+     "default": 100
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    }
+   ]
+  },
+  {
+   "type": "mining.assoc",
+   "title": "Ассоциативные правила",
+   "group": "Data Mining",
+   "description": "«Если A, то B» по транзакциям: поддержка, достоверность, лифт (Apriori)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "transaction",
+     "label": "Транзакция (id)",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "item",
+     "label": "Позиция (товар, признак)",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "min_support",
+     "label": "Минимальная поддержка",
+     "kind": "number",
+     "required": false,
+     "default": 0.05
+    },
+    {
+     "name": "min_confidence",
+     "label": "Минимальная достоверность",
+     "kind": "number",
+     "required": false,
+     "default": 0.5
+    },
+    {
+     "name": "max_length",
+     "label": "Позиций в правиле не больше",
+     "kind": "number",
+     "required": false,
+     "default": 3
+    }
+   ]
+  },
+  {
+   "type": "mining.tx_cluster",
+   "title": "Кластеризация транзакций",
+   "group": "Data Mining",
+   "description": "Похожие по составу транзакции — в кластеры; частые позиции кластера",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "transaction",
+     "label": "Транзакция (id)",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "item",
+     "label": "Позиция (товар, признак)",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "k",
+     "label": "Кластеров (пусто — подобрать)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    }
+   ]
+  },
+  {
+   "type": "mining.arimax",
+   "title": "ARIMAX",
+   "group": "Data Mining",
+   "description": "Прогноз ряда: свои прошлые значения (p), разности (d), прошлые ошибки (q), внешние факторы",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Ряд",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "order_by",
+     "label": "Порядок (например, дата)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "exog",
+     "label": "Внешние факторы",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "p",
+     "label": "p (авторегрессия)",
+     "kind": "number",
+     "required": false,
+     "default": 1
+    },
+    {
+     "name": "d",
+     "label": "d (разности)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "q",
+     "label": "q (скользящее среднее ошибок)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "horizon",
+     "label": "Горизонт прогноза",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    }
+   ]
+  }
+ ]
+}

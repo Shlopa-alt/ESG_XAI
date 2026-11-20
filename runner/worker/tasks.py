@@ -90,9 +90,9 @@ def sha256(path: Path) -> str:
 class Events:
     """События запуска: журнал в Redis и канал для живого потока."""
 
-    def __init__(self, run_id: int) -> None:
+    def __init__(self, run_id: int, prefix: str = "run") -> None:
         self.r = redis.Redis.from_url(REDIS_URL)
-        self.key = f"run:{run_id}"
+        self.key = f"{prefix}:{run_id}"
         self.tail: deque[str] = deque(maxlen=15)  # последние строки лога — в сообщение о сбое
 
     def emit(self, kind: str, **data: Any) -> None:
@@ -121,9 +121,10 @@ class Events:
             self._beat = now
 
 
-def post(run_id: int, body: dict[str, Any], path: str | None = None) -> tuple[int, str]:
+def post(run_id: int, body: dict[str, Any], path: str | None = None,
+         base: str = "/api/runs/worker") -> tuple[int, str]:
     """Платформе: ход и итог запуска. Код ответа (409 — запуск уже снят, 0 — нет связи) и текст ошибки."""
-    url = f"{PLATFORM_URL}/api/runs/worker/{path or run_id}"
+    url = f"{PLATFORM_URL}{base}/{path or run_id}"
     req = Request(url, data=json.dumps(body, ensure_ascii=False, default=str).encode(),
                   headers={"X-Runner-Token": RUNNER_TOKEN, "Content-Type": "application/json"},
                   method="POST")
@@ -378,7 +379,94 @@ def execute(job: dict[str, Any]) -> str:
     return status
 
 
+STUDIO = "/api/studio/worker"
+
+
+@app.task(name="runner.studio")
+def studio(job: dict[str, Any]) -> str:
+    """Расчёт сценария Студии (runner/studio/run_scenario.py): входы сверяются по sha256, как срезы
+    у методов; итог по узлам («Таблица», «Статистика»), файлы экспорта и данные для повтора
+    (коммит, окружение) — платформе. Предпросмотр (until) — без файлов, папка потом удаляется."""
+    run_id = int(job["studio_run_id"])
+    ev = Events(run_id, prefix="studio")
+    if ev.stop_requested():
+        post(run_id, {"status": "stopped", "message": "Снят с очереди до начала расчёта"}, base=STUDIO)
+        return "stopped"
+    for wait in (0, *START_WAIT_S):  # задача может прийти раньше, чем платформа допишет расчёт
+        time.sleep(wait)
+        code, _ = post(run_id, {"status": "running"}, base=STUDIO)
+        if code != 404:
+            break
+    if code == 409:
+        return "skipped"
+    ev.alive()
+    preview = bool(job.get("until"))
+    sub = "_preview" if preview else str(job["scenario"])
+    results = Path(DATA_DIR) / "studio" / sub / f"run-{run_id:05d}"
+    try:
+        results.mkdir(parents=True, exist_ok=True)
+        inputs: dict[str, dict[str, str]] = {}
+        for node, src in (job.get("inputs") or {}).items():
+            path = to_container(src["path"])
+            if not path.is_file():
+                raise Failure(f"Узел {node}: нет файла данных {src['path']}")
+            actual = sha256(path)
+            if actual != src["sha256"]:
+                raise Failure(f"Узел {node}: файл данных изменился (sha256 {actual[:12]}… ≠ "
+                              f"{src['sha256'][:12]}…) — нужна новая версия набора")
+            inputs[node] = {"path": str(path), "sheet": src.get("sheet") or ""}
+        (results / "scenario.json").write_text(json.dumps(job["graph"], ensure_ascii=False), encoding="utf-8")
+        (results / "inputs.json").write_text(json.dumps(inputs, ensure_ascii=False), encoding="utf-8")
+        argv = [RUN_PYTHON, "-u", "-B", "studio/run_scenario.py", str(results),
+                "--scenario", str(results / "scenario.json"), "--inputs", str(results / "inputs.json"),
+                "--rows", str(int(job.get("rows") or 50))]
+        if preview:
+            argv += ["--until", str(job["until"])]
+        code, reason = run_script(argv, REPO / "runner", ev, Tracker(ev), int(job["limit_min"]) * 60,
+                                  results / "worker.log")
+        if reason == "stopped":
+            raise Failure("Остановлен по запросу", "stopped")
+        if reason == "limit":
+            raise Failure(f"Превышен лимит {job['limit_min']} мин — расчёт остановлен")
+        summary_path = results / "summary.json"
+        if not summary_path.is_file():
+            raise Failure(f"Сценарий не посчитан (код {code}):\n" + "\n".join(ev.tail))
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        views = {}
+        for f in sorted((results / "nodes").glob("*.json")):
+            views[f.stem] = json.loads(f.read_text(encoding="utf-8"))
+        failed = [n for n, info in (summary.get("nodes") or {}).items() if not info.get("ok")]
+        err = summary.get("error") or {}
+        message = (err.get("message") or "") if err else (
+            f"С ошибкой узлов: {len(failed)}" if failed else "")
+        body = {"status": "done" if code == 0 else "failed", "message": message,
+                "summary": summary, "views": views, "files": summary.get("files") or [],
+                "results_path": "" if preview else to_host(str(results)),
+                **{k: summary.get(k) or "" for k in ("runner_commit", "env_lock_sha256", "python")}}
+        accepted, detail = post(run_id, body, base=STUDIO)
+        if 400 <= accepted < 500 and accepted != 409:
+            raise Failure(f"Платформа не приняла итог ({accepted}): {platform_error(detail)}")
+        status = body["status"]
+    except Failure as exc:
+        status = exc.args[1] if len(exc.args) > 1 else "failed"
+        post(run_id, {"status": status, "message": str(exc.args[0])}, base=STUDIO)
+    except Exception as exc:  # noqa: BLE001
+        status = "failed"
+        post(run_id, {"status": "failed", "message": f"Сбой исполнителя: {type(exc).__name__}: {exc}"},
+             base=STUDIO)
+    finally:
+        if preview:
+            import shutil
+
+            shutil.rmtree(results, ignore_errors=True)
+    ev.emit("status", status=status)
+    return status
+
+
 @worker_ready.connect
 def _orphans(**_: Any) -> None:
     """Исполнитель только что запустился: его «идущие» запуски прервались вместе с ним."""
-    report(0, {}, path=f"orphans?queue={QUEUE}")
+    if QUEUE == "studio":
+        post(0, {}, path="orphans", base=STUDIO)
+    else:
+        report(0, {}, path=f"orphans?queue={QUEUE}")
