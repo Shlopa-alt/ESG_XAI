@@ -26,6 +26,9 @@ const NAV: NavItem[] = [
   { to: "/nets", label: "Нейросети", also: ["/analysis"] },
   { to: "/data", label: "Данные", also: ["/datasets", "/data-drafts"] },
 ];
+// Инструменты для работы с платформой извне и вручную (открытый API; дальше — Студия, Jupyter)
+const TOOLS_NAV: NavItem[] = [{ to: "/api-access", label: "Доступ к API" }];
+
 const OWNER_NAV: NavItem[] = [
   { to: "/qwen", label: "Задачи Qwen" },
   { to: "/users", label: "Пользователи" },
@@ -103,6 +106,8 @@ export function Layout({ user }: { user: User }) {
         </div>
         <div className="nav">
           {links(NAV)}
+          <span className="nav-low">Инструменты</span>
+          {links(TOOLS_NAV)}
           {user.role === "owner" && (
             <>
               <span className="nav-low">Служебное</span>

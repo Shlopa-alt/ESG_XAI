@@ -4,6 +4,7 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import { useMe } from "./auth/useAuth";
 import { Layout } from "./components/Layout";
 import { Analysis } from "./pages/AnalysisPage";
+import { ApiAccess } from "./pages/ApiAccessPage";
 import { MethodLibrary } from "./pages/MethodLibraryPage";
 import { Nets } from "./pages/NetsPage";
 import { Article } from "./pages/ArticlePage";
@@ -61,6 +62,7 @@ export function App() {
         <Route path="analysis" element={<Analysis />} />
         <Route path="methodology" element={<Methodology />} />
         <Route path="password" element={<ChangePassword />} />
+        <Route path="api-access" element={<ApiAccess />} />
         {user.role === "owner" && <Route path="users" element={<Users />} />}
         {user.role === "owner" && <Route path="qwen" element={<Qwen />} />}
         <Route path="*" element={<Overview />} />

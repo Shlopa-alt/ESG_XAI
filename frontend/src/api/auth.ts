@@ -97,3 +97,22 @@ export interface AuditRow {
 
 export const listAudit = (login?: string) =>
   request<AuditRow[]>(`/audit?limit=200${login ? `&login=${encodeURIComponent(login)}` : ""}`);
+
+/** Личный токен открытого API (страница «Доступ к API»). */
+export interface ApiTokenRow {
+  id: number;
+  login: string;
+  name: string;
+  prefix: string;
+  scope: "read" | "write";
+  created_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  active: boolean;
+}
+
+export const listTokens = (all = false) => request<ApiTokenRow[]>(`/tokens${all ? "?all=true" : ""}`);
+export const createToken = (t: { name: string; scope: "read" | "write"; days: number }) =>
+  request<ApiTokenRow & { token: string }>("/tokens", { method: "POST", body: JSON.stringify(t) });
+export const revokeToken = (id: number) => request<undefined>(`/tokens/${id}`, { method: "DELETE" });

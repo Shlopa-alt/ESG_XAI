@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import User
+from app.services import api_tokens
 from app.services.auth import password_stamp, read_session_token
 
 # С временным паролем доступны только эти адреса: узнать себя, сменить пароль, выйти
@@ -18,6 +19,10 @@ def current_user(
     db: Annotated[Session, Depends(get_db)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> User:
+    # Открытый API: личный токен в заголовке Authorization (services/api_tokens.py)
+    plain = api_tokens.bearer(request)
+    if plain is not None:
+        return _token_user(request, db, plain)
     # Имя cookie — из настроек, то же, под которым её выдаёт /auth/login
     token = request.cookies.get(settings.session_cookie_name)
     session = read_session_token(settings, token) if token else None
@@ -30,6 +35,22 @@ def current_user(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Требуется вход")
     if user.must_change_password and request.url.path not in WHILE_MUST_CHANGE:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Смените временный пароль")
+    return user
+
+
+def _token_user(request: Request, db: Session, plain: str) -> User:
+    tok = api_tokens.find(db, plain)
+    user = db.get(User, tok.user_id) if tok is not None else None
+    if tok is None or user is None or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                            "Токен API недействителен, отозван или истёк")
+    if user.must_change_password:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Смените временный пароль на сайте")
+    why = api_tokens.denied(tok, request.method, request.url.path)
+    if why:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, why)
+    api_tokens.touch(db, tok)
+    request.state.api_token_id = tok.id
     return user
 
 
