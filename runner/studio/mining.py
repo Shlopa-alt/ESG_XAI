@@ -24,7 +24,7 @@ from sklearn.mixture import GaussianMixture
 from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 
-from studio.components import Component, NodeError, Param
+from studio.base import Component, NodeError, Param
 
 Frame = pd.DataFrame
 Params = dict[str, Any]

@@ -25,6 +25,7 @@ LIMIT_MIN = 30
 MAX_DEPTH = 5  # подмодель в подмодели… не глубже
 NESTED = ("control.submodel", "control.loop")
 PYTHON = "code.python"
+DB_NODES = ("import.database", "export.database")
 
 
 class GraphError(ValueError):

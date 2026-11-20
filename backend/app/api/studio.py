@@ -5,11 +5,13 @@
 результаты узлов из наборов под NDA видны только тем, кому видны файлы этих наборов (правило 6).
 """
 
+import hashlib
 import secrets
+import time
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -19,8 +21,17 @@ from app.api.datasets import _can_see_files
 from app.api.deps import current_user, require_role
 from app.config import Settings, get_settings
 from app.db import get_db
-from app.models import Dataset, DatasetSnapshot, Scenario, ScenarioVersion, StudioRun, User
+from app.models import (
+    Dataset,
+    DatasetSnapshot,
+    DbConnection,
+    Scenario,
+    ScenarioVersion,
+    StudioRun,
+    User,
+)
 from app.services import run_queue
+from app.services import secrets as secrets_
 from app.services import studio as svc
 from app.services.codes import next_code
 from app.services.data_files import to_container
@@ -46,6 +57,27 @@ class ApproveIn(BaseModel):
     node: str = Field(min_length=1, max_length=64)
 
 
+class ConnectionIn(BaseModel):
+    title: str = Field(min_length=1, max_length=256)
+    kind: Literal["postgresql", "mysql", "mssql", "clickhouse"]
+    host: str = Field(min_length=1, max_length=256)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    database: str = Field(default="", max_length=256)
+    username: str = Field(default="", max_length=256)
+    password: str | None = Field(default=None, max_length=1024)  # не прислали — прежний
+    allow_write: bool = False
+
+
+class PublishIn(BaseModel):
+    version: int | None = None  # пусто — текущая
+
+
+class ServiceIn(BaseModel):
+    # порт «Входа подмодели» → строки
+    inputs: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    wait: int = Field(default=30, ge=0, le=60)  # подождать итог, секунд
+
+
 class RunIn(BaseModel):
     until: str = Field(default="", max_length=64)  # узел для предпросмотра; пусто — весь сценарий
 
@@ -66,7 +98,7 @@ def _brief(db: Session, s: Scenario) -> dict[str, Any]:
     author = db.get(User, s.author_id) if s.author_id else None
     return {"code": s.code, "title": s.title, "description": s.description, "version": s.version,
             "author": author.login if author else "", "nodes": len(s.graph.get("nodes") or []),
-            "updated_at": s.updated_at}
+            "updated_at": s.updated_at, "published_version": s.published_version}
 
 
 def _get(db: Session, code: str) -> Scenario:
@@ -231,7 +263,14 @@ def run_scenario(code: str, body: RunIn, db: Annotated[Session, Depends(get_db)]
                  user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
     """Расчёт сохранённой версии: весь сценарий или (until) только узел и то, от чего он зависит."""
     s = _get(db, code)
-    _check(settings, s.graph)
+    return _run_out(_start(db, settings, user, s, s.graph, s.version, body.until))
+
+
+def _start(db: Session, settings: Settings, user: User, s: Scenario, base: dict[str, Any],
+           version: int, until: str, inject: dict[str, Any] | None = None) -> StudioRun:
+    """Поставить расчёт: вложить подмодели, проверить код Python, входные наборы и подключения к
+    базам, записать всё для повтора и отдать исполнителю. inject — данные вызова веб-сервиса."""
+    _check(settings, base)
 
     def resolve(sub_code: str, version: int | None) -> tuple[dict[str, Any], int]:
         sub = db.scalar(select(Scenario).where(Scenario.code == sub_code))
@@ -248,22 +287,22 @@ def run_scenario(code: str, body: RunIn, db: Annotated[Session, Depends(get_db)]
         return g, v
 
     try:
-        graph, all_nodes = svc.expand(s.graph, resolve)
+        graph, all_nodes = svc.expand(base, resolve)
     except svc.GraphError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"node": exc.node, "message": str(exc)}) from exc
     ids = {n["id"] for n in graph.get("nodes") or []}
     if not ids:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "В сценарии нет узлов")
-    if body.until and body.until not in ids:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Нет узла {body.until}")
-    top = svc.needed(graph, body.until, settings) if body.until else None
+    if until and until not in ids:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Нет узла {until}")
+    top = svc.needed(graph, until, settings) if until else None
     # вложенные узлы нужны, если нужен их узел-подмодель верхнего уровня
     used = [e for e in all_nodes if top is None or e["id"].split("/", 1)[0] in top]
     busy = db.scalar(select(StudioRun).where(StudioRun.created_by == user.id,
                                              StudioRun.status.in_(ACTIVE), StudioRun.until == "")
                      .limit(1))
-    if busy is not None and not body.until:
+    if busy is not None and not until and inject is None:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             f"Уже идёт ваш расчёт сценария (№ {busy.id}) — "
                             "дождитесь его или остановите")
@@ -295,7 +334,29 @@ def run_scenario(code: str, body: RunIn, db: Annotated[Session, Depends(get_db)]
             p = node.get("params") or {}
             inputs[f"{e['id']}#подмодель"] = {"scenario": str(p.get("scenario") or "").upper(),
                                               "version": p.get("__version__")}
-    for e in [x for x in used if comps.get(x["node"].get("type"), {}).get("loads")]:
+    connections: set[str] = set()
+    for e in used:  # базы данных: подключение есть; запись — только если владелец разрешил
+        node = e["node"]
+        if node.get("type") not in svc.DB_NODES:
+            continue
+        p = node.get("params") or {}
+        conn_code = str(p.get("connection") or "").upper()
+        conn = (db.scalar(select(DbConnection).where(DbConnection.code == conn_code))
+                if conn_code else None)
+        if conn is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                {"node": e["id"], "message": "База данных: не выбрано подключение"})
+        if node["type"] == "export.database" and not conn.allow_write:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                {"node": e["id"],
+                                 "message": f"В {conn.code} запись не разрешена владельцем"})
+        connections.add(conn.code)
+        if node["type"] == "import.database":
+            q = str(p.get("query") or "")
+            inputs[e["id"]] = {"connection": conn.code,
+                               "query_sha256": hashlib.sha256(q.encode()).hexdigest()}
+    for e in [x for x in used if comps.get(x["node"].get("type"), {}).get("loads")
+              and x["node"].get("type") == "import.dataset"]:
         node = {**e["node"], "id": e["id"]}
         params = node.get("params") or {}
         sid = params.get("snapshot_id")
@@ -316,13 +377,20 @@ def run_scenario(code: str, body: RunIn, db: Annotated[Session, Depends(get_db)]
         inputs[node["id"]] = {"dataset": ds.code, "snapshot_id": snap.id, "version": snap.version,
                               "sha256": snap.sha256, "sheet": sheet}
         job_inputs[node["id"]] = {"path": snap.storage_path, "sha256": snap.sha256, "sheet": sheet}
-    run = StudioRun(scenario_id=s.id, version=s.version, until=body.until, status="queued",
+    if connections:
+        inputs["__connections__"] = {"codes": sorted(connections)}
+    if inject is not None:
+        inputs["__service__"] = {"version": version}
+    run = StudioRun(scenario_id=s.id, version=version, until=until, status="queued",
                     created_by=user.id, inputs=inputs, summary={}, views={}, files=[])
     db.add(run)
     db.flush()
-    job = {"studio_run_id": run.id, "scenario": s.code, "version": s.version, "graph": graph,
-           "inputs": job_inputs, "until": body.until, "limit_min": svc.LIMIT_MIN,
-           "rows": svc.PREVIEW_ROWS if body.until else svc.RUN_ROWS}
+    job = {"studio_run_id": run.id, "scenario": s.code, "version": version, "graph": graph,
+           "inputs": job_inputs, "until": until, "limit_min": svc.LIMIT_MIN,
+           "rows": svc.PREVIEW_ROWS if until else svc.RUN_ROWS,
+           "connections": sorted(connections)}
+    if inject is not None:
+        job.update(inject=inject, output=True)
     try:
         run_queue.enqueue_studio(settings.redis_url, run.id, job)
     except Exception as exc:  # noqa: BLE001 — очередь недоступна: расчёта нет
@@ -330,7 +398,166 @@ def run_scenario(code: str, body: RunIn, db: Annotated[Session, Depends(get_db)]
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             f"Очередь расчётов недоступна: {type(exc).__name__}") from exc
     db.commit()
-    return _run_out(run)
+    return run
+
+
+# --- подключения к базам данных ---
+
+def _conn_out(c: DbConnection) -> dict[str, Any]:
+    return {"code": c.code, "title": c.title, "kind": c.kind, "host": c.host, "port": c.port,
+            "database": c.database, "username": c.username, "has_password": bool(c.password_enc),
+            "allow_write": c.allow_write}
+
+
+@router.get("/connections")
+def list_connections(db: Annotated[Session, Depends(get_db)],
+                     _: Annotated[User, Depends(current_user)]) -> list[dict[str, Any]]:
+    """Подключения — без паролей: их видит только исполнитель во время расчёта."""
+    return [_conn_out(c) for c in db.scalars(select(DbConnection).order_by(DbConnection.code))]
+
+
+@router.post("/connections", status_code=status.HTTP_201_CREATED)
+def create_connection(body: ConnectionIn, db: Annotated[Session, Depends(get_db)],
+                      settings: Annotated[Settings, Depends(get_settings)],
+                      user: Annotated[User, Depends(require_role("owner"))]) -> dict[str, Any]:
+    c = DbConnection(code=next_code(db, DbConnection.code, "DB", 2), title=body.title.strip(),
+                     kind=body.kind, host=body.host.strip(), port=body.port,
+                     database=body.database.strip(), username=body.username.strip(),
+                     password_enc=secrets_.encrypt(settings, body.password or ""),
+                     allow_write=body.allow_write, created_by=user.id, updated_at=datetime.now(UTC))
+    db.add(c)
+    db.commit()
+    return _conn_out(c)
+
+
+def _get_conn(db: Session, code: str) -> DbConnection:
+    c = db.scalar(select(DbConnection).where(DbConnection.code == code.upper()))
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет подключения {code}")
+    return c
+
+
+@router.put("/connections/{code}")
+def update_connection(code: str, body: ConnectionIn, db: Annotated[Session, Depends(get_db)],
+                      settings: Annotated[Settings, Depends(get_settings)],
+                      _: Annotated[User, Depends(require_role("owner"))]) -> dict[str, Any]:
+    c = _get_conn(db, code)
+    c.title, c.kind, c.host, c.port = body.title.strip(), body.kind, body.host.strip(), body.port
+    c.database, c.username = body.database.strip(), body.username.strip()
+    c.allow_write = body.allow_write
+    if body.password is not None:
+        c.password_enc = secrets_.encrypt(settings, body.password)
+    c.updated_at = datetime.now(UTC)
+    db.commit()
+    return _conn_out(c)
+
+
+@router.delete("/connections/{code}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_connection(code: str, db: Annotated[Session, Depends(get_db)],
+                      _: Annotated[User, Depends(require_role("owner"))]) -> Response:
+    db.delete(_get_conn(db, code))
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- публикация сценария как веб-сервиса ---
+
+@router.post("/scenarios/{code}/publish", dependencies=[Researcher])
+def publish(code: str, body: PublishIn, db: Annotated[Session, Depends(get_db)],
+            settings: Annotated[Settings, Depends(get_settings)],
+            user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
+    """Версия сценария — веб-сервис: данные вызова идут во «Входы подмодели», ответ — «Выход»."""
+    s = _get(db, code)
+    _may_edit(s, user)
+    version = body.version or s.version
+    graph = _version_graph(db, s, version)
+    _check(settings, graph)
+    outs = [n for n in graph.get("nodes") or [] if n.get("type") == "control.output"]
+    if len(outs) != 1:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Для веб-сервиса нужен ровно один узел «Выход подмодели» — "
+                            "его таблица и будет ответом")
+    s.published_version, s.published_at, s.published_by = version, datetime.now(UTC), user.id
+    db.commit()
+    return _brief(db, s)
+
+
+@router.delete("/scenarios/{code}/publish", dependencies=[Researcher])
+def unpublish(code: str, db: Annotated[Session, Depends(get_db)],
+              user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
+    s = _get(db, code)
+    _may_edit(s, user)
+    s.published_version = s.published_at = s.published_by = None
+    db.commit()
+    return _brief(db, s)
+
+
+def _version_graph(db: Session, s: Scenario, version: int) -> dict[str, Any]:
+    if version == s.version:
+        return s.graph
+    row = db.scalar(select(ScenarioVersion).where(ScenarioVersion.scenario_id == s.id,
+                                                  ScenarioVersion.version == version))
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"У {s.code} нет версии {version}")
+    return row.graph
+
+
+def _service_out(db: Session, r: StudioRun, user: User) -> dict[str, Any]:
+    hide = _hidden(db, r, user)
+    out = {"run_id": r.id, "status": r.status, "message": r.message, "version": r.version,
+           "output": None if hide else (r.views or {}).get("__output__")}
+    if r.status == "done" and not hide and out["output"] is None:
+        out["message"] = out["message"] or ("Узел «Выход подмодели» не посчитан — ошибки узлов: "
+                                            f"GET /api/v1/studio/runs/{r.id}")
+    return out
+
+
+SERVICE_ACTIVE = 3
+SERVICE_INPUT_MB = 5
+
+
+@router.post("/services/{code}/run", status_code=status.HTTP_200_OK, dependencies=[Researcher])
+def call_service(code: str, body: ServiceIn, request: Request,
+                 db: Annotated[Session, Depends(get_db)],
+                 settings: Annotated[Settings, Depends(get_settings)],
+                 user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
+    """Вызов опубликованного сценария: строки — во «Входы подмодели» по портам, ответ — таблица
+    «Выхода подмодели». Ждёт итог до wait секунд, иначе отдаёт run_id: GET /services/runs/{id}."""
+    s = _get(db, code)
+    if s.published_version is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"{s.code} не опубликован как веб-сервис")
+    size = int(request.headers.get("content-length") or 0)
+    if size > SERVICE_INPUT_MB * 2**20:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            f"Данных больше {SERVICE_INPUT_MB} МБ")
+    if set(body.inputs) - {"in", "in2"}:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Входы веб-сервиса — in и in2")
+    active = [r for r in db.scalars(select(StudioRun).where(StudioRun.created_by == user.id,
+                                                            StudioRun.status.in_(ACTIVE)))
+              if "__service__" in (r.inputs or {})]
+    if len(active) >= SERVICE_ACTIVE:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            f"Уже идут ваши вызовы веб-сервисов: {len(active)} — дождитесь их")
+    graph = _version_graph(db, s, s.published_version)
+    run = _start(db, settings, user, s, graph, s.published_version, "", inject=body.inputs)
+    deadline = time.monotonic() + body.wait
+    while time.monotonic() < deadline:
+        db.expire(run)
+        if run.status not in ACTIVE:
+            break
+        time.sleep(0.5)
+    return _service_out(db, run, user)
+
+
+@router.get("/services/runs/{run_id}")
+def service_run(run_id: int, db: Annotated[Session, Depends(get_db)],
+                user: Annotated[User, Depends(current_user)]) -> dict[str, Any]:
+    r = _get_run(db, run_id)
+    if "__service__" not in (r.inputs or {}):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"№ {run_id} — не вызов веб-сервиса")
+    if r.created_by != user.id and user.role != "owner":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Нет вызова № {run_id}")
+    return _service_out(db, r, user)
 
 
 def _get_run(db: Session, run_id: int) -> StudioRun:
@@ -410,6 +637,27 @@ def orphans(db: Annotated[Session, Depends(get_db)]) -> dict[str, int]:
         r.message = "Исполнитель перезапустился во время расчёта — запустите заново"
     db.commit()
     return {"failed": len(runs)}
+
+
+@router.get("/worker/{run_id}/connections", dependencies=[Depends(_runner)])
+def worker_connections(run_id: int, db: Annotated[Session, Depends(get_db)],
+                       settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, Any]:
+    """Реквизиты подключений — исполнителю, только пока этот расчёт идёт, только его подключения."""
+    r = _get_run(db, run_id)
+    if r.status not in ACTIVE:
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Расчёт № {run_id} уже {r.status}")
+    out: dict[str, Any] = {}
+    for code in (r.inputs or {}).get("__connections__", {}).get("codes", []):
+        c = db.scalar(select(DbConnection).where(DbConnection.code == code))
+        if c is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"Подключение {code} удалено")
+        try:
+            password = secrets_.decrypt(settings, c.password_enc)
+        except secrets_.SecretError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, f"{code}: {exc}") from exc
+        out[code] = {"kind": c.kind, "host": c.host, "port": c.port, "database": c.database,
+                     "username": c.username, "password": password, "allow_write": c.allow_write}
+    return out
 
 
 @router.post("/worker/{run_id}", dependencies=[Depends(_runner)])

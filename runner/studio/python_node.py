@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from studio import pycheck
-from studio.components import Component, NodeError, Param
+from studio.base import Component, NodeError, Param
 
 Frame = pd.DataFrame
 Params = dict[str, Any]

@@ -20,6 +20,13 @@ def _plain(v: Any) -> Any:
         return None if pd.isna(ts) else ts.isoformat()
     if isinstance(v, np.generic):
         v = v.item()
+    if not isinstance(v, (str, int, float, bool)):  # Decimal, UUID, bytes… — чтобы JSON не падал
+        if hasattr(v, "isoformat"):
+            return v.isoformat()
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return str(v)
     if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
         return None
     return v

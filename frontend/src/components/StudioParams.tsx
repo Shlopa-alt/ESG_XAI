@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 
 import { listDatasets } from "../api/experiments";
-import type { ComponentSchema, ParamSchema } from "../api/studio";
+import { type ComponentSchema, listConnections, type ParamSchema } from "../api/studio";
 
 type Values = Record<string, unknown>;
 
@@ -67,6 +67,27 @@ function SnapshotPicker({ values, onChange, disabled }: { values: Values; onChan
 }
 
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
+
+/** Подключение к базе: заводит владелец платформы («Служебное» → «Подключения к базам»). */
+function ConnectionField({ id, label, value, disabled, onChange }: { id: string; label: string; value: unknown; disabled: boolean; onChange: (v: unknown) => void }) {
+  const conns = useQuery({ queryKey: ["studio", "connections"], queryFn: listConnections });
+  const list = Array.isArray(conns.data) ? conns.data : [];
+  return (
+    <label className="field" htmlFor={id}>
+      {label}
+      <select id={id} value={value == null ? "" : String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">— выберите —</option>
+        {list.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.code} · {c.title}
+            {c.allow_write ? " (можно записывать)" : ""}
+          </option>
+        ))}
+      </select>
+      {list.length === 0 && <span className="muted small">Подключений нет — их заводит владелец платформы.</span>}
+    </label>
+  );
+}
 
 /** Столбцы текстом через запятую: в поле — набранное как есть (иначе запятую не напечатать). */
 function ColumnsText({
@@ -159,6 +180,18 @@ function Field({
           </label>
         ))}
       </fieldset>
+    );
+  }
+  if (p.kind === "connection") {
+    return <ConnectionField id={id} label={label} value={value} disabled={disabled} onChange={onChange} />;
+  }
+  if (p.kind === "sql") {
+    return (
+      <label className="field" htmlFor={id}>
+        {label}
+        <textarea id={id} className="mono code-input sql-input" rows={6} spellCheck={false} wrap="off" value={value == null ? "" : String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value)} />
+        <span className="muted small">Только чтение: SELECT … или WITH …, один запрос.</span>
+      </label>
     );
   }
   if (p.kind === "code") {

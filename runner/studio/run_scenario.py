@@ -14,6 +14,7 @@ inputs.json — какие файлы читают узлы импорта: {"<�
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -25,7 +26,9 @@ sys.path[:0] = [str(HERE.parent), str(HERE.parent / "methods")]
 # после sys.path: common — из runner/methods, studio — из runner
 import pandas as pd  # noqa: E402, I001
 from common import LOCK, event, git_commit, load_table, sha256  # noqa: E402
-from studio import engine, stats  # noqa: E402
+from studio import database, engine, stats  # noqa: E402
+
+OUTPUT_ROWS = 100_000
 
 
 def safe_name(name: str) -> str:
@@ -52,13 +55,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--inputs", required=True)
     ap.add_argument("--until")
     ap.add_argument("--rows", type=int, default=stats.PREVIEW_ROWS)
+    ap.add_argument("--inject", help="JSON: входы подмодели {порт: [строки]} — для веб-сервиса")
+    ap.add_argument("--output", action="store_true", help="весь «Выход подмодели» — в output.json")
     a = ap.parse_args(argv)
     out = Path(a.out)
     (out / "nodes").mkdir(parents=True, exist_ok=True)
     scenario = json.loads(Path(a.scenario).read_text(encoding="utf-8"))
+    if a.until:
+        os.environ["STUDIO_PREVIEW"] = "1"  # экспорт в базу при предпросмотре не пишет
+    inject = {port: pd.DataFrame(rows) for port, rows in
+              json.loads(Path(a.inject).read_text(encoding="utf-8")).items()} if a.inject else None
     inputs: dict[str, dict[str, str]] = json.loads(Path(a.inputs).read_text(encoding="utf-8"))
 
     def load(node: dict[str, Any]) -> pd.DataFrame:
+        if node.get("type") == "import.database":
+            p = node.get("params") or {}
+            return database.read(str(p.get("connection") or ""), str(p.get("query") or ""),
+                                 int(p.get("max_rows") or database.MAX_ROWS))
         src = inputs.get(node["id"])
         if not src:
             raise engine.ScenarioError(node["id"], "Не выбрана версия набора данных")
@@ -92,13 +105,22 @@ def main(argv: list[str] | None = None) -> int:
         event("node", node=r.node, ok=info["ok"], error=r.error, rows=info.get("rows"))
 
     try:
-        results = engine.run(scenario, load, until=a.until, on_node=done)
+        results = engine.run(scenario, load, until=a.until, on_node=done, inject=inject)
     except engine.ScenarioError as exc:
         summary["error"] = {"node": exc.node, "message": exc.message}
         (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False), encoding="utf-8")
         print(f"Сценарий не запущен: {exc.message}", file=sys.stderr)
         return 2
     failed = [n for n, r in results.items() if r.frame is None]
+    if a.output:  # веб-сервис: весь «Выход подмодели» (до OUTPUT_ROWS строк)
+        outs = [n for n, nd in nodes.items() if nd["type"] == "control.output"]
+        frame = results[outs[0]].frame if len(outs) == 1 and outs[0] in results else None
+        if frame is not None:
+            part = frame.head(OUTPUT_ROWS)
+            (out / "output.json").write_text(json.dumps({
+                "columns": [str(c) for c in part.columns],
+                "rows": [[stats._plain(v) for v in r] for r in part.itertuples(index=False, name=None)],
+                "total": int(len(frame))}, ensure_ascii=False), encoding="utf-8")
     summary["ok"] = not failed
     (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"Узлов посчитано: {len(results) - len(failed)} из {len(results)}"

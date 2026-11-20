@@ -32,10 +32,12 @@ import {
   type NodeView,
   runScenario,
   listScenarios,
+  publishScenario,
   saveScenario,
   type Scenario,
   stopRun,
   StudioError,
+  unpublishScenario,
   type StudioRun,
 } from "../api/studio";
 import { useMe } from "../auth/useAuth";
@@ -418,6 +420,10 @@ export function StudioEditor() {
   });
   const stop = useMutation({ mutationFn: () => stopRun(runId as number), onSuccess: () => void run.refetch() });
   const copy = useMutation({ mutationFn: () => copyScenario(code) });
+  const publish = useMutation({
+    mutationFn: (on: boolean) => (on ? publishScenario(code) : unpublishScenario(code)),
+    onSuccess: (b) => qc.setQueryData<Scenario>(["studio", code], (old) => (old ? { ...old, published_version: b.published_version } : old)),
+  });
 
   const columnsOf = useCallback(
     (nodeId: string) => (port: string) => {
@@ -435,7 +441,8 @@ export function StudioEditor() {
   const selSummary = sel ? summaries[sel.id] : undefined;
   const selView = sel ? views[sel.id] : undefined;
   const groups = [...new Set(comps.data.components.map((c) => c.group))];
-  const error = save.error ?? start.error ?? stop.error ?? copy.error ?? approve.error;
+  const error = save.error ?? start.error ?? stop.error ?? copy.error ?? approve.error ?? publish.error;
+  const serviceUrl = `${window.location.origin}/api/v1/studio/services/${s.code}/run`;
   const context: ParamContext = {
     nodes: nodes.filter((n) => n.id !== selected).map((n) => ({ id: n.id, label: `${n.data.title || n.data.comp.title} (${n.id})` })),
     scenarios: (Array.isArray(scenarios.data) ? scenarios.data : []).filter((x) => x.code !== code).map((x) => ({ code: x.code, title: x.title })),
@@ -477,7 +484,37 @@ export function StudioEditor() {
             </button>
           )}
           {copy.data && <Link to={`/studio/${copy.data.code}`}>Открыть копию {copy.data.code}</Link>}
+          {editable && !s.published_version && (
+            <button type="button" className="btn-ghost" onClick={() => publish.mutate(true)} disabled={publish.isPending || dirty}>
+              Опубликовать как веб-сервис
+            </button>
+          )}
         </div>
+        {s.published_version != null && (
+          <div className="card service-card">
+            <p>
+              <strong>{`Веб-сервис: опубликована версия ${s.published_version}.`}</strong> Данные вызова идут во «Вход подмодели» (in, in2),
+              ответ — таблица «Выхода подмодели». Вызов — с токеном API «чтение и запуск».
+            </p>
+            <pre className="code">
+              <code>{`curl -X POST -H "Authorization: Bearer $ESG_TOKEN" -H "Content-Type: application/json" \\
+  -d '{"inputs": {"in": [{"x": 1}]}, "wait": 30}' \\
+  ${serviceUrl}`}</code>
+            </pre>
+            {editable && (
+              <div className="actions">
+                {s.published_version !== version && (
+                  <button type="button" className="btn-ghost" onClick={() => publish.mutate(true)} disabled={publish.isPending || dirty}>
+                    {`Опубликовать текущую версию ${version}`}
+                  </button>
+                )}
+                <button type="button" className="btn-ghost" onClick={() => publish.mutate(false)} disabled={publish.isPending}>
+                  Снять с публикации
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </section>
       {error && (
         <p className="error" role="alert">

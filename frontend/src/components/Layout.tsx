@@ -36,6 +36,7 @@ const TOOLS_NAV: NavItem[] = [
 const OWNER_NAV: NavItem[] = [
   { to: "/qwen", label: "Задачи Qwen" },
   { to: "/users", label: "Пользователи" },
+  { to: "/db-connections", label: "Подключения к базам" },
 ];
 
 function isActive(item: NavItem, path: string): boolean {

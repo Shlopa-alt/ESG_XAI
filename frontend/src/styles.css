@@ -1204,4 +1204,7 @@ a.scheme-box:focus-visible, button.scheme-box:focus-visible { outline: 2px solid
   white-space: pre; overflow-x: auto; tab-size: 4; }
 .py-state { margin: 8px 0; }
 .studio-cube tr.total th, .studio-cube tr.total td, .studio-cube td.total { font-weight: 600; }
+.service-card { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.service-card p { margin: 0; }
+.sql-input { min-height: 120px; }
 
