@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ComponentSchema } from "./api/studio";
 import { App } from "./App";
-import { StudioChart, StudioQuality } from "./components/StudioCharts";
+import { StudioChart, StudioQuality, StudioReport } from "./components/StudioCharts";
 import { StudioParams } from "./components/StudioParams";
 
 // Заглушки — не реальные данные
@@ -124,5 +124,26 @@ describe("Студия: визуализаторы", () => {
     await userEvent.selectOptions(screen.getByLabelText("Вид"), "bar");
     await userEvent.selectOptions(screen.getByLabelText("Столбец"), "s");
     expect(screen.getByRole("img", { name: "Частота значений «s»" }).querySelectorAll("rect")).toHaveLength(2);
+  });
+});
+
+describe("Студия: отчёт модели", () => {
+  it("показывает метрики по множествам, коэффициенты и ROC", () => {
+    wrap(
+      <StudioReport
+        report={{
+          kind: "classification",
+          title: "[модель]",
+          metrics: [{ name: "AUC", train: 0.9, test: 0.8, cv: null }],
+          summary: [["[сводка]", 3]],
+          tables: [{ title: "Коэффициенты", columns: ["признак", "коэффициент"], rows: [["[x]", 1.5]] }],
+          roc: [{ fpr: 0, tpr: 0 }, { fpr: 0.2, tpr: 0.7 }, { fpr: 1, tpr: 1 }],
+        }}
+      />,
+    );
+    expect(screen.getByRole("columnheader", { name: "Тестовое" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Кросс-валидация" })).not.toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "1,5" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "ROC-кривая" })).toBeInTheDocument();
   });
 });

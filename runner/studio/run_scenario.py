@@ -77,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
             info.update(rows=int(len(r.frame)), cols=int(r.frame.shape[1]))
             view = {"table": stats.table(r.frame, a.rows), "statistics": stats.statistics(r.frame),
                     "quality": stats.quality(r.frame)}
+            if r.report is not None:
+                view["report"] = r.report
             if a.until == r.node:  # предпросмотр: выборка для «Диаграммы» — только у выбранного узла
                 view["sample"] = stats.sample(r.frame)
             (out / "nodes" / f"{r.node}.json").write_text(json.dumps(view, ensure_ascii=False),

@@ -36,7 +36,7 @@ import {
   StudioError,
   type StudioRun,
 } from "../api/studio";
-import { StudioChart, StudioQuality } from "../components/StudioCharts";
+import { StudioChart, StudioQuality, StudioReport } from "../components/StudioCharts";
 import { StudioParams } from "../components/StudioParams";
 
 interface StepData extends Record<string, unknown> {
@@ -118,12 +118,17 @@ const newId = () => `n${Math.random().toString(36).slice(2, 8)}`;
 
 /** «Таблица» и «Статистика» результата узла. */
 function Preview({ view }: { view: NodeView }) {
-  const [tab, setTab] = useState<"table" | "stats" | "quality" | "chart">("table");
+  const [tab, setTab] = useState<"report" | "table" | "stats" | "quality" | "chart">(view.report ? "report" : "table");
   const t = view.table;
   const st = view.statistics;
   return (
     <div className="studio-preview">
       <div className="tabs" role="tablist" aria-label="Вид результата">
+        {view.report && (
+          <button type="button" role="tab" aria-selected={tab === "report"} className={tab === "report" ? "chip active" : "chip"} onClick={() => setTab("report")}>
+            Отчёт
+          </button>
+        )}
         <button type="button" role="tab" aria-selected={tab === "table"} className={tab === "table" ? "chip active" : "chip"} onClick={() => setTab("table")}>
           Таблица
         </button>
@@ -137,6 +142,7 @@ function Preview({ view }: { view: NodeView }) {
           Диаграмма
         </button>
       </div>
+      {tab === "report" && view.report && <StudioReport report={view.report} />}
       {tab === "quality" && <StudioQuality view={view} />}
       {tab === "chart" && <StudioChart view={view} />}
       {tab === "table" && t && (
@@ -505,6 +511,7 @@ export function StudioEditor() {
                 return (
                   <label key={inp.name} className="field">
                     Вход: {inp.label}
+                    {inp.optional ? " (необязательно)" : ""}
                     <select value={e?.source ?? ""} disabled={!editable} onChange={(ev) => connect(ev.target.value, sel.id, inp.name)}>
                       <option value="">— не подключён —</option>
                       {nodes

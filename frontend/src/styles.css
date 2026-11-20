@@ -1195,4 +1195,9 @@ a.scheme-box:focus-visible, button.scheme-box:focus-visible { outline: 2px solid
 .chart-bar:hover { opacity: 1; }
 .chart-dot { fill: var(--accent); fill-opacity: 0.55; }
 .chart-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+.studio-report { display: flex; flex-direction: column; gap: 10px; }
+.report-summary { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0; }
+.report-summary dt { font-size: 12px; color: var(--text-muted); }
+.report-summary dd { margin: 0; font-weight: 600; }
+.chart.roc { max-width: 300px; }
 

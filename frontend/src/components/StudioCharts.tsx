@@ -1,6 +1,6 @@
 import { useId, useMemo, useState } from "react";
 
-import type { ColumnStats, NodeView } from "../api/studio";
+import type { ColumnStats, ModelReport, NodeView } from "../api/studio";
 
 const W = 640;
 const H = 300;
@@ -230,6 +230,120 @@ export function StudioQuality({ view }: { view: NodeView }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+const cell = (v: unknown) => (typeof v === "number" ? fmt(v) : v == null ? "—" : String(v));
+
+/** ROC-кривая: чем выше над диагональю, тем лучше модель различает классы. */
+function Roc({ points }: { points: { fpr: number; tpr: number }[] }) {
+  const S = 260;
+  const P = 34;
+  const sx = (v: number) => P + v * (S - P - 8);
+  const sy = (v: number) => S - P - v * (S - P - 8);
+  return (
+    <svg viewBox={`0 0 ${S} ${S}`} className="chart roc" role="img" aria-label="ROC-кривая">
+      <g className="chart-axes">
+        <line x1={P} y1={S - P} x2={S - 8} y2={S - P} />
+        <line x1={P} y1={8} x2={P} y2={S - P} />
+        <line x1={sx(0)} y1={sy(0)} x2={sx(1)} y2={sy(1)} className="chart-grid" />
+        {[0, 0.5, 1].map((v) => (
+          <g key={v}>
+            <text x={sx(v)} y={S - P + 14} textAnchor="middle">
+              {fmt(v)}
+            </text>
+            <text x={P - 5} y={sy(v) + 4} textAnchor="end">
+              {fmt(v)}
+            </text>
+          </g>
+        ))}
+        <text x={(P + S) / 2} y={S - 4} textAnchor="middle" className="chart-label">
+          ложные срабатывания
+        </text>
+        <text x={10} y={(S - P) / 2} textAnchor="middle" className="chart-label" transform={`rotate(-90 10 ${(S - P) / 2})`}>
+          верные срабатывания
+        </text>
+      </g>
+      <polyline className="chart-line" points={points.map((p) => `${sx(p.fpr)},${sy(p.tpr)}`).join(" ")} />
+    </svg>
+  );
+}
+
+/** Визуализатор «Отчёт»: метрики (обучающее, тестовое, кросс-валидация), сводка, таблицы, ROC. */
+export function StudioReport({ report }: { report: ModelReport }) {
+  const m = report.metrics ?? [];
+  const has = (k: "train" | "test" | "cv") => m.some((r) => r[k] != null);
+  return (
+    <div className="studio-report">
+      <h3 className="h2">{report.title}</h3>
+      {m.length > 0 && (
+        <div className="table-wrap">
+          <table className="table studio-table">
+            <thead>
+              <tr>
+                <th scope="col">Метрика</th>
+                {has("train") && <th scope="col" className="num">Обучающее</th>}
+                {has("test") && <th scope="col" className="num">Тестовое</th>}
+                {has("cv") && <th scope="col" className="num">Кросс-валидация</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {m.map((r) => (
+                <tr key={r.name}>
+                  <th scope="row">{r.name}</th>
+                  {has("train") && <td className="num">{cell(r.train)}</td>}
+                  {has("test") && <td className="num">{cell(r.test)}</td>}
+                  {has("cv") && <td className="num">{cell(r.cv)}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {(report.summary ?? []).length > 0 && (
+        <dl className="report-summary">
+          {(report.summary ?? []).map(([k, v]) => (
+            <div key={k}>
+              <dt>{k}</dt>
+              <dd>{cell(v)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {report.roc && report.roc.length > 1 && <Roc points={report.roc} />}
+      {(report.tables ?? []).map((t) => (
+        <div key={t.title} className="table-wrap">
+          <h4 className="studio-group">{t.title}</h4>
+          <table className="table studio-table">
+            <thead>
+              <tr>
+                {t.columns.map((c) => (
+                  <th key={c} scope="col">
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {t.rows.map((r, i) => (
+                <tr key={i}>
+                  {r.map((v, j) => (
+                    <td key={j} className={typeof v === "number" ? "num" : ""}>
+                      {cell(v)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      {(report.notes ?? []).map((n) => (
+        <p key={n} className="muted small">
+          {n}
+        </p>
+      ))}
     </div>
   );
 }

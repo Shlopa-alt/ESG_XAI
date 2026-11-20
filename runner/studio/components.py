@@ -65,12 +65,14 @@ class Component:
     params: tuple[Param, ...]
     run: Callable[[dict[str, Frame], Params], Frame] = field(repr=False)
     input_labels: tuple[str, ...] = ()
+    optional: tuple[str, ...] = ()  # входы, которые можно не подключать (например, «Новые данные»)
 
     def schema(self) -> dict[str, Any]:
         labels = self.input_labels or tuple("Вход" for _ in self.inputs)
         return {"type": self.type, "title": self.title, "group": self.group,
                 "description": self.description,
-                "inputs": [{"name": n, "label": lbl} for n, lbl in zip(self.inputs, labels, strict=True)],
+                "inputs": [{"name": n, "label": lbl, **({"optional": True} if n in self.optional else {})}
+                           for n, lbl in zip(self.inputs, labels, strict=True)],
                 "params": [p.schema() for p in self.params]}
 
 
@@ -544,10 +546,10 @@ BASE: list[Component] = [
 ]
 
 # этап 2 — в своих модулях; им нужны Param и Component отсюда, поэтому импорт после них
-from studio import preprocess, research  # noqa: E402
+from studio import mining, preprocess, research  # noqa: E402
 
 COMPONENTS: dict[str, Component] = {c.type: c for c in [*BASE, *preprocess.COMPONENTS,
-                                                         *research.COMPONENTS]}
+                                                         *research.COMPONENTS, *mining.COMPONENTS]}
 
 
 def catalog() -> list[dict[str, Any]]:

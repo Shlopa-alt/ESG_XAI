@@ -1791,6 +1791,573 @@
      ]
     }
    ]
+  },
+  {
+   "type": "mining.linreg",
+   "title": "Линейная регрессия",
+   "group": "Data Mining",
+   "description": "МНК: коэффициенты, p-значения, R², F; прогноз и остатки; применение к новым данным",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Обучение"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "target",
+     "label": "Целевой",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "set_column",
+     "label": "Столбец множеств (из «Разбиения»)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "cv",
+     "label": "Кросс-валидация: частей (0 — нет)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    }
+   ]
+  },
+  {
+   "type": "mining.logreg",
+   "title": "Логистическая регрессия",
+   "group": "Data Mining",
+   "description": "Вероятность события (да/нет): коэффициенты, отношения шансов, AUC, ROC, матрица ошибок",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Обучение"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "target",
+     "label": "Целевой",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "set_column",
+     "label": "Столбец множеств (из «Разбиения»)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "cv",
+     "label": "Кросс-валидация: частей (0 — нет)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "event",
+     "label": "Значение-«событие» (пусто — второе по алфавиту)",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "threshold",
+     "label": "Порог класса",
+     "kind": "number",
+     "required": false,
+     "default": 0.5
+    }
+   ]
+  },
+  {
+   "type": "mining.mlp_cls",
+   "title": "Нейросеть (классификация)",
+   "group": "Data Mining",
+   "description": "Многослойный перцептрон для да/нет: вероятность, AUC, ROC",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Обучение"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "target",
+     "label": "Целевой",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "set_column",
+     "label": "Столбец множеств (из «Разбиения»)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "cv",
+     "label": "Кросс-валидация: частей (0 — нет)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "event",
+     "label": "Значение-«событие» (пусто — второе по алфавиту)",
+     "kind": "text",
+     "required": false
+    },
+    {
+     "name": "threshold",
+     "label": "Порог класса",
+     "kind": "number",
+     "required": false,
+     "default": 0.5
+    },
+    {
+     "name": "hidden",
+     "label": "Скрытые слои (например, 16, 8)",
+     "kind": "text",
+     "required": false,
+     "default": "10"
+    },
+    {
+     "name": "max_iter",
+     "label": "Итераций обучения",
+     "kind": "number",
+     "required": false,
+     "default": 500
+    }
+   ]
+  },
+  {
+   "type": "mining.mlp_reg",
+   "title": "Нейросеть (регрессия)",
+   "group": "Data Mining",
+   "description": "Многослойный перцептрон для числового прогноза: R², RMSE, MAE",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Обучение"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "target",
+     "label": "Целевой",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "set_column",
+     "label": "Столбец множеств (из «Разбиения»)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "cv",
+     "label": "Кросс-валидация: частей (0 — нет)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "hidden",
+     "label": "Скрытые слои (например, 16, 8)",
+     "kind": "text",
+     "required": false,
+     "default": "10"
+    },
+    {
+     "name": "max_iter",
+     "label": "Итераций обучения",
+     "kind": "number",
+     "required": false,
+     "default": 500
+    }
+   ]
+  },
+  {
+   "type": "mining.kmeans",
+   "title": "Кластеризация",
+   "group": "Data Mining",
+   "description": "k-средних: кластер строки, профили кластеров, число кластеров — по силуэту",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Данные"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "k",
+     "label": "Кластеров (пусто — подобрать)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "as",
+     "label": "Имя столбца кластера",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "mining.em",
+   "title": "EM-кластеризация",
+   "group": "Data Mining",
+   "description": "Смесь нормальных распределений: кластер и уверенность, число кластеров — по BIC",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Данные"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "k",
+     "label": "Кластеров (пусто — подобрать)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    },
+    {
+     "name": "as",
+     "label": "Имя столбца кластера",
+     "kind": "text",
+     "required": false
+    }
+   ]
+  },
+  {
+   "type": "mining.som",
+   "title": "Самоорганизующиеся сети",
+   "group": "Data Mining",
+   "description": "Карта Кохонена: похожие строки — в соседние ячейки сетки",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Данные"
+    },
+    {
+     "name": "new",
+     "label": "Новые данные",
+     "optional": true
+    }
+   ],
+   "params": [
+    {
+     "name": "features",
+     "label": "Признаки (пусто — все числовые)",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "width",
+     "label": "Ширина карты",
+     "kind": "number",
+     "required": false,
+     "default": 5
+    },
+    {
+     "name": "height",
+     "label": "Высота карты",
+     "kind": "number",
+     "required": false,
+     "default": 5
+    },
+    {
+     "name": "epochs",
+     "label": "Эпох обучения",
+     "kind": "number",
+     "required": false,
+     "default": 100
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    }
+   ]
+  },
+  {
+   "type": "mining.assoc",
+   "title": "Ассоциативные правила",
+   "group": "Data Mining",
+   "description": "«Если A, то B» по транзакциям: поддержка, достоверность, лифт (Apriori)",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "transaction",
+     "label": "Транзакция (id)",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "item",
+     "label": "Позиция (товар, признак)",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "min_support",
+     "label": "Минимальная поддержка",
+     "kind": "number",
+     "required": false,
+     "default": 0.05
+    },
+    {
+     "name": "min_confidence",
+     "label": "Минимальная достоверность",
+     "kind": "number",
+     "required": false,
+     "default": 0.5
+    },
+    {
+     "name": "max_length",
+     "label": "Позиций в правиле не больше",
+     "kind": "number",
+     "required": false,
+     "default": 3
+    }
+   ]
+  },
+  {
+   "type": "mining.tx_cluster",
+   "title": "Кластеризация транзакций",
+   "group": "Data Mining",
+   "description": "Похожие по составу транзакции — в кластеры; частые позиции кластера",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "transaction",
+     "label": "Транзакция (id)",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "item",
+     "label": "Позиция (товар, признак)",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "k",
+     "label": "Кластеров (пусто — подобрать)",
+     "kind": "number",
+     "required": false
+    },
+    {
+     "name": "seed",
+     "label": "Seed",
+     "kind": "number",
+     "required": false,
+     "default": 42
+    }
+   ]
+  },
+  {
+   "type": "mining.arimax",
+   "title": "ARIMAX",
+   "group": "Data Mining",
+   "description": "Прогноз ряда: свои прошлые значения (p), разности (d), прошлые ошибки (q), внешние факторы",
+   "inputs": [
+    {
+     "name": "in",
+     "label": "Вход"
+    }
+   ],
+   "params": [
+    {
+     "name": "column",
+     "label": "Ряд",
+     "kind": "column",
+     "required": true,
+     "from_port": "in"
+    },
+    {
+     "name": "order_by",
+     "label": "Порядок (например, дата)",
+     "kind": "column",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "exog",
+     "label": "Внешние факторы",
+     "kind": "columns",
+     "required": false,
+     "from_port": "in"
+    },
+    {
+     "name": "p",
+     "label": "p (авторегрессия)",
+     "kind": "number",
+     "required": false,
+     "default": 1
+    },
+    {
+     "name": "d",
+     "label": "d (разности)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "q",
+     "label": "q (скользящее среднее ошибок)",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    },
+    {
+     "name": "horizon",
+     "label": "Горизонт прогноза",
+     "kind": "number",
+     "required": false,
+     "default": 0
+    }
+   ]
   }
  ]
 }

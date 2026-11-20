@@ -40,6 +40,7 @@ class NodeResult:
     error: str = ""
     seconds: float = 0.0
     skipped: bool = False  # не считался: упал узел, от которого он зависит
+    report: dict[str, Any] | None = None  # визуализатор «Отчёт» модели (коэффициенты, метрики…)
 
 
 @dataclass
@@ -159,7 +160,7 @@ def run(scenario: dict[str, Any], load: Loader, until: str | None = None,
             params = dict(node.get("params") or {})
             _check_params(nid, comp, params)
             for port in comp.inputs:
-                if port not in p.inputs[nid]:
+                if port not in p.inputs[nid] and port not in comp.optional:
                     raise ScenarioError(nid, f"{comp.title}: не подключён вход «{_label(comp, port)}»")
             upstream = {port: results[src] for port, src in p.inputs[nid].items()}
             if any(u.frame is None for u in upstream.values()):
@@ -174,7 +175,11 @@ def run(scenario: dict[str, Any], load: Loader, until: str | None = None,
                 out = comp.run(frames, params)
                 if not isinstance(out, pd.DataFrame):
                     raise NodeError(f"{comp.title}: результат — не таблица")
+                # отчёт модели — к этому узлу; дальше по цепочке таблица идёт без него
+                report = out.attrs.get("report")
+                out.attrs = {}
                 res.frame = out
+                res.report = report if isinstance(report, dict) else None
         except (ScenarioError, NodeError, ExprError) as exc:
             res.error = str(exc)
         except (KeyError, TypeError, ValueError) as exc:  # данные не того вида — без трассировки

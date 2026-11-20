@@ -17,7 +17,7 @@ export interface ComponentSchema {
   title: string;
   group: string;
   description: string;
-  inputs: { name: string; label: string }[];
+  inputs: { name: string; label: string; optional?: boolean }[];
   params: ParamSchema[];
 }
 
@@ -75,6 +75,17 @@ export interface NodeView {
   statistics?: { rows: number; columns: ColumnStats[] };
   quality?: { rows: number; duplicate_rows: number; issues: number; columns: QualityColumn[] };
   sample?: RowsView; // выборка для «Диаграммы» — у узла, посчитанного предпросмотром
+  report?: ModelReport; // «Отчёт» модели Data Mining
+}
+
+export interface ModelReport {
+  kind: string;
+  title: string;
+  metrics?: { name: string; train: number | null; test: number | null; cv: number | null }[];
+  summary?: [string, unknown][];
+  tables?: { title: string; columns: string[]; rows: unknown[][] }[];
+  roc?: { fpr: number; tpr: number }[];
+  notes?: string[];
 }
 
 export interface ColumnStats {
